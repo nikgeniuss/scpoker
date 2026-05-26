@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Classic deck preview</title>
+<style>
+  body { background:#1f2937; color:#e5e7eb; font-family: system-ui, sans-serif; padding: 24px; }
+  h1 { margin: 0 0 16px; font-size: 18px; font-weight: 600; }
+  .row { display: grid; grid-template-columns: repeat(13, 1fr); gap: 10px; margin-bottom: 18px; }
+  .row-back { display: flex; gap: 10px; margin-bottom: 24px; }
+  .card { background: white; border-radius: 8px; aspect-ratio: 200/280; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+  .card img { display:block; width:100%; height:100%; }
+  .legend { color:#9ca3af; font-size: 12px; margin-bottom: 6px; }
+  .reload-hint { color:#6b7280; font-size: 11px; margin-top: 16px; }
+</style>
+</head>
+<body>
+  <h1>SK Poker · classic deck preview</h1>
+  <div class="legend">Рубашка</div>
+  <div class="row-back">
+    <div class="card" style="width:120px;"><img src="http://localhost:3001/decks/classic/BACK.svg" alt="BACK"></div>
+  </div>
+
+  <div class="legend">Пики (♠)</div>
+  <div class="row" id="row-S"></div>
+  <div class="legend">Червы (♥)</div>
+  <div class="row" id="row-H"></div>
+  <div class="legend">Бубны (♦)</div>
+  <div class="row" id="row-D"></div>
+  <div class="legend">Трефы (♣)</div>
+  <div class="row" id="row-C"></div>
+
+  <div class="reload-hint">Если что-то не обновилось — Ctrl+F5 в этой вкладке.</div>
+
+<script>
+  const RANKS = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+  const SUITS = ['S','H','D','C'];
+  const bust = Date.now(); // cache-bust на случай если браузер кэшировал
+  for (const s of SUITS) {
+    const row = document.getElementById('row-' + s);
+    for (const r of RANKS) {
+      const div = document.createElement('div');
+      div.className = 'card';
+      div.innerHTML = '<img src="http://localhost:3001/decks/classic/' + r + s + '.svg?v=' + bust + '" alt="' + r + s + '">';
+      row.appendChild(div);
+    }
+  }
+</script>
+</body>
+</html>

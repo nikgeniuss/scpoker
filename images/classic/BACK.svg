@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 280" width="200" height="280">
+  <defs>
+    <pattern id="diamonds" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+      <rect width="20" height="20" fill="#9d1d1d"/>
+      <path d="M10,3 L17,10 L10,17 L3,10 Z" fill="none" stroke="#c0282d" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect x="2" y="2" width="196" height="276" rx="12" ry="12" fill="#9d1d1d" stroke="#1a1a1a" stroke-width="1.5"/>
+  <rect x="14" y="14" width="172" height="252" rx="8" ry="8" fill="url(#diamonds)" stroke="#ffffff" stroke-width="2"/>
+  <rect x="22" y="22" width="156" height="236" rx="4" ry="4" fill="none" stroke="#ffffff" stroke-width="1" stroke-opacity="0.6"/>
+</svg>
