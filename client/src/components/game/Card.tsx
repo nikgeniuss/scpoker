@@ -1,16 +1,13 @@
+import { memo } from 'react';
 import { motion } from 'framer-motion';
 import { suitColorClass, DEFAULT_CARD_COLOR_SCHEME } from '../../config/cardColors';
 import type { CardColorScheme } from '../../config/cardColors';
 import { useDecksStore, cardKey } from '../../store/decksStore';
 import { BASE_URL } from '../../config/api';
+import type { Card as CardData, Suit, Rank } from '@poker-room/shared';
 
-export type Suit = 'hearts' | 'diamonds' | 'clubs' | 'spades';
-export type Rank = '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | 'J' | 'Q' | 'K' | 'A';
-
-export interface CardData {
-  suit: Suit;
-  rank: Rank;
-}
+// Доменные типы карты — из общего контракта shared (CardData ≡ shared Card).
+export type { CardData, Suit, Rank };
 
 interface CardProps {
   card?: CardData;
@@ -19,7 +16,8 @@ interface CardProps {
   colorScheme?: CardColorScheme; // Дефолт — стандарт (set1). Используется в text-fallback варианте.
   size?: 'sm' | 'md' | 'lg';
   delay?: number;
-  highlight?: boolean; // Подсветка выигрышной карты на шоудауне
+  highlight?: boolean; // Карта входит в выигрышную пятёрку — поднимается вверх + золотое свечение
+  dim?: boolean; // Шоудаун: карта НЕ в выигрышной пятёрке — приглушаем opacity и насыщенность
 }
 
 const SUIT_SYMBOL: Record<Suit, string> = {
@@ -54,15 +52,24 @@ const BACK_PATTERN: Record<string, string> = {
   gold: '♔',
 };
 
-export const Card = ({ card, faceStyle, backStyle, colorScheme = DEFAULT_CARD_COLOR_SCHEME, size = 'md', delay = 0, highlight = false }: CardProps) => {
+const CardImpl = ({ card, faceStyle, backStyle, colorScheme = DEFAULT_CARD_COLOR_SCHEME, size = 'md', delay = 0, highlight = false, dim = false }: CardProps) => {
   const sizeCls = SIZE_CLASS[size];
-  const highlightCls = highlight ? ' ring-4 ring-yellow-400 shadow-yellow-500/50 scale-105 z-10 relative' : '';
+  // Шоудаун: highlight поднимает winning-карту вверх (без свечения/рамки — только лифт).
+  // dim — отстраняет проигравшую/нерабочую карту (приглушение).
+  const highlightCls = highlight ? ' relative z-20' : (dim ? ' relative' : '');
+  // Лифт winning-карт вверх + слегка крупнее. Без glow/pulse.
+  const motionTarget = {
+    rotateY: 0,
+    opacity: dim ? 0.45 : 1,
+    y: highlight ? -18 : 0,
+    scale: highlight ? 1.06 : 1,
+  };
 
   // Если faceStyle совпадает с id одной из колод из images/ — рендерим картинку.
   // Иначе fallback на текстовый вид с CSS-градиентом.
-  const decks = useDecksStore((s) => s.decks);
+  // O(1) selector — без линейного find() на каждый ререндер карты (на showdown это десятки lookup'ов).
+  const matchedDeck = useDecksStore((s) => (card ? s.decksById.get(faceStyle) : undefined));
   const decksLoadedAt = useDecksStore((s) => s.loadedAt);
-  const matchedDeck = card ? decks.find((d) => d.id === faceStyle) : undefined;
 
   if (!card) {
     const back = BACK_BG[backStyle] || BACK_BG['classic-blue'];
@@ -70,8 +77,8 @@ export const Card = ({ card, faceStyle, backStyle, colorScheme = DEFAULT_CARD_CO
     return (
       <motion.div
         initial={{ rotateY: 180, opacity: 0, y: -30 }}
-        animate={{ rotateY: 0, opacity: 1, y: 0 }}
-        transition={{ delay, duration: 0.4, type: 'spring' }}
+        animate={motionTarget}
+        transition={{ delay, duration: 0.35, ease: 'easeOut' }}
         className={
           sizeCls +
           ' rounded-lg ' +
@@ -93,7 +100,7 @@ export const Card = ({ card, faceStyle, backStyle, colorScheme = DEFAULT_CARD_CO
         <motion.div
           initial={{ rotateY: 180, opacity: 0, y: -30 }}
           animate={{ rotateY: 0, opacity: 1, y: 0 }}
-          transition={{ delay, duration: 0.4, type: 'spring' }}
+          transition={{ delay, duration: 0.35, ease: 'easeOut' }}
           className={sizeCls + ' relative select-none' + highlightCls}
         >
           <img
@@ -115,7 +122,7 @@ export const Card = ({ card, faceStyle, backStyle, colorScheme = DEFAULT_CARD_CO
     <motion.div
       initial={{ rotateY: 180, opacity: 0, y: -30 }}
       animate={{ rotateY: 0, opacity: 1, y: 0 }}
-      transition={{ delay, duration: 0.4, type: 'spring' }}
+      transition={{ delay, duration: 0.35, ease: 'easeOut' }}
       className={
         sizeCls +
         ' rounded-lg ' +
@@ -139,3 +146,6 @@ export const Card = ({ card, faceStyle, backStyle, colorScheme = DEFAULT_CARD_CO
     </motion.div>
   );
 };
+
+// memo для пропуска ре-рендеров от родительского тикера (200ms): props стабильны между gameUpdate.
+export const Card = memo(CardImpl);

@@ -1,0 +1,19 @@
+node_modules/
+dist/
+
+# Секреты/окружение
+.env
+.env.*
+*.log
+
+.gstack/
+
+# Серверные runtime-данные: реальные юзеры/банкроллы (CLAUDE.md §0.3/§0.4)
+server/data/
+
+# Claude — локальные
+.claude/settings.local.json
+.claude/hooks/.context-watch-state.json
+
+# Dev-логи и бэкапы
+dev.log*

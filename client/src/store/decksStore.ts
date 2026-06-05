@@ -19,6 +19,7 @@ export interface DeckInfo {
 
 interface DecksState {
   decks: DeckInfo[];
+  decksById: Map<string, DeckInfo>; // O(1) lookup — для Card.tsx (вызывается на каждый ререндер карты)
   loaded: boolean;
   loading: boolean;
   loadedAt: number; // cache-bust ключ — меняется при каждой загрузке/перезагрузке
@@ -26,9 +27,16 @@ interface DecksState {
   reload: () => Promise<void>;
 }
 
+function buildIndex(decks: DeckInfo[]): Map<string, DeckInfo> {
+  const m = new Map<string, DeckInfo>();
+  for (const d of decks) m.set(d.id, d);
+  return m;
+}
+
 // Хранит список колод из images/. Грузится один раз при mount Layout — потом используется в Card.tsx.
 export const useDecksStore = create<DecksState>((set, get) => ({
   decks: [],
+  decksById: new Map(),
   loaded: false,
   loading: false,
   loadedAt: 0,
@@ -40,7 +48,7 @@ export const useDecksStore = create<DecksState>((set, get) => ({
       const res = await fetch(API_URL + '/decks');
       if (!res.ok) throw new Error('Failed to fetch decks');
       const decks: DeckInfo[] = await res.json();
-      set({ decks, loaded: true, loading: false, loadedAt: Date.now() });
+      set({ decks, decksById: buildIndex(decks), loaded: true, loading: false, loadedAt: Date.now() });
     } catch (err) {
       console.error('Failed to load decks', err);
       set({ loaded: true, loading: false });
@@ -53,7 +61,7 @@ export const useDecksStore = create<DecksState>((set, get) => ({
       const res = await fetch(API_URL + '/decks');
       if (!res.ok) throw new Error('Failed to fetch decks');
       const decks: DeckInfo[] = await res.json();
-      set({ decks, loaded: true, loading: false, loadedAt: Date.now() });
+      set({ decks, decksById: buildIndex(decks), loaded: true, loading: false, loadedAt: Date.now() });
     } catch (err) {
       console.error('Failed to reload decks', err);
       set({ loading: false });

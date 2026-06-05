@@ -1,0 +1,24 @@
+# CI: прогон контракт-guard + typecheck (server+client) + client lint + server vitest на каждый
+# push в main/master и на каждый PR (ROADMAP §9.3-G). Зеркалит локальный `npm run check`.
+name: check
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies (root + client + server)
+        run: npm run install:all
+
+      - name: Check (guard + typecheck + lint + tests)
+        run: npm run check
