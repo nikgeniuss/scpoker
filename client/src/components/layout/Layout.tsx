@@ -1,16 +1,19 @@
 ﻿import { useTelegram } from '../../hooks/useTelegram';
 import { motion } from 'framer-motion';
-import { useEffect } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import type { ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Coins, Home, LayoutGrid, UserCircle, Shield, LogOut, Trophy } from 'lucide-react';
+import { Coins, Home, LayoutGrid, UserCircle, LogOut, Trophy } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useDecksStore } from '../../store/decksStore';
 import { disconnectSocket } from '../../lib/socket';
 import { SOCKET_EVENTS } from '@poker-room/shared';
 import { API_URL } from '../../config/api';
 import { useSocketEvent } from '../../hooks/useSocketEvent';
+
+// Кнопка в админку — lazy, грузится только для админа (код не в бандле игрока).
+const AdminNavButton = lazy(() => import('../admin/AdminNavButton'));
 
 interface LayoutProps {
   children: ReactNode;
@@ -134,14 +137,9 @@ export const Layout = ({ children }: LayoutProps) => {
                   </span>
                 )}
                 {isAdmin && (
-                  <button
-                    onClick={() => navigate('/admin')}
-                    title="Админ-панель"
-                    className="flex items-center justify-center w-9 h-9 md:h-auto md:w-auto md:px-3 md:py-1 rounded-lg bg-poker-gold text-black text-sm font-bold"
-                  >
-                    <Shield size={16} className="md:hidden" />
-                    <span className="hidden md:inline">Админ-панель</span>
-                  </button>
+                  <Suspense fallback={null}>
+                    <AdminNavButton onClick={() => navigate('/admin')} />
+                  </Suspense>
                 )}
                 {/* На /game/ Layout-Выйти скрыт на mobile — внутри GameRoom есть своя кнопка
                     «Выйти из стола» (это разные действия: logout vs leaveRoom). На desktop оба видны. */}

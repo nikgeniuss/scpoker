@@ -1,11 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useParams } from 'react-router-dom';
-import { LogOut, Settings, Smile, Info, Eye, EyeOff, Coins, Shield } from 'lucide-react';
-import { getSocket } from '../lib/socket';
+import { LogOut, Settings, Smile, Info, Coins } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { API_URL } from '../config/api';
-import { SOCKET_EVENTS } from '@poker-room/shared';
 import type { GamePhase } from '@poker-room/shared';
 import { Card } from '../components/game/Card';
 import { PlayerSeat } from '../components/game/PlayerSeat';
@@ -31,6 +29,9 @@ import { useEphemeralBubbles } from '../hooks/useEphemeralBubbles';
 import { useTableClock } from '../hooks/useTableClock';
 import { useTableGeometry } from '../hooks/useTableGeometry';
 import { computeBlindSeats } from '../utils/blinds';
+
+// Админ-кнопки за столом — lazy-чанк, грузится только для админа (код не в бандле игрока).
+const AdminTableControls = lazy(() => import('../components/admin/AdminTableControls'));
 
 // GameState/GamePhase — из общего контракта shared (см. импорт выше).
 
@@ -117,15 +118,6 @@ export const GameRoom = () => {
     state.phase !== 'waiting' &&
     state.phase !== 'showdown';
 
-  // Admin-peek: переключаем + сразу шлём на сервер. Серверная проверка role обязательна.
-  // Сервер ответит свежим gameUpdate с картами всех / без них.
-  const togglePeek = () => {
-    if (!isAdmin || !roomId) return;
-    const next = !peekOn;
-    setPeekOn(next);
-    getSocket().emit(SOCKET_EVENTS.ADMIN_PEEK_TOGGLE, { enabled: next, roomId });
-  };
-
   const feltCls = FELT_CLASS[design.tableFelt] || FELT_CLASS.green;
   // Фирменная тема стола — оборачивает felt/rail/watermark/lighting в один пресет.
   // CSS-классы theme-classic|luxe|wood определены в client/src/index.css.
@@ -159,13 +151,9 @@ export const GameRoom = () => {
             </span>
           )}
           {isAdmin && (
-            <button
-              onClick={() => navigate('/admin')}
-              title="Админ-панель"
-              className="md:hidden flex items-center justify-center w-9 h-9 rounded-xl bg-poker-gold text-black"
-            >
-              <Shield size={16} />
-            </button>
+            <Suspense fallback={null}>
+              <AdminTableControls slot="nav" onOpenAdmin={() => navigate('/admin')} />
+            </Suspense>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -177,18 +165,9 @@ export const GameRoom = () => {
             <Info size={16} />
           </button>
           {isAdmin && (
-            <button
-              onClick={togglePeek}
-              title={peekOn ? 'Выключить глаз админа' : 'Включить глаз админа (показать все карты)'}
-              className={
-                'flex items-center justify-center w-9 h-9 rounded-xl border ' +
-                (peekOn
-                  ? 'bg-red-600/80 hover:bg-red-700 text-white border-red-900 animate-pulse'
-                  : 'bg-black/40 hover:bg-black/60 text-white/80 hover:text-white border-white/10')
-              }
-            >
-              {peekOn ? <Eye size={16} /> : <EyeOff size={16} />}
-            </button>
+            <Suspense fallback={null}>
+              <AdminTableControls slot="peek" roomId={roomId} peekOn={peekOn} setPeekOn={setPeekOn} />
+            </Suspense>
           )}
           <button
             onClick={() => setEmojiPaletteOpen((v) => !v)}
