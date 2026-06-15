@@ -4,7 +4,7 @@ import { Card } from './Card';
 import type { CardData } from './Card';
 import { formatChips } from '../../config/chipFormat';
 import type { ChipDisplay } from '../../config/chipFormat';
-import type { CardColorScheme } from '../../config/cardColors';
+import type { CardDeck } from '../../config/cardDeck';
 import { TurnProgressRing } from './TurnProgressRing';
 import ReactNiceAvatar from 'react-nice-avatar';
 import { avatarConfig } from '../../utils/avatar';
@@ -13,6 +13,7 @@ import { avatarColor } from './seatColors';
 export interface PlayerView {
   id: string;
   username: string;
+  displayName?: string; // имя из Telegram — показываем вместо username (аватар по-прежнему по username/id)
   chips: number;
   cards: CardData[];
   isFolded: boolean;
@@ -20,6 +21,10 @@ export interface PlayerView {
   position: number;
   disconnected?: boolean;
   timebank?: number; // оставшиеся секунды таймбанка (для подписи под ником, если timebankEnabled)
+  handHint?: string;  // подсказка: название текущей комбинации (своя; у админа — и чужие)
+  winChance?: number; // 0..100 — шанс выиграть (только своё место)
+  shownCards?: (CardData | null)[]; // добровольно показанные карты соперника (тап после раздачи)
+  revealedCards?: number[];         // индексы показанных карт (для своего UI)
 }
 
 interface PlayerSeatProps {
@@ -33,13 +38,12 @@ interface PlayerSeatProps {
   showHand: boolean;
   faceStyle: string;
   backStyle: string;
-  cardColors?: CardColorScheme;
-  // chipStyle оставлен в API, чтобы не ломать вызовы; внутри больше не используется
-  // (отображение ставок переехало в ChipStack у центра стола).
-  chipStyle?: string;
+  deck?: CardDeck;
   bigBlind: number;
   displayMode: ChipDisplay;
   winningCards?: CardData[]; // На шоудауне у победителя — карты, входящие в выигрышную комбинацию
+  winAmount?: number; // Сколько выиграл (showdown) — «+сумма»
+  handName?: string | null; // Имя победной комбинации (showdown) — подпись под плашкой
   turnSecondsLeft?: number; // Сколько секунд осталось на основной ход (показываем только текущему игроку)
   turnPercent?: number;     // 0..100 — для прогресс-кольца Phase 1 вокруг аватара
   // Phase 2: таймбанк-фаза текущего игрока. Когда != null/undefined, основной таймер уже истёк.
@@ -49,6 +53,7 @@ interface PlayerSeatProps {
   timebankEnabled?: boolean; // показывать ли вообще таймбанк-инфу (включён ли на столе)
   // Если true — D/SB/BB-бейдж внутри плашки не рисуется (родитель рендерит его «на столе»).
   hideRoleBadge?: boolean;
+  showHint?: boolean; // показывать подсказку комбинации/шанса (тумблер настроек)
 }
 
 
@@ -63,16 +68,19 @@ const PlayerSeatImpl = ({
   showHand,
   faceStyle,
   backStyle,
-  cardColors,
+  deck,
   bigBlind,
   displayMode,
   winningCards,
+  winAmount,
+  handName,
   turnSecondsLeft,
   turnPercent,
   timebankSecondsLeft,
   timebankPercent,
   timebankEnabled,
   hideRoleBadge,
+  showHint,
 }: PlayerSeatProps) => {
   const avatarGrad = avatarColor(player.username);
 
@@ -80,11 +88,31 @@ const PlayerSeatImpl = ({
     <motion.div
       initial={{ scale: 0, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
-      className={'flex items-end gap-1' + (isCurrent ? ' is-current' : '')}
+      className={'relative flex items-end gap-1' + (isCurrent ? ' is-current' : '')}
     >
-      {/* Карты — слева от плашки. На showdown winning-пятёрка поднимается + золотое свечение,
-          проигравшие/невошедшие — приглушаются (dim) чтобы выделить чьи карты выиграли. */}
-      {player.cards.length > 0 && (
+      {/* Winner: «WIN +сумма» сверху и подпись комбинации снизу (showdown) */}
+      {isWinner && (
+        <>
+          <motion.div
+            initial={{ opacity: 0, y: 6, scale: 0.8 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            className="absolute -top-9 left-1/2 -translate-x-1/2 z-30 px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-400 to-yellow-500 text-black text-xs font-black shadow-lg ring-1 ring-yellow-200/70 whitespace-nowrap pointer-events-none tabular-nums"
+          >
+            WIN{typeof winAmount === 'number' && winAmount > 0 ? ' +' + formatChips(winAmount, bigBlind, displayMode) : ''}
+          </motion.div>
+          {handName && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="absolute -bottom-5 left-1/2 -translate-x-1/2 z-30 px-2 py-0.5 rounded-full bg-black/75 ring-1 ring-yellow-400/50 text-yellow-200 text-[10px] font-bold whitespace-nowrap pointer-events-none max-w-[160px] truncate"
+            >
+              {handName}
+            </motion.div>
+          )}
+        </>
+      )}
+      {/* Свои карты — слева от плашки в ряд. */}
+      {isSelf && player.cards.length > 0 && (
         <div className="flex gap-0.5">
           {player.cards.map((c, i) => {
             const inWinningCombo =
@@ -98,7 +126,7 @@ const PlayerSeatImpl = ({
                 card={showHand ? c : undefined}
                 faceStyle={faceStyle}
                 backStyle={backStyle}
-                colorScheme={cardColors}
+                deck={deck}
                 size="sm"
                 delay={i * 0.1}
                 highlight={highlight}
@@ -106,6 +134,23 @@ const PlayerSeatImpl = ({
               />
             );
           })}
+        </div>
+      )}
+
+      {/* Свои добровольно показанные карты (тап после раздачи) — слева в ряд. */}
+      {isSelf && player.cards.length === 0 && player.shownCards && player.shownCards.some(Boolean) && (
+        <div className="flex gap-0.5">
+          {player.shownCards.map((c, i) => (
+            <Card
+              key={i}
+              card={c ?? undefined}
+              faceStyle={faceStyle}
+              backStyle={backStyle}
+              deck={deck}
+              size="sm"
+              delay={i * 0.05}
+            />
+          ))}
         </div>
       )}
 
@@ -142,6 +187,74 @@ const PlayerSeatImpl = ({
               {...avatarConfig(player.id)}
             />
           </div>
+          {/* Карты противника веером поверх аватарки */}
+          {!isSelf && player.cards.length > 0 && (
+            <div className="absolute inset-0 pointer-events-none" style={showHand ? { zIndex: 25 } : undefined}>
+              {player.cards.map((c, i) => {
+                const total = player.cards.length;
+                const angle = total <= 1 ? 0 : (i / (total - 1) - 0.5) * 24;
+                const inWinningCombo = !!winningCards?.some((w) => w.suit === c.suit && w.rank === c.rank);
+                const showdownActive = showHand && !!winningCards && winningCards.length > 0;
+                const highlight = isWinner && showHand && inWinningCombo;
+                const dim = showdownActive && !highlight;
+                return (
+                  <div
+                    key={i}
+                    className="absolute"
+                    style={{
+                      bottom: 0,
+                      left: '50%',
+                      transform: `translateX(-50%) rotate(${angle}deg)`,
+                      transformOrigin: 'bottom center',
+                      zIndex: i,
+                    }}
+                  >
+                    <Card
+                      card={showHand ? c : undefined}
+                      faceStyle={faceStyle}
+                      backStyle={backStyle}
+                      deck={deck}
+                      size="sm"
+                      delay={i * 0.1}
+                      highlight={highlight}
+                      dim={dim}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {/* Добровольно показанные карты противника — тоже веером */}
+          {!isSelf && player.cards.length === 0 && player.shownCards?.some(Boolean) && (
+            <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 25 }}>
+              {player.shownCards!.map((c, i) => {
+                const total = player.shownCards!.length;
+                const angle = total <= 1 ? 0 : (i / (total - 1) - 0.5) * 24;
+                return (
+                  <div
+                    key={i}
+                    className="absolute"
+                    style={{
+                      bottom: 0,
+                      left: '50%',
+                      transform: `translateX(-50%) rotate(${angle}deg)`,
+                      transformOrigin: 'bottom center',
+                      zIndex: i,
+                    }}
+                  >
+                    <Card
+                      card={c ?? undefined}
+                      faceStyle={faceStyle}
+                      backStyle={backStyle}
+                      deck={deck}
+                      size="sm"
+                      delay={i * 0.05}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          )}
           {typeof timebankPercent === 'number' && typeof timebankSecondsLeft === 'number' ? (
             <TurnProgressRing
               size={40}
@@ -160,13 +273,21 @@ const PlayerSeatImpl = ({
         </div>
 
         <div className="flex flex-col leading-tight">
-          <span className={'text-sm font-semibold ' + (isSelf ? 'text-poker-gold' : 'text-white')}>
-            {player.username}
-            {isSelf && <span className="text-xs text-gray-400 ml-1">(вы)</span>}
-          </span>
+          {!isSelf && (
+            <span className="text-sm font-semibold text-white">
+              {player.displayName || player.username}
+            </span>
+          )}
           <span className="text-xs text-gray-300">
             {formatChips(player.chips, bigBlind, displayMode)}
           </span>
+          {/* Подсказка комбинации/шанса (по тумблеру). winChance есть только у своего места. */}
+          {showHint && !player.isFolded && player.handHint && (
+            <span className="text-[9px] font-semibold text-emerald-300/90 leading-tight whitespace-nowrap">
+              {player.handHint}
+              {typeof player.winChance === 'number' ? ' · ' + player.winChance + '%' : ''}
+            </span>
+          )}
         </div>
 
         {/* Бейдж роли: приоритет D > SB > BB. В heads-up D=SB — показываем только D

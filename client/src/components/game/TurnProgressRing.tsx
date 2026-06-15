@@ -2,6 +2,8 @@
 // Phase 1 (основной): жёлтое >5с, красное ≤5с. Phase 2 (таймбанк): оранжевое.
 // Размер привязан к диаметру аватара (size). Внутри пусто — снаружи аватара тонкое кольцо.
 
+import { TURN_COLORS } from './turnColors';
+
 interface TurnProgressRingProps {
   size: number;            // диаметр аватара, px (кольцо рисуется чуть-чуть больше)
   percent: number;         // 0..100 — сколько оставшегося времени; 100 = полное кольцо
@@ -9,24 +11,6 @@ interface TurnProgressRingProps {
   variant: 'turn' | 'turn-urgent' | 'timebank';
   strokeWidth?: number;    // толщина кольца (дефолт 3)
 }
-
-const COLOR: Record<TurnProgressRingProps['variant'], { stroke: string; track: string; badge: string }> = {
-  turn: {
-    stroke: '#fbbf24',           // amber-400 (poker-gold-like)
-    track: 'rgba(255,255,255,0.08)',
-    badge: 'bg-amber-400 text-black border-amber-700',
-  },
-  'turn-urgent': {
-    stroke: '#ef4444',           // red-500
-    track: 'rgba(239,68,68,0.15)',
-    badge: 'bg-red-600 text-white border-red-900',
-  },
-  timebank: {
-    stroke: '#f97316',           // orange-500
-    track: 'rgba(249,115,22,0.15)',
-    badge: 'bg-orange-500 text-white border-orange-900',
-  },
-};
 
 export const TurnProgressRing = ({
   size,
@@ -42,7 +26,7 @@ export const TurnProgressRing = ({
   const clamped = Math.max(0, Math.min(100, percent));
   // Заполнение «обратное» — то, что осталось. Стартуем сверху (rotate -90).
   const dashoffset = c * (1 - clamped / 100);
-  const colors = COLOR[variant];
+  const colors = TURN_COLORS[variant];
   const isUrgent = variant === 'turn-urgent' || variant === 'timebank';
   // Shake-анимация только для основной фазы при <5с (turn-urgent), не для таймбанка.
   const isTurnUrgent = variant === 'turn-urgent';
@@ -56,6 +40,7 @@ export const TurnProgressRing = ({
         // Центрируем кольцо вокруг аватара: смещаем на strokeWidth в каждую сторону назад.
         top: -strokeWidth,
         left: -strokeWidth,
+        zIndex: 10,
       }}
     >
       <svg width={ringSize} height={ringSize} className={isUrgent ? 'animate-pulse' : ''}>

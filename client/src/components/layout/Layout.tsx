@@ -1,19 +1,22 @@
-﻿import { useTelegram } from '../../hooks/useTelegram';
-import { motion } from 'framer-motion';
-import { useEffect, lazy, Suspense } from 'react';
+﻿import { motion } from 'framer-motion';
+import { useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import type { ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Coins, Home, LayoutGrid, UserCircle, LogOut, Trophy } from 'lucide-react';
+import { Coins, Home, LayoutGrid, UserCircle, LogOut, Trophy, Crown, Shield } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useDecksStore } from '../../store/decksStore';
 import { disconnectSocket } from '../../lib/socket';
 import { SOCKET_EVENTS } from '@poker-room/shared';
 import { API_URL } from '../../config/api';
 import { useSocketEvent } from '../../hooks/useSocketEvent';
+import { formatMoney } from '../../config/chipFormat';
+import { TablesManager } from '../game/TablesManager';
+import { DebugOverlay } from '../debug/DebugOverlay';
 
 // Кнопка в админку — lazy, грузится только для админа (код не в бандле игрока).
 const AdminNavButton = lazy(() => import('../admin/AdminNavButton'));
+const ClubAdminNavButton = lazy(() => import('../admin/ClubAdminNavButton'));
 
 interface LayoutProps {
   children: ReactNode;
@@ -24,7 +27,6 @@ export const Layout = ({ children }: LayoutProps) => {
   const navigate = useNavigate();
   const { user, isAdmin, logout, token, setChips } = useAuthStore();
   const loadDecks = useDecksStore((s) => s.load);
-  const { isTelegram, webApp } = useTelegram();
 
   // Загружаем список колод один раз при mount — нужен Card.tsx для отрисовки картинок вместо текста
   useEffect(() => {
@@ -36,6 +38,29 @@ export const Layout = ({ children }: LayoutProps) => {
   const isGuestPage = path === '/login' || path === '/register';
   const isGameRoom = path.startsWith('/game/');
   const showBottomBar = !!user && !isGameRoom && !isGuestPage;
+
+  // Свайп влево/вправо для переключения вкладок нижнего бара
+  const tabRoutes = isAdmin ? ['/', '/lobby', '/club-admin', '/admin'] : ['/', '/lobby'];
+  const touchStartX = useRef<number | null>(null);
+  const touchStartY = useRef<number | null>(null);
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  }, []);
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (touchStartX.current === null || touchStartY.current === null) return;
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    const dy = e.changedTouches[0].clientY - touchStartY.current;
+    touchStartX.current = null;
+    touchStartY.current = null;
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy)) return;
+    const idx = tabRoutes.indexOf(path);
+    if (idx === -1) return;
+    if (dx < 0 && idx < tabRoutes.length - 1) navigate(tabRoutes[idx + 1]);
+    else if (dx > 0 && idx > 0) navigate(tabRoutes[idx - 1]);
+  }, [navigate, path, isAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Стартовое значение банкролла (fetch при логине). Live-обновления — через socket ниже.
   useEffect(() => {
@@ -68,6 +93,17 @@ export const Layout = ({ children }: LayoutProps) => {
     !!user,
   );
 
+  // Посадка из очереди: место на полном столе освободилось → сервер посадил, переходим за стол.
+  // Слушаем глобально (а не только в лобби) — игрок мог уйти на другой экран, пока ждал.
+  useSocketEvent<{ roomId: string }>(
+    SOCKET_EVENTS.SEAT_FROM_WAITLIST,
+    ({ roomId }) => {
+      toast.success('Место освободилось — вы за столом!');
+      navigate('/game/' + roomId);
+    },
+    !!user,
+  );
+
   // connect_error — сервер отклоняет handshake при невалидном/протухшем JWT ('No token'/'Invalid token'
   // из io.use; см. §11.42). Прочие ошибки (сеть, server down) игнорируем — не logout на каждый сбой связи.
   useSocketEvent<Error>(
@@ -84,10 +120,17 @@ export const Layout = ({ children }: LayoutProps) => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-black relative overflow-hidden">
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-1/2 -left-1/2 w-full h-full bg-gradient-to-br from-poker-green/20 to-transparent rounded-full blur-3xl animate-pulse" />
-        <div className="absolute -bottom-1/2 -right-1/2 w-full h-full bg-gradient-to-tl from-blue-900/10 to-transparent rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2000ms' }} />
-      </div>
+      {/* Мультитейблинг: персистентный слушатель открытых столов (пилюли). Живёт выше роутов. */}
+      <TablesManager />
+      <DebugOverlay />
+      {/* Фоновые блюр-пятна — дорогие по GPU (полноэкранный blur-3xl + animate-pulse).
+          За столом их не видно под непрозрачным полом, поэтому там не рендерим (perf §0.10). */}
+      {!isGameRoom && (
+        <div className="fixed inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute -top-1/2 -left-1/2 w-full h-full bg-gradient-to-br from-poker-green/20 to-transparent rounded-full blur-3xl animate-pulse" />
+          <div className="absolute -bottom-1/2 -right-1/2 w-full h-full bg-gradient-to-tl from-blue-900/10 to-transparent rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2000ms' }} />
+        </div>
+      )}
       
       {/* На /game/ mobile вся Layout navbar скрыта — balance/admin/logout перенесены в GameRoom-бар */}
       <nav className={'fixed top-0 left-0 right-0 z-50 backdrop-blur-md bg-black/50 border-b border-white/10 ' + (isGameRoom ? 'hidden md:block' : '')}>
@@ -100,8 +143,6 @@ export const Layout = ({ children }: LayoutProps) => {
               onClick={() => navigate('/')}
               title="На главную"
             >
-              <span className="text-white/40">♠</span>
-              <span className="neon-logo">POKER HUB</span>
             </motion.div>
 
             {/* Desktop-ссылки: видны только на md+, повторяют bottom tab-bar */}
@@ -116,30 +157,26 @@ export const Layout = ({ children }: LayoutProps) => {
           </div>
 
           <div className="flex items-center gap-2 md:gap-3">
-            {isTelegram && (
-              <button
-                onClick={() => webApp?.close()}
-                className="px-3 py-1 bg-white/10 text-white rounded-lg text-sm"
-              >
-                ← Закрыть
-              </button>
-            )}
             {user ? (
               <>
-                {/* Username скрываем на mobile — ник дублирован в bottom-bar и в game-view */}
-                <span className="hidden md:inline text-gray-400 text-sm">{user.username}</span>
+                {/* Ник юзера — между логотипом и балансом, видим и на мобиле */}
+                <span className="text-gray-300 text-sm max-w-[110px] md:max-w-none truncate">{user.username}</span>
                 {typeof user.chips === 'number' && (
                   <span
                     title="Свободный банкролл"
                     className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs md:text-sm font-bold whitespace-nowrap"
                   >
-                    <Coins size={14} /> {user.chips}
+                    <Coins size={14} /> {formatMoney(user.chips)}
                   </span>
                 )}
+                {/* На мобиле admin-кнопки живут в нижнем баре (см. ниже); тут — только десктоп */}
                 {isAdmin && (
-                  <Suspense fallback={null}>
-                    <AdminNavButton onClick={() => navigate('/admin')} />
-                  </Suspense>
+                  <div className="hidden md:flex items-center gap-2 md:gap-3">
+                    <Suspense fallback={null}>
+                      <ClubAdminNavButton onClick={() => navigate('/club-admin')} />
+                      <AdminNavButton onClick={() => navigate('/admin')} />
+                    </Suspense>
+                  </div>
                 )}
                 {/* На /game/ Layout-Выйти скрыт на mobile — внутри GameRoom есть своя кнопка
                     «Выйти из стола» (это разные действия: logout vs leaveRoom). На desktop оба видны. */}
@@ -170,7 +207,11 @@ export const Layout = ({ children }: LayoutProps) => {
       </nav>
 
       {/* На /game/ mobile padding-top убираем — navbar скрыта, стол занимает весь экран */}
-      <main className={(isGameRoom ? 'md:pt-16' : 'pt-16') + ' ' + (showBottomBar ? 'pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0' : '')}>
+      <main
+        className={(isGameRoom ? 'md:pt-16' : 'pt-16') + ' ' + (showBottomBar ? 'pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0' : '')}
+        onTouchStart={showBottomBar ? handleTouchStart : undefined}
+        onTouchEnd={showBottomBar ? handleTouchEnd : undefined}
+      >
         {/* Раньше тут была AnimatePresence + motion.div с initial:opacity:0/animate:1 (300ms транзит между страницами).
             Парадокс: parent-mostion успешно анимировался к opacity:1, но дочерние motion.* в GameRoom
             (десятки PlayerSeat/Card/ChipStack/Bubble с своими initial={opacity:0}) застревали в initial.
@@ -183,7 +224,7 @@ export const Layout = ({ children }: LayoutProps) => {
         <nav
           className="md:hidden fixed bottom-0 left-0 right-0 z-40 backdrop-blur-md bg-black/70 border-t border-white/10 pb-[env(safe-area-inset-bottom)]"
         >
-          <div className="grid grid-cols-4 h-16">
+          <div className={'grid h-16 ' + (isAdmin ? 'grid-cols-6' : 'grid-cols-4')}>
             <TabButton
               icon={<Home size={20} />}
               label="Главная"
@@ -201,15 +242,32 @@ export const Layout = ({ children }: LayoutProps) => {
               label="Турниры"
               active={false}
               disabled
-              hint="скоро"
+              hint={isAdmin ? undefined : 'скоро'}
             />
             <TabButton
               icon={<UserCircle size={20} />}
               label="Профиль"
               active={false}
               disabled
-              hint="скоро"
+              hint={isAdmin ? undefined : 'скоро'}
             />
+            {/* Admin-only: видны только админам (исходно были в верхней панели). */}
+            {isAdmin && (
+              <>
+                <TabButton
+                  icon={<Crown size={20} />}
+                  label="Клуб"
+                  active={location.pathname.startsWith('/club-admin')}
+                  onClick={() => navigate('/club-admin')}
+                />
+                <TabButton
+                  icon={<Shield size={20} />}
+                  label="Админ"
+                  active={location.pathname === '/admin'}
+                  onClick={() => navigate('/admin')}
+                />
+              </>
+            )}
           </div>
         </nav>
       )}
@@ -268,16 +326,16 @@ const TabButton = ({
     onClick={disabled ? undefined : onClick}
     disabled={disabled}
     className={
-      'flex flex-col items-center justify-center gap-0.5 min-h-[44px] transition-colors ' +
+      'flex flex-col items-center justify-center gap-0.5 min-h-[44px] min-w-0 px-0.5 transition-all duration-200 ' +
       (active
-        ? 'text-emerald-400'
+        ? 'text-emerald-300 [filter:drop-shadow(0_0_4px_#34d399)_drop-shadow(0_0_10px_#10b981)]'
         : disabled
         ? 'text-gray-600 cursor-not-allowed'
-        : 'text-gray-400 hover:text-white')
+        : 'text-gray-400 hover:text-emerald-200 hover:[filter:drop-shadow(0_0_5px_rgba(52,211,153,0.6))]')
     }
   >
     {icon}
-    <span className="text-[10px] font-bold tracking-wide">
+    <span className="text-[10px] font-bold tracking-wide max-w-full truncate">
       {label}
       {hint && <span className="ml-1 opacity-60">({hint})</span>}
     </span>

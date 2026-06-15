@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useDebugStore } from '../../store/debugStore';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   isOpenContext,
@@ -21,6 +22,7 @@ interface ActionPanelProps {
   presets: BetPresets;
   displayMode: ChipDisplay;
   onAction: (action: 'fold' | 'check' | 'call' | 'raise' | 'all-in', amount?: number) => void;
+  onRaiseOpenChange?: (open: boolean) => void; // раскрыт ли блок рейза — чтобы прятать кнопку меню под ним
 }
 
 // Компонент рендерится только когда мой ход (см. GameRoom.tsx).
@@ -36,13 +38,19 @@ export const ActionPanel = ({
   presets,
   displayMode,
   onAction,
+  onRaiseOpenChange,
 }: ActionPanelProps) => {
   const fmt = (n: number) => formatChips(n, bigBlind, displayMode);
+  const actionStart = useDebugStore((s) => s.actionStart);
   const callAmount = Math.max(0, currentBet - myBet);
   const canCheck = callAmount === 0;
   const minRaiseTotal = Math.max(currentBet * 2, currentBet + bigBlind);
   const maxRaiseTotal = chips + myBet;
   const [raiseAmount, setRaiseAmount] = useState(minRaiseTotal);
+  // Строковый черновик текстового поля рейза. Нужен, чтобы при очистке поле оставалось
+  // ПУСТЫМ, а не показывало навязчивый «0» (Number('')→0). raiseAmount — числовой источник
+  // правды (пресеты/слайдер/отправка); здесь только зеркалим его в строку и наоборот.
+  const [raiseText, setRaiseText] = useState(() => String(minRaiseTotal));
   const [showRaise, setShowRaise] = useState(false);
 
   // Clamp на случай если currentBet поменялся внутри одного хода (редко)
@@ -51,10 +59,44 @@ export const ActionPanel = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentBet]);
 
+  // Зеркалим число → строку, когда оно меняется НЕ из текстового поля (слайдер, пресеты,
+  // MAX/MIN, clamp). При ручном вводе строки совпадут — лишних правок/скачков курсора нет.
+  useEffect(() => {
+    setRaiseText(String(raiseAmount));
+  }, [raiseAmount]);
+
+  // Сообщаем наружу, раскрыт ли блок рейза — GameRoom прячет кнопку меню, чтобы не мешала.
+  // На размонтировании (конец хода) сбрасываем в false.
+  useEffect(() => {
+    onRaiseOpenChange?.(showRaise);
+    return () => onRaiseOpenChange?.(false);
+  }, [showRaise, onRaiseOpenChange]);
+
+  // Ввод в текстовое поле: пусто оставляем пустым (НЕ превращаем в 0); валидное число → в raiseAmount.
+  const onRaiseTextChange = (v: string) => {
+    setRaiseText(v);
+    if (v === '') return;
+    const n = Number(v);
+    if (!Number.isNaN(n)) setRaiseAmount(n);
+  };
+  // На blur нормализуем: пусто / вне диапазона → ближайшее валидное.
+  const commitRaiseText = () => {
+    const n = Number(raiseText);
+    const clamped =
+      raiseText === '' || Number.isNaN(n)
+        ? minRaiseTotal
+        : Math.min(Math.max(n, minRaiseTotal), maxRaiseTotal);
+    setRaiseAmount(clamped);
+    setRaiseText(String(clamped));
+  };
+
   const canRaise = maxRaiseTotal > currentBet;
 
+  // GGPoker-стиль: плоские «кнопки-клавиши» — мягкий градиент, тонкий верхний блик (before),
+  // нижняя «ступенька»-тень + лёгкое нажатие (active:translate-y). Цвет задаётся per-button.
   const buttonBase =
-    'flex-1 min-h-[44px] px-2 sm:px-4 py-2.5 sm:py-3 rounded-xl font-bold text-white text-sm sm:text-base shadow-lg transition-all disabled:opacity-30 disabled:cursor-not-allowed';
+    'relative flex-1 min-h-[44px] flex flex-col items-center justify-center px-1.5 sm:px-3 py-2 rounded-xl font-bold text-white leading-none transition-all disabled:opacity-30 disabled:cursor-not-allowed active:translate-y-px shadow-[0_3px_0_rgba(0,0,0,0.35),0_8px_18px_rgba(0,0,0,0.5)] ' +
+    "before:content-[''] before:absolute before:inset-x-2 before:top-1 before:h-px before:bg-white/25 before:rounded-full before:pointer-events-none";
 
   const openCtx = isOpenContext(phase, currentBet, bigBlind);
   const calcCtx = {
@@ -102,7 +144,10 @@ export const ActionPanel = ({
       setShowRaise(true);
       return;
     }
-    onAction('raise', raiseAmount);
+    // Отправляем всегда зажатое в [min, max] значение — даже если поле пустое (берём raiseAmount).
+    const amount = Math.min(Math.max(raiseAmount, minRaiseTotal), maxRaiseTotal);
+    actionStart('RAISE');
+    onAction('raise', amount);
   };
 
   return (
@@ -112,6 +157,7 @@ export const ActionPanel = ({
         {showRaise && canRaise && (
           <motion.div
             key="mobile-vslider"
+            data-noswipe
             initial={{ x: 80, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: 80, opacity: 0 }}
@@ -155,9 +201,10 @@ export const ActionPanel = ({
       </AnimatePresence>
 
       <motion.div
+        data-noswipe
         initial={{ y: 60, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-2xl px-3 sm:px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] z-30"
+        className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-2xl px-3 sm:px-4 pb-[env(safe-area-inset-bottom)] z-30"
       >
         <div className="bg-black/70 backdrop-blur-md rounded-2xl p-3 sm:p-4 border border-white/10 space-y-2 sm:space-y-3">
           <AnimatePresence initial={false}>
@@ -181,7 +228,7 @@ export const ActionPanel = ({
                         disabled={b.disabled}
                         onClick={() => applyPreset(b.amount, b.disabled)}
                         className={
-                          'flex-1 min-h-[40px] sm:min-h-[44px] px-1 sm:px-2 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-bold transition-all disabled:opacity-30 disabled:cursor-not-allowed ' +
+                          'flex-1 min-h-[40px] sm:min-h-[44px] px-1 sm:px-2 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-bold transition-all disabled:opacity-30 disabled:cursor-not-allowed ' +
                           (active
                             ? 'bg-emerald-500/30 text-white ring-2 ring-emerald-400 shadow-lg shadow-emerald-500/20'
                             : 'bg-white/5 text-white/80 ring-1 ring-white/10 hover:bg-white/10')
@@ -212,8 +259,9 @@ export const ActionPanel = ({
                     type="number"
                     min={minRaiseTotal}
                     max={maxRaiseTotal}
-                    value={raiseAmount}
-                    onChange={(e) => setRaiseAmount(Number(e.target.value))}
+                    value={raiseText}
+                    onChange={(e) => onRaiseTextChange(e.target.value)}
+                    onBlur={commitRaiseText}
                     className="w-24 bg-gray-800 border border-white/10 rounded-lg px-2 py-1 text-white text-base text-right outline-none focus:border-poker-gold"
                   />
                 </div>
@@ -222,8 +270,9 @@ export const ActionPanel = ({
                     type="number"
                     min={minRaiseTotal}
                     max={maxRaiseTotal}
-                    value={raiseAmount}
-                    onChange={(e) => setRaiseAmount(Number(e.target.value))}
+                    value={raiseText}
+                    onChange={(e) => onRaiseTextChange(e.target.value)}
+                    onBlur={commitRaiseText}
                     className="w-28 bg-gray-800 border border-white/10 rounded-lg px-2 py-1 text-white text-sm text-center outline-none focus:border-poker-gold"
                   />
                 </div>
@@ -235,30 +284,42 @@ export const ActionPanel = ({
             <motion.button
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.97 }}
-              onClick={() => onAction('fold')}
-              className={buttonBase + ' bg-gradient-to-r from-red-600 to-rose-700'}
+              onClick={() => { actionStart('FOLD'); onAction('fold'); }}
+              className={
+                buttonBase +
+                ' bg-gradient-to-b from-slate-600 to-slate-700 ring-1 ring-black/30'
+              }
             >
-              Fold
+              <span className="relative z-10 text-sm sm:text-base">Fold</span>
             </motion.button>
 
             {canCheck ? (
               <motion.button
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.97 }}
-                onClick={() => onAction('check')}
-                className={buttonBase + ' bg-gradient-to-r from-gray-600 to-gray-700'}
+                onClick={() => { actionStart('CHECK'); onAction('check'); }}
+                className={
+                  buttonBase +
+                  ' bg-gradient-to-b from-emerald-500 to-emerald-600 ring-1 ring-black/20'
+                }
               >
-                Check
+                <span className="relative z-10 text-sm sm:text-base">Check</span>
               </motion.button>
             ) : (
               <motion.button
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.97 }}
                 disabled={callAmount > chips}
-                onClick={() => onAction('call')}
-                className={buttonBase + ' bg-gradient-to-r from-blue-600 to-indigo-700'}
+                onClick={() => { actionStart('CALL'); onAction('call'); }}
+                className={
+                  buttonBase +
+                  ' bg-gradient-to-b from-emerald-500 to-emerald-600 ring-1 ring-black/20'
+                }
               >
-                Call {fmt(callAmount)}
+                <span className="relative z-10 flex flex-col items-center leading-none">
+                  <span className="text-sm sm:text-base">Call</span>
+                  <span className="text-[10px] sm:text-xs font-semibold opacity-85 mt-0.5">{fmt(callAmount)}</span>
+                </span>
               </motion.button>
             )}
 
@@ -269,21 +330,32 @@ export const ActionPanel = ({
               onClick={handleRaiseClick}
               className={
                 buttonBase +
-                ' bg-gradient-to-r from-emerald-500 to-green-600 ' +
-                (showRaise ? 'ring-2 ring-emerald-300' : '')
+                ' bg-gradient-to-b from-rose-500 to-red-600 ring-1 ring-black/20 ' +
+                (showRaise ? 'ring-2 ring-amber-300' : '')
               }
             >
-              {showRaise ? '✓ Raise ' + fmt(raiseAmount) : 'Raise'}
+              <span className="relative z-10 flex flex-col items-center leading-none">
+                <span className="text-sm sm:text-base">{showRaise ? '✓ Raise' : 'Raise'}</span>
+                {showRaise && (
+                  <span className="text-[10px] sm:text-xs font-semibold opacity-85 mt-0.5">{fmt(raiseAmount)}</span>
+                )}
+              </span>
             </motion.button>
 
             <motion.button
               whileHover={chips > 0 ? { scale: 1.03 } : {}}
               whileTap={chips > 0 ? { scale: 0.97 } : {}}
               disabled={chips === 0}
-              onClick={() => onAction('all-in')}
-              className={buttonBase + ' bg-gradient-to-r from-yellow-500 to-red-600'}
+              onClick={() => { actionStart('ALL-IN'); onAction('all-in'); }}
+              className={
+                buttonBase +
+                ' bg-gradient-to-b from-amber-400 to-amber-600 ring-1 ring-black/20'
+              }
             >
-              All-In {fmt(chips)}
+              <span className="relative z-10 flex flex-col items-center leading-none">
+                <span className="text-sm sm:text-base">All-In</span>
+                <span className="text-[10px] sm:text-xs font-semibold opacity-85 mt-0.5">{fmt(chips)}</span>
+              </span>
             </motion.button>
           </div>
         </div>

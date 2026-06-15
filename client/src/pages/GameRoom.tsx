@@ -1,30 +1,41 @@
-import { useEffect, useMemo, useState, lazy, Suspense } from 'react';
+import { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useNavigate, useParams } from 'react-router-dom';
-import { LogOut, Settings, Smile, Info, Coins } from 'lucide-react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { LogOut, Settings, Smile, Info, Coins, History, Eye } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { API_URL } from '../config/api';
 import type { GamePhase } from '@poker-room/shared';
 import { Card } from '../components/game/Card';
 import { PlayerSeat } from '../components/game/PlayerSeat';
 import { ChipStack } from '../components/game/ChipStack';
+import { CardsTurnTimer } from '../components/game/CardsTurnTimer';
 import { ActionPanel } from '../components/game/ActionPanel';
-import { BetPresetsModal } from '../components/game/BetPresetsModal';
+import { GameSettingsModal } from '../components/game/GameSettingsModal';
 import { TableInfoModal } from '../components/game/TableInfoModal';
 import { ActionBubble } from '../components/game/ActionBubble';
 import { EmojiBubble } from '../components/game/EmojiBubble';
 import { EmojiPalette } from '../components/game/EmojiPalette';
+import { MobileTableMenu } from '../components/game/MobileTableMenu';
+import { TablePills } from '../components/game/TablePills';
+import { DealAnimation } from '../components/game/DealAnimation';
+import { buildDealCards } from '../components/game/dealLayout';
+import { HandHistoryModal } from '../components/game/HandHistoryModal';
 import { MobilePlayerSeat } from '../components/game/MobilePlayerSeat';
 import { DEFAULT_DESIGN } from '../config/design';
 import { loadBetPresets, saveBetPresets } from '../config/betPresets';
 import type { BetPresets } from '../config/betPresets';
-import { loadChipDisplay, saveChipDisplay, formatChips } from '../config/chipFormat';
+import { loadChipDisplay, saveChipDisplay, formatChips, formatMoney } from '../config/chipFormat';
 import type { ChipDisplay } from '../config/chipFormat';
-import { loadCardColors, saveCardColors } from '../config/cardColors';
-import type { CardColorScheme } from '../config/cardColors';
+import { loadCardDeck, saveCardDeck } from '../config/cardDeck';
+import type { CardDeck } from '../config/cardDeck';
+import { loadGameSettings, saveGameSettings } from '../config/gameSettings';
+import type { GameSettings } from '../config/gameSettings';
+import { playSound } from '../lib/sound';
+import { triggerHaptic } from '../lib/haptic';
 import type { CardData } from '../components/game/Card';
 import type { DesignConfig } from '../config/design';
 import { useGameRoom } from '../hooks/useGameRoom';
+import { useTableSwipe } from '../hooks/useTableSwipe';
 import { useEphemeralBubbles } from '../hooks/useEphemeralBubbles';
 import { useTableClock } from '../hooks/useTableClock';
 import { useTableGeometry } from '../hooks/useTableGeometry';
@@ -35,12 +46,8 @@ const AdminTableControls = lazy(() => import('../components/admin/AdminTableCont
 
 // GameState/GamePhase — из общего контракта shared (см. импорт выше).
 
-const FELT_CLASS: Record<string, string> = {
-  green: 'bg-[radial-gradient(ellipse_at_center,_#0e5e2e_0%,_#0a3d1d_70%,_#06281a_100%)]',
-  burgundy: 'bg-[radial-gradient(ellipse_at_center,_#7a1f2e_0%,_#4b121e_70%,_#2a0a11_100%)]',
-  blue: 'bg-[radial-gradient(ellipse_at_center,_#1e3a8a_0%,_#162a63_70%,_#0c1840_100%)]',
-  black: 'bg-[radial-gradient(ellipse_at_center,_#2a2a2a_0%,_#171717_70%,_#0a0a0a_100%)]',
-};
+// Фетр стола — фиксированный (тёмно-зелёный GG). Настройки темы/сукна из админки убраны.
+const TABLE_FELT_CLASS = 'bg-[radial-gradient(ellipse_at_center,_#0e5e2e_0%,_#0a3d1d_70%,_#06281a_100%)]';
 
 const PHASE_LABEL: Record<GamePhase, string> = {
   waiting: 'Ожидание',
@@ -53,28 +60,42 @@ const PHASE_LABEL: Record<GamePhase, string> = {
 
 export const GameRoom = () => {
   const { roomId } = useParams();
+  const [searchParams] = useSearchParams();
+  // Режим наблюдателя (?observe=1): входим зрителем, без посадки за стол.
+  const observe = searchParams.get('observe') === '1';
   const navigate = useNavigate();
+  // Свайп между открытыми столами (мультитейблинг) — альтернатива клику по пилюле.
+  const swipe = useTableSwipe(roomId);
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const userChips = useAuthStore((s) => s.user?.chips);
   const isAdmin = useAuthStore((s) => s.isAdmin);
 
   // Транспорт + ядро состояния стола (подписки, реджойн, эмиттеры)
-  const { state, winners, winningCards, countdownEndsAt, sendAction, leave, sendEmoji } =
-    useGameRoom(roomId);
-  // Эфемерные пузыри действий/эмодзи над игроками
-  const { actionBubbles, emojiBubbles } = useEphemeralBubbles();
-
+  const { state, winners, winningCards, winHandName, winAmounts, countdownEndsAt, sendAction, leave, sendEmoji, setAutoTopUp, setHandHint, showCard } =
+    useGameRoom(roomId, observe);
   // Admin-peek toggle: при on сервер шлёт нам карты всех игроков + futureBoard.
   // По умолчанию off — админ играет «честно», peek включается осознанно.
   const [peekOn, setPeekOn] = useState(false);
 
   const [design, setDesign] = useState<DesignConfig>(DEFAULT_DESIGN);
   const [betPresets, setBetPresets] = useState<BetPresets>(() => loadBetPresets());
-  const [presetsModalOpen, setPresetsModalOpen] = useState(false);
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [infoModalOpen, setInfoModalOpen] = useState(false);
   const [chipDisplay, setChipDisplay] = useState<ChipDisplay>(() => loadChipDisplay());
-  const [cardColors, setCardColors] = useState<CardColorScheme>(() => loadCardColors());
+  const [cardDeck, setCardDeck] = useState<CardDeck>(() => loadCardDeck());
+  const [gameSettings, setGameSettings] = useState<GameSettings>(() => loadGameSettings());
+  // Эфемерные пузыри действий/эмодзи над игроками (после gameSettings — нужен soundEnabled)
+  const { actionBubbles, emojiBubbles, clearPlayerBubbles } = useEphemeralBubbles(gameSettings.soundEnabled);
   const [emojiPaletteOpen, setEmojiPaletteOpen] = useState(false);
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
+  // Раскрыт ли блок рейза в ActionPanel — чтобы прятать кнопку меню стола под ним (mobile).
+  const [raiseOpen, setRaiseOpen] = useState(false);
+
+  // Админ-наблюдатель: сервер уже включил peek (шлёт карты соперников). Отражаем это в UI
+  // сразу — рендер открытых карт завязан на локальный peekOn. Кнопка-глаз остаётся выключателем.
+  useEffect(() => {
+    if (observe && isAdmin) setPeekOn(true);
+  }, [observe, isAdmin]);
 
   useEffect(() => {
     fetch(API_URL + '/design')
@@ -84,11 +105,20 @@ export const GameRoom = () => {
   }, []);
 
   // Производные секунды/проценты таймеров (единый тикер now)
-  const { countdownSec, turnSecondsLeft, timebankSecondsLeft, turnPercent, timebankPercent } =
+  const { turnSecondsLeft, timebankSecondsLeft, turnPercent, timebankPercent } =
     useTableClock(state, countdownEndsAt);
 
   const myId = userId;
   const me = useMemo(() => state?.players.find((p) => p.id === myId) ?? null, [state, myId]);
+  // Наблюдатель: состояние есть, но меня нет среди игроков (не сижу за столом).
+  const isObserver = !!state && !me;
+  // Можно ли мне добровольно показать карты (тап после раздачи): окно showdown, есть карты, и
+  // они ещё НЕ раскрыты автоматически — т.е. я сфолдил ИЛИ выиграл без вскрытия (нет имени комбинации).
+  const canShowCards =
+    !!me &&
+    state?.phase === 'showdown' &&
+    me.cards.length === 2 &&
+    (me.isFolded || (!!winners && !!myId && winners.includes(myId) && !winHandName));
   const currentPlayerId = useMemo(
     () => (state ? state.players[state.currentPlayerIndex]?.id ?? null : null),
     [state],
@@ -118,14 +148,80 @@ export const GameRoom = () => {
     state.phase !== 'waiting' &&
     state.phase !== 'showdown';
 
-  const feltCls = FELT_CLASS[design.tableFelt] || FELT_CLASS.green;
-  // Фирменная тема стола — оборачивает felt/rail/watermark/lighting в один пресет.
-  // CSS-классы theme-classic|luxe|wood определены в client/src/index.css.
-  const themeCls = 'theme-' + (design.tableTheme || 'classic');
+  // Сигнал «твой ход»: звук + вибрация на фронте появления хода (по настройкам игры).
+  const prevMyTurn = useRef(false);
+  useEffect(() => {
+    if (isMyTurn && !prevMyTurn.current) {
+      if (gameSettings.soundEnabled) playSound('turn');
+      if (gameSettings.vibrationEnabled) triggerHaptic('medium');
+    }
+    prevMyTurn.current = isMyTurn;
+  }, [isMyTurn, gameSettings.soundEnabled, gameSettings.vibrationEnabled]);
+
+  // Преференция авто-докупки → серверу: при посадке (me появился) и при смене настроек.
+  // Сервер применит её между раздачами; единицы — в ББ (на сервере умножатся на bigBlind).
+  const at = gameSettings.autoTopUp;
+  useEffect(() => {
+    if (!me?.id) return;
+    setAutoTopUp({ enabled: at.enabled, thresholdBb: at.thresholdBB, targetBb: at.targetBB });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me?.id, at.enabled, at.thresholdBB, at.targetBB]);
+
+  // Тумблер «Подсказка комбинации» → серверу (при посадке и смене настройки). Сервер начнёт/
+  // перестанет считать equity и слать мою комбинацию + шанс на выигрыш.
+  useEffect(() => {
+    if (!me?.id) return;
+    setHandHint(gameSettings.handHintEnabled);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me?.id, gameSettings.handHintEnabled]);
+
+  // Вид стола зашит: десктоп — theme-classic + зелёный фетр; мобила — theme-clubgg (см. JSX ниже).
+  const feltCls = TABLE_FELT_CLASS;
+  const themeCls = 'theme-classic';
   const isWinningCard = (c: CardData) =>
     winningCards.some((w) => w.suit === c.suit && w.rank === c.rank);
   const showHighlight = state?.phase === 'showdown' && winningCards.length > 0;
   const timebankEnabled = !!state?.timebankEnabled;
+  // Умный фокус: во время хода подсвечиваем активного игрока и приглушаем остальных оппонентов.
+  const smartFocus =
+    gameSettings.smartFocusEnabled &&
+    state?.phase !== 'waiting' &&
+    state?.phase !== 'showdown' &&
+    currentPlayerId != null;
+
+  // Анимация раздачи (§10.1): запускается при входе в новую раздачу (любая фаза → preflop).
+  const prevPhaseRef = useRef<GamePhase | null>(null);
+  const [dealId, setDealId] = useState(0);
+  const [dealing, setDealing] = useState(false);
+  useEffect(() => {
+    const cur = state?.phase ?? null;
+    const prev = prevPhaseRef.current;
+    prevPhaseRef.current = cur;
+    if (cur === 'preflop' && prev && prev !== 'preflop') {
+      setDealId((k) => k + 1);
+      setDealing(true);
+      if (gameSettings.soundEnabled) playSound('deal');
+    } else if (cur === 'flop' || cur === 'turn' || cur === 'river') {
+      if (prev && prev !== cur && gameSettings.soundEnabled) playSound('deal');
+    }
+  }, [state?.phase, gameSettings.soundEnabled]);
+
+  // Перед показом WIN-бейджа убираем пузыри (fold/call/raise) у победителей.
+  useEffect(() => {
+    if (winners && winners.length > 0) clearPlayerBubbles(winners);
+  }, [winners]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // «Ждём второго игрока» показываем только если в waiting-фазе пробыли >400ms —
+  // иначе мелькает при быстрой смене waiting→preflop между раздачами.
+  const [stableWaiting, setStableWaiting] = useState(false);
+  useEffect(() => {
+    if (state?.phase !== 'waiting' || countdownEndsAt !== null) {
+      setStableWaiting(false);
+      return;
+    }
+    const t = setTimeout(() => setStableWaiting(true), 400);
+    return () => clearTimeout(t);
+  }, [state?.phase, countdownEndsAt]);
 
   if (!state) {
     return (
@@ -136,8 +232,36 @@ export const GameRoom = () => {
   }
 
   return (
-    <div className={'gameroom-root-mobile-clubgg relative w-full h-[100dvh] md:h-[calc(100dvh-4rem)] overflow-hidden ' + feltCls + ' ' + themeCls}>
-      <div className="absolute top-4 left-4 right-4 flex justify-between items-center z-20">
+    <div
+      className={'gameroom-root-mobile-clubgg relative w-full h-[100dvh] md:h-[calc(100dvh-4rem)] overflow-hidden ' + feltCls + ' ' + themeCls}
+      onTouchStart={swipe.onTouchStart}
+      onTouchEnd={swipe.onTouchEnd}
+    >
+      {/* Мультитейблинг: пилюли открытых столов (мои карты + подсветка хода) + «+». Видно на всех таргетах. */}
+      <div className="absolute top-3 left-3 z-30">
+        <TablePills />
+      </div>
+
+      {/* Баннер наблюдателя: вход зрителем (мест нет / просто смотрю). Карты соперников
+          скрыты; админу — видны (сервер шлёт peek). Кнопка выхода — в баре/нижнем меню. */}
+      {isObserver && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/70 backdrop-blur border border-white/15 text-white/90 text-xs font-bold pointer-events-none whitespace-nowrap">
+          <Eye size={13} className="text-emerald-300" />
+          Вы наблюдаете{isAdmin ? ' · карты видны' : ''}
+        </div>
+      )}
+
+      {/* История раздач — иконка top-right (на mobile; на desktop она в верхнем баре). */}
+      <button
+        onClick={() => setHistoryModalOpen(true)}
+        title="История раздач"
+        className="md:hidden absolute top-3 right-3 z-30 flex items-center justify-center w-9 h-9 rounded-xl bg-black/40 text-white/80 border border-white/10"
+      >
+        <History size={18} />
+      </button>
+
+      {/* Верхний бар — только desktop. На mobile/TWA кнопки уехали в нижнее меню (MobileTableMenu). */}
+      <div className="absolute top-4 left-4 right-4 hidden md:flex justify-between items-center z-20">
         <div className="flex items-center gap-2 max-w-[60vw] md:max-w-none">
           {/* Phase и roomName перенесены в центр стола (для desktop+mobile).
               На mobile Layout-navbar скрыта, поэтому balance + Admin-кнопка показаны здесь (md:hidden).
@@ -147,7 +271,7 @@ export const GameRoom = () => {
               title="Свободный банкролл"
               className="md:hidden inline-flex items-center gap-1 px-2 py-1 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-bold whitespace-nowrap backdrop-blur"
             >
-              <Coins size={12} /> {userChips}
+              <Coins size={12} /> {formatMoney(userChips)}
             </span>
           )}
           {isAdmin && (
@@ -157,6 +281,13 @@ export const GameRoom = () => {
           )}
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setHistoryModalOpen(true)}
+            title="История раздач"
+            className="flex items-center justify-center w-9 h-9 rounded-xl bg-black/40 hover:bg-black/60 text-white/80 hover:text-white border border-white/10"
+          >
+            <History size={16} />
+          </button>
           <button
             onClick={() => setInfoModalOpen(true)}
             title="Информация о столе"
@@ -177,8 +308,8 @@ export const GameRoom = () => {
             <Smile size={16} />
           </button>
           <button
-            onClick={() => setPresetsModalOpen(true)}
-            title="Настроить кнопки ставок"
+            onClick={() => setSettingsModalOpen(true)}
+            title="Настройки игры"
             className="flex items-center justify-center w-9 h-9 rounded-xl bg-black/40 hover:bg-black/60 text-white/80 hover:text-white border border-white/10"
           >
             <Settings size={16} />
@@ -200,11 +331,20 @@ export const GameRoom = () => {
         onPick={sendEmoji}
       />
 
-      {/* MOBILE: theme effects — spotlight + watermark (rail/seats остаются desktop-only). */}
-      <div className="md:hidden poker-spotlight absolute inset-0 pointer-events-none z-0" />
-      <div className="md:hidden poker-watermark absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none select-none z-0">
-        SK
-      </div>
+      {/* Mobile/TWA: нижнее выезжающее меню стола (свайп снизу-вверх / ручка). */}
+      <MobileTableMenu
+        userChips={userChips}
+        isAdmin={isAdmin}
+        roomId={roomId}
+        peekOn={peekOn}
+        setPeekOn={setPeekOn}
+        onOpenAdmin={() => navigate('/admin')}
+        onOpenInfo={() => setInfoModalOpen(true)}
+        onToggleEmoji={() => setEmojiPaletteOpen((v) => !v)}
+        onOpenSettings={() => setSettingsModalOpen(true)}
+        onLeave={leave}
+        hideTrigger={raiseOpen}
+      />
 
       {/* Desktop: овальный стол. Обёртка ограничена снизу (bottom-56), чтобы seat-позиции
           в % считались относительно зоны над ActionPanel'ом — иначе «я»-seat на top=84%
@@ -231,7 +371,7 @@ export const GameRoom = () => {
             {state.roomName}
           </div>
           <div className="text-white/30 text-[11px] font-bold uppercase tracking-widest -mt-1">
-            NLH: {state.smallBlind}/{state.bigBlind}
+            {state.format === 'shortdeck' ? 'Шорт-дэк' : 'NLH'}: {formatMoney(state.smallBlind)}/{formatMoney(state.bigBlind)}
           </div>
           <motion.div
             key={state.pot}
@@ -247,9 +387,9 @@ export const GameRoom = () => {
               <Card
                 key={i}
                 card={c}
-                faceStyle={design.cardFaceStyle}
+                faceStyle="classic"
                 backStyle={design.cardBackStyle}
-                colorScheme={cardColors}
+                deck={cardDeck}
                 size="md"
                 delay={i * 0.1}
                 highlight={showHighlight && isWinningCard(c)}
@@ -263,9 +403,9 @@ export const GameRoom = () => {
                 <div key={'fut-' + i} className="opacity-40 ring-2 ring-red-500/50 rounded-md">
                   <Card
                     card={c}
-                    faceStyle={design.cardFaceStyle}
+                    faceStyle="classic"
                     backStyle={design.cardBackStyle}
-                    colorScheme={cardColors}
+                    deck={cardDeck}
                     size="md"
                     delay={0}
                   />
@@ -304,7 +444,6 @@ export const GameRoom = () => {
                 amount={player.currentBet}
                 bigBlind={state.bigBlind}
                 displayMode={chipDisplay}
-                chipStyle={design.chipStyle}
               />
             </div>
           );
@@ -320,18 +459,18 @@ export const GameRoom = () => {
           const isBB = player.id === bbPlayerId;
           const role = isDealer ? 'D' : isSB ? 'SB' : isBB ? 'BB' : null;
           if (!role) return null;
-          const grad = isDealer
-            ? 'from-orange-400 to-orange-600 ring-orange-900/40'
+          // Дилер — белая «шайба» (как настоящий дилерский баттон), крупнее. SB/BB — компактные жетоны.
+          const badgeCls = isDealer
+            ? 'min-w-[26px] h-[26px] text-[12px] bg-white text-gray-900 ring-2 ring-gray-300/80'
             : isSB
-            ? 'from-sky-400 to-sky-600 ring-sky-900/40'
-            : 'from-purple-400 to-purple-600 ring-purple-900/40';
+            ? 'min-w-[22px] h-[22px] text-[10px] bg-sky-500 text-white ring-1 ring-sky-900/40'
+            : 'min-w-[22px] h-[22px] text-[10px] bg-purple-500 text-white ring-1 ring-purple-900/40';
           return (
             <div
               key={'role-' + player.id}
               className={
-                'absolute z-20 min-w-[22px] h-[22px] px-1 rounded-full bg-gradient-to-br ' +
-                grad +
-                ' text-white text-[10px] font-black flex items-center justify-center shadow ring-1'
+                'absolute z-20 px-1 rounded-full font-black flex items-center justify-center shadow-md pointer-events-none ' +
+                badgeCls
               }
               style={{
                 left: dealerLeft + '%',
@@ -347,13 +486,21 @@ export const GameRoom = () => {
         {seatPositions.map(({ player, left, top }) => {
           const ab = actionBubbles[player.id];
           const eb = emojiBubbles[player.id];
+          const focusTarget = player.id === currentPlayerId;
           return (
             <div
               key={player.id}
               className="absolute z-10 -translate-x-1/2 -translate-y-1/2"
               style={{ left: left + '%', top: top + '%' }}
             >
-              <div className="relative">
+              <div
+                className="relative transition-[transform,opacity] duration-300"
+                style={{
+                  transform: smartFocus && focusTarget ? 'scale(1.08)' : 'scale(1)',
+                  opacity: smartFocus && !focusTarget && player.id !== myId ? 0.5 : 1,
+                  zIndex: smartFocus && focusTarget ? 1 : undefined,
+                }}
+              >
                 {/* Bubbles над аватаром */}
                 {(ab || eb) && (
                   <div className="absolute -top-12 left-1/2 -translate-x-1/2 flex flex-col items-center gap-0.5 pointer-events-none z-20">
@@ -382,12 +529,15 @@ export const GameRoom = () => {
 
                   isWinner={!!winners && winners.includes(player.id)}
                   showHand={player.id === myId || state.phase === 'showdown' || peekOn}
-                  faceStyle={design.cardFaceStyle}
+                  showHint={gameSettings.handHintEnabled}
+                  faceStyle="classic"
                   backStyle={design.cardBackStyle}
-                  cardColors={cardColors}
+                  deck={cardDeck}
                   bigBlind={state.bigBlind}
                   displayMode={chipDisplay}
                   winningCards={showHighlight ? winningCards : undefined}
+                  winAmount={winners?.includes(player.id) ? winAmounts[player.id] : undefined}
+                  handName={winners?.includes(player.id) ? winHandName : undefined}
                   timebankEnabled={timebankEnabled}
                   turnSecondsLeft={
                     player.id === currentPlayerId &&
@@ -427,23 +577,39 @@ export const GameRoom = () => {
             </div>
           );
         })}
+
+        {/* Анимация раздачи — карты от дилера к местам (desktop-слой) */}
+        {dealing && (
+          <DealAnimation
+            key={'deal-d-' + dealId}
+            cards={buildDealCards(seatPositions, dealerPlayerId)}
+            backStyle={design.cardBackStyle}
+            onDone={() => setDealing(false)}
+          />
+        )}
       </div>
 
       {/* MOBILE: овальный стол с seats по периметру (плана §1-§4 + design-review priorities).
-          theme-clubgg на mobile-блоке принудительно — игнорируем design.tableTheme из админки.
-          Расширил до inset-x-0 top-12 bottom-[128px] (был inset-x-1/top-14/bottom-[140px]) —
-          овал почти касается краёв (Round 3 review приоритет 1). */}
-      <div className="md:hidden theme-clubgg absolute inset-x-4 top-28 bottom-[160px] flex items-center justify-center pointer-events-none">
-        <div className="poker-oval-rail relative pointer-events-auto" style={{ width: '100%', height: '100%' }}>
-          {/* Layer 0: theme spotlight (overlay) */}
+          theme-clubgg на mobile-блоке принудительно (вид стола зашит; тема/сукно из админки убраны).
+          Геометрия под эталон ClubGG (бок 7% / верх 18% / низ 12%) — те же пропорции, под которые
+          подобран border-radius стадиона 50%/29% в .theme-clubgg .poker-oval-rail (index.css). */}
+      <div className="md:hidden theme-clubgg mobile-table-felt absolute inset-x-[4%] top-[11%] bottom-[12%] pointer-events-none" style={{ perspective: '750px' }}>
+        {/* Фетр/рейл — наклонённый фоновый слой (perspective+rotateX), как у ClubGG: верх уже / низ шире.
+            Контент (банк, борд, плашки) сюда НЕ кладём — иначе перекосит; он плоским слоем ниже. */}
+        <div className="poker-oval-rail pointer-events-none" style={{ position: 'absolute', inset: 0, transform: 'rotateX(24deg)' }}>
+          {/* spotlight на поверхности стола — наклоняется вместе с фетром */}
           <div className="poker-spotlight absolute inset-0 pointer-events-none rounded-[50%]" />
+        </div>
+
+        {/* Контент — плоский слой поверх наклонённого стола */}
+        <div className="absolute inset-0 pointer-events-none">
 
           {/* Layer 1: центр — watermark + NLH-pill + roomName сверху, pot-plate ПОД данными стола
               (иерархия "данные → банк → борд"), community-cards внизу. */}
           <div className="absolute inset-0 flex flex-col items-center justify-start pt-[16%] gap-2 pointer-events-none z-10 px-4">
-            <div className="poker-watermark poker-watermark--center select-none mt-2">SK</div>
-            <div className="bg-emerald-600 text-white text-[13px] font-bold uppercase px-4 py-1 rounded-full tracking-widest shadow">
-              NLH {state.smallBlind}/{state.bigBlind}
+            <div className="poker-watermark poker-watermark--center select-none mt-2">POKER HUB</div>
+            <div className="text-emerald-300 text-[13px] font-bold uppercase tracking-widest [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]">
+              {state.format === 'shortdeck' ? 'Шорт-дэк' : 'NLH'} {formatMoney(state.smallBlind)}/{formatMoney(state.bigBlind)}
             </div>
             <div className="text-white/40 text-[10px] font-semibold tracking-wide max-w-[80%] truncate text-center">
               {state.roomName}
@@ -460,9 +626,9 @@ export const GameRoom = () => {
                   <Card
                     key={i}
                     card={c}
-                    faceStyle={design.cardFaceStyle}
+                    faceStyle="classic"
                     backStyle={design.cardBackStyle}
-                    colorScheme={cardColors}
+                    deck={cardDeck}
                     size="sm"
                     delay={i * 0.1}
                     highlight={showHighlight && isWinningCard(c)}
@@ -475,9 +641,9 @@ export const GameRoom = () => {
                     <div key={'fut-' + i} className="opacity-40 ring-2 ring-red-500/50 rounded-md">
                       <Card
                         card={c}
-                        faceStyle={design.cardFaceStyle}
+                        faceStyle="classic"
                         backStyle={design.cardBackStyle}
-                        colorScheme={cardColors}
+                        deck={cardDeck}
                         size="sm"
                         delay={0}
                       />
@@ -495,8 +661,15 @@ export const GameRoom = () => {
             return (
               <div
                 key={player.id}
-                className="absolute -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-auto"
-                style={{ left: left + '%', top: top + '%' }}
+                className="absolute z-20 pointer-events-auto transition-[transform,opacity] duration-300"
+                style={{
+                  left: left + '%',
+                  top: top + '%',
+                  transform:
+                    'translate(-50%, -50%)' + (smartFocus && isCurr ? ' scale(1.1)' : ' scale(1)'),
+                  opacity: smartFocus && !isCurr && player.id !== myId ? 0.5 : 1,
+                  zIndex: smartFocus && isCurr ? 30 : 20,
+                }}
               >
                 <MobilePlayerSeat
                   player={player}
@@ -515,20 +688,22 @@ export const GameRoom = () => {
                     // Админ-peek: видим карты соперников
                     (peekOn && player.cards.length > 0)
                   }
-                  faceStyle={design.cardFaceStyle}
+                  faceStyle="classic"
                   backStyle={design.cardBackStyle}
-                  cardColors={cardColors}
+                  deck={cardDeck}
                   bigBlind={state.bigBlind}
                   displayMode={chipDisplay}
                   turnSecondsLeft={isCurr ? turnSecondsLeft : null}
                   turnPercent={isCurr ? turnPercent : null}
                   timebankSecondsLeft={isCurr ? timebankSecondsLeft : null}
                   timebankPercent={isCurr ? timebankPercent : null}
-                  timebankEnabled={timebankEnabled}
                   actionBubble={actionBubbles[player.id]}
                   emojiBubble={emojiBubbles[player.id]}
                   winningCards={winningCards}
+                  winAmount={winners?.includes(player.id) ? winAmounts[player.id] : undefined}
+                  handName={winners?.includes(player.id) ? winHandName : undefined}
                   isAdminPeek={peekOn && state.phase !== 'showdown'}
+                  showHint={gameSettings.handHintEnabled}
                 />
               </div>
             );
@@ -546,30 +721,30 @@ export const GameRoom = () => {
                   amount={player.currentBet}
                   bigBlind={state.bigBlind}
                   displayMode={chipDisplay}
-                  chipStyle={design.chipStyle}
                 />
               </div>
             ) : null,
           )}
 
           {/* Layer 4: D/SB/BB-бейдж прижат к плашке со стороны центра стола (10% пути от seat) */}
+          {/* Мой бейдж — не здесь, а в fixed-блоке моих карт (см. ниже). */}
           {state.phase !== 'waiting' && mobileSeatPositions.map(({ player, dealerLeft, dealerTop }) => {
             const isDealer = player.id === dealerPlayerId;
             const isSB = player.id === sbPlayerId && player.id !== dealerPlayerId;
             const isBB = player.id === bbPlayerId;
             const role = isDealer ? 'D' : isSB ? 'SB' : isBB ? 'BB' : null;
-            if (!role) return null;
-            const cls =
-              role === 'D'
-                ? 'bg-white text-black'
-                : role === 'SB'
-                ? 'bg-sky-500 text-white'
-                : 'bg-purple-500 text-white';
+            if (!role || player.id === myId) return null;
+            // Дилер — белая «шайба» (крупнее, заметна на фетре). SB/BB — компактные цветные жетоны.
+            const cls = isDealer
+              ? 'min-w-[22px] h-[22px] text-[11px] bg-white text-gray-900 ring-2 ring-gray-300/80'
+              : isSB
+              ? 'min-w-[19px] h-[19px] text-[9px] bg-sky-500 text-white ring-1 ring-black/30'
+              : 'min-w-[19px] h-[19px] text-[9px] bg-purple-500 text-white ring-1 ring-black/30';
             return (
               <div
                 key={'role-' + player.id}
                 className={
-                  'absolute -translate-x-1/2 -translate-y-1/2 z-10 min-w-[20px] h-5 px-1 rounded-full text-[9px] font-black flex items-center justify-center shadow-lg ring-1 ring-black/30 pointer-events-none ' +
+                  'absolute -translate-x-1/2 -translate-y-1/2 z-20 px-1 rounded-full font-black flex items-center justify-center shadow-lg pointer-events-none ' +
                   cls
                 }
                 style={{ left: dealerLeft + '%', top: dealerTop + '%' }}
@@ -578,26 +753,22 @@ export const GameRoom = () => {
               </div>
             );
           })}
+
+          {/* Анимация раздачи — карты от дилера к местам (mobile-слой) */}
+          {dealing && (
+            <DealAnimation
+              key={'deal-m-' + dealId}
+              cards={buildDealCards(mobileSeatPositions, dealerPlayerId)}
+              backStyle={design.cardBackStyle}
+              onDone={() => setDealing(false)}
+            />
+          )}
         </div>
       </div>
 
 
       <AnimatePresence>
-        {state.phase === 'waiting' && countdownEndsAt !== null && countdownSec > 0 && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.8 }}
-            className="absolute top-20 left-1/2 -translate-x-1/2 z-20"
-          >
-            <div className="bg-black/70 backdrop-blur px-6 py-3 rounded-2xl border border-poker-gold/40 text-center">
-              <div className="text-poker-gold text-xs uppercase tracking-widest">Старт через</div>
-              <div className="text-5xl font-black text-white">{countdownSec}</div>
-            </div>
-          </motion.div>
-        )}
-
-        {state.phase === 'waiting' && countdownEndsAt === null && (
+        {stableWaiting && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -614,19 +785,104 @@ export const GameRoom = () => {
           Закрытый ActionPanel ~104px от низа viewport (button 56 + p-3 padding + safe-area).
           Кладём cards bottom-[108px] чтобы низ карт сидел чуть выше top-edge action-box.
           На showdown — не рендерим (showdown-карты уже в MobilePlayerSeat overlay'е). */}
-      {me && me.cards.length > 0 && state.phase !== 'showdown' && (
-        <div className="md:hidden fixed bottom-[82px] left-1/2 -translate-x-1/2 z-30 flex gap-1.5 pointer-events-none scale-[0.81] origin-bottom">
-          {me.cards.map((c, i) => (
-            <Card
-              key={i}
-              card={c}
-              faceStyle={design.cardFaceStyle}
-              backStyle={design.cardBackStyle}
-              colorScheme={cardColors}
-              size="lg"
-              delay={i * 0.05}
-            />
-          ))}
+      {me && state.phase !== 'showdown' && (
+        <div className="md:hidden fixed bottom-[82px] left-1/2 -translate-x-1/2 z-30 flex flex-col items-center pointer-events-none scale-[0.69] origin-bottom">
+          {/* Мой стек — над картами (перенесён сюда из плашки seat'а) */}
+          <span className="mb-1.5 px-3 py-0.5 rounded-full bg-black/70 backdrop-blur border border-white/15 text-amber-300 text-xl font-black tabular-nums whitespace-nowrap">
+            {formatChips(me.chips, state.bigBlind, chipDisplay)}
+          </span>
+          {me.cards.length > 0 && (
+            <div className="relative flex gap-1.5">
+              {me.cards.map((c, i) => (
+                <Card
+                  key={i}
+                  card={c}
+                  faceStyle="classic"
+                  backStyle={design.cardBackStyle}
+                  deck={cardDeck}
+                  size="lg"
+                  delay={i * 0.05}
+                />
+              ))}
+              {/* Таймер своего хода — рамка вокруг моих карт (аватарки нет; см. CardsTurnTimer). */}
+              {isMyTurn && timebankSecondsLeft != null && timebankPercent != null ? (
+                <CardsTurnTimer percent={timebankPercent} secondsLeft={timebankSecondsLeft} variant="timebank" />
+              ) : isMyTurn && turnSecondsLeft != null && turnPercent != null ? (
+                <CardsTurnTimer
+                  percent={turnPercent}
+                  secondsLeft={turnSecondsLeft}
+                  variant={turnSecondsLeft <= 5 ? 'turn-urgent' : 'turn'}
+                />
+              ) : null}
+              {/* D/SB/BB — в правом верхнем углу моих карт */}
+              {(() => {
+                const role =
+                  myId === dealerPlayerId ? 'D'
+                  : myId === sbPlayerId && myId !== dealerPlayerId ? 'SB'
+                  : myId === bbPlayerId ? 'BB'
+                  : null;
+                if (!role) return null;
+                const cls =
+                  role === 'D'
+                    ? 'bg-white text-gray-900 ring-2 ring-gray-300/80 min-w-[33px] h-[33px] text-[17px]'
+                    : role === 'SB'
+                    ? 'bg-sky-500 text-white ring-1 ring-black/30 min-w-[29px] h-[29px] text-[14px]'
+                    : 'bg-purple-500 text-white ring-1 ring-black/30 min-w-[29px] h-[29px] text-[14px]';
+                return (
+                  <div
+                    className={'absolute -top-3 -right-3 z-10 px-1 rounded-full font-black flex items-center justify-center shadow-lg pointer-events-none ' + cls}
+                  >
+                    {role}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+          {/* Подсказка под моими картами: текущая комбинация + шанс на выигрыш (по тумблеру). */}
+          {gameSettings.handHintEnabled && me.handHint && (
+            <span className="mt-1.5 px-3 py-0.5 rounded-full bg-black/75 backdrop-blur border border-emerald-400/30 text-emerald-300 text-[15px] font-bold whitespace-nowrap">
+              {me.handHint}
+              {typeof me.winChance === 'number' ? ' · ' + me.winChance + '%' : ''}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Добровольный показ своих карт после раздачи: тап по карте → видна всем. Появляется
+          только если карты ещё не раскрыты (сфолдил / выиграл без вскрытия). 5-сек окно showdown. */}
+      {canShowCards && me && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-1.5 pointer-events-auto">
+          <span className="text-white/75 text-[11px] font-semibold [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]">
+            Показать карту сопернику
+          </span>
+          <div className="flex gap-2">
+            {me.cards.map((c, i) => {
+              const shown = !!me.revealedCards?.includes(i);
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  disabled={shown}
+                  onClick={() => showCard(i)}
+                  className={
+                    'relative rounded-lg transition-transform ' +
+                    (shown ? 'ring-2 ring-emerald-400' : 'hover:-translate-y-1 active:translate-y-0')
+                  }
+                >
+                  <Card card={c} faceStyle="classic" backStyle={design.cardBackStyle} deck={cardDeck} size="md" />
+                  {shown ? (
+                    <span className="absolute -top-2 -right-2 w-4 h-4 rounded-full bg-emerald-500 text-white text-[10px] font-black flex items-center justify-center shadow">
+                      ✓
+                    </span>
+                  ) : (
+                    <span className="absolute inset-x-0 -bottom-4 text-center text-emerald-300 text-[9px] font-bold">
+                      показать
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -641,8 +897,18 @@ export const GameRoom = () => {
           presets={betPresets}
           displayMode={chipDisplay}
           onAction={sendAction}
+          onRaiseOpenChange={setRaiseOpen}
         />
       )}
+
+      <HandHistoryModal
+        open={historyModalOpen}
+        onClose={() => setHistoryModalOpen(false)}
+        myId={myId}
+        chipDisplay={chipDisplay}
+        cardDeck={cardDeck}
+        cardBackStyle={design.cardBackStyle}
+      />
 
       {roomId && (
         <TableInfoModal
@@ -655,19 +921,22 @@ export const GameRoom = () => {
         />
       )}
 
-      <BetPresetsModal
-        open={presetsModalOpen}
-        initial={betPresets}
+      <GameSettingsModal
+        open={settingsModalOpen}
+        initialPresets={betPresets}
         initialChipDisplay={chipDisplay}
-        initialCardColors={cardColors}
-        onClose={() => setPresetsModalOpen(false)}
-        onSave={(next, nextDisplay, nextColors) => {
-          setBetPresets(next);
-          saveBetPresets(next);
+        initialDeck={cardDeck}
+        initialSettings={gameSettings}
+        onClose={() => setSettingsModalOpen(false)}
+        onSave={({ presets, chipDisplay: nextDisplay, deck: nextDeck, settings: nextSettings }) => {
+          setBetPresets(presets);
+          saveBetPresets(presets);
           setChipDisplay(nextDisplay);
           saveChipDisplay(nextDisplay);
-          setCardColors(nextColors);
-          saveCardColors(nextColors);
+          setCardDeck(nextDeck);
+          saveCardDeck(nextDeck);
+          setGameSettings(nextSettings);
+          saveGameSettings(nextSettings);
         }}
       />
     </div>

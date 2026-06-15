@@ -12,7 +12,7 @@ import ReactNiceAvatar from 'react-nice-avatar';
 import { avatarConfig } from '../../utils/avatar';
 import { formatChips } from '../../config/chipFormat';
 import type { ChipDisplay } from '../../config/chipFormat';
-import type { CardColorScheme } from '../../config/cardColors';
+import type { CardDeck } from '../../config/cardDeck';
 import { TurnProgressRing } from './TurnProgressRing';
 import { ActionBubble } from './ActionBubble';
 import { EmojiBubble } from './EmojiBubble';
@@ -42,21 +42,23 @@ interface MobilePlayerSeatProps {
   showHand: boolean; // true на showdown или peekOn — рисуем лицом, иначе рубашкой
   faceStyle: string;
   backStyle: string;
-  cardColors?: CardColorScheme;
+  deck?: CardDeck;
   bigBlind: number;
   displayMode: ChipDisplay;
   turnSecondsLeft?: number | null;
   turnPercent?: number | null;
   timebankSecondsLeft?: number | null;
   timebankPercent?: number | null;
-  timebankEnabled?: boolean;
   actionBubble?: ActionBubbleData;
   emojiBubble?: EmojiBubbleData;
   winningCards?: CardData[]; // на showdown — для подсветки winning-карт
+  winAmount?: number; // сколько выиграл (showdown) — показываем «+сумма»
+  handName?: string | null; // имя победной комбинации (showdown) — подпись под плашкой
   isAdminPeek?: boolean; // true когда showHand включён через admin-peek (НЕ через showdown).
                          // Влияет на размер overlay-карт и скрытие дубля моих карт.
   // Если true — D/SB/BB-бейдж внутри плашки не рисуется (родитель рендерит «на столе»).
   hideRoleBadge?: boolean;
+  showHint?: boolean; // показывать подсказку комбинации у чужих аватаров (своя — в блоке карт GameRoom)
 }
 
 const MobilePlayerSeatImpl = ({
@@ -71,19 +73,21 @@ const MobilePlayerSeatImpl = ({
   showHand,
   faceStyle,
   backStyle,
-  cardColors,
+  deck,
   bigBlind,
   displayMode,
   turnSecondsLeft,
   turnPercent,
   timebankSecondsLeft,
   timebankPercent,
-  timebankEnabled,
   actionBubble,
   emojiBubble,
   winningCards,
+  winAmount,
+  handName,
   isAdminPeek,
   hideRoleBadge,
+  showHint,
 }: MobilePlayerSeatProps) => {
   const grad = avatarColor(player.username);
   const avatarPx = isMe ? 48 : 40;
@@ -129,11 +133,8 @@ const MobilePlayerSeatImpl = ({
         </div>
       )}
 
-      {/* Overlay face-up карт центрирован на аватаре. Размер sm — компактно,
-          не перекрывает соседние плашки на 9-max столе. Winning-пятёрка
-          поднимается lift'ом (без свечения), остальные dim'ятся на showdown.
-          Для меня в admin-peek overlay не рендерим — мои карты уже видны в bottom-блоке. */}
-      {hasCardsInHand && !player.isFolded && showHand && !(isAdminPeek && isMe) && (
+      {/* face-up overlay только для себя (isMe) на showdown — карты противника веером в player-avatar-wrap */}
+      {isMe && hasCardsInHand && !player.isFolded && showHand && !isAdminPeek && (
         <div
           className="absolute z-30 flex gap-0.5 pointer-events-none"
           style={{
@@ -155,7 +156,7 @@ const MobilePlayerSeatImpl = ({
                 card={c}
                 faceStyle={faceStyle}
                 backStyle={backStyle}
-                colorScheme={cardColors}
+                deck={deck}
                 size="sm"
                 delay={i * 0.05}
                 highlight={highlight}
@@ -169,7 +170,9 @@ const MobilePlayerSeatImpl = ({
       {/* ME normal-play карты НЕ рендерятся внутри seat — они вынесены в GameRoom
           как fixed-блок над ActionPanel'ом (anchor to top edge of action box). */}
 
-      {/* Аватар */}
+      {/* Аватар — для «меня» собственную аватарку не показываем (видеть её незачем);
+          таймер своего хода теперь рисуется рамкой вокруг моих карт (см. GameRoom). */}
+      {!isMe && (
       <div className="player-avatar-wrap relative shrink-0" style={{ width: avatarPx, height: avatarPx }}>
         <div
           className={
@@ -185,6 +188,49 @@ const MobilePlayerSeatImpl = ({
             {...avatarConfig(player.id)}
           />
         </div>
+
+        {/* Карты противника веером поверх аватарки */}
+        {hasCardsInHand && !player.isFolded && (
+          <div className="absolute inset-0 pointer-events-none" style={showHand ? { zIndex: 35 } : undefined}>
+            {showHand && player.cards.length > 0
+              ? player.cards.map((c, i) => {
+                  const total = player.cards.length;
+                  const angle = total <= 1 ? 0 : (i / (total - 1) - 0.5) * 24;
+                  const inWinningCombo = isWinningCard(c);
+                  const showdownActive = !!winningCards && winningCards.length > 0;
+                  const highlight = isWinner && inWinningCombo;
+                  const dim = showdownActive && !highlight;
+                  return (
+                    <div key={i} className="absolute" style={{ bottom: 0, left: '50%', transform: `translateX(-50%) rotate(${angle}deg)`, transformOrigin: 'bottom center', zIndex: i }}>
+                      <Card card={c} faceStyle={faceStyle} backStyle={backStyle} deck={deck} size="sm" delay={i * 0.05} highlight={highlight} dim={dim} />
+                    </div>
+                  );
+                })
+              : [0, 1].map((i) => {
+                  const angle = (i / 1 - 0.5) * 24;
+                  return (
+                    <div key={i} className="absolute" style={{ bottom: 0, left: '50%', transform: `translateX(-50%) rotate(${angle}deg)`, transformOrigin: 'bottom center', zIndex: i }}>
+                      <Card faceStyle={faceStyle} backStyle={backStyle} deck={deck} size="sm" delay={i * 0.05} />
+                    </div>
+                  );
+                })
+            }
+          </div>
+        )}
+        {/* shownCards соперника веером */}
+        {!hasCardsInHand && player.shownCards?.some(Boolean) && (
+          <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 35 }}>
+            {player.shownCards!.map((c, i) => {
+              const total = player.shownCards!.length;
+              const angle = total <= 1 ? 0 : (i / (total - 1) - 0.5) * 24;
+              return (
+                <div key={i} className="absolute" style={{ bottom: 0, left: '50%', transform: `translateX(-50%) rotate(${angle}deg)`, transformOrigin: 'bottom center', zIndex: i }}>
+                  <Card card={c ?? undefined} faceStyle={faceStyle} backStyle={backStyle} deck={deck} size="sm" delay={i * 0.05} />
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Turn progress ring (Phase 1 или Phase 2) */}
         {isCurrent && timebankSecondsLeft != null && timebankPercent != null ? (
@@ -205,48 +251,40 @@ const MobilePlayerSeatImpl = ({
           />
         ) : null}
       </div>
+      )}
 
       {/* Плашка username + chips */}
       <div className="mobile-seat-nameplate flex flex-col items-center leading-tight">
-        <span
-          className={
-            'text-[10px] font-semibold truncate max-w-[78px] ' +
-            (isMe ? 'text-amber-300' : 'text-white')
-          }
-        >
-          {player.username}
-        </span>
-        <span className="text-[10px] font-black text-amber-300 tabular-nums">
-          {formatChips(player.chips, bigBlind, displayMode)}
-        </span>
+        {!isMe && (
+          <span className="text-[10px] font-semibold truncate max-w-[78px] text-white">
+            {player.displayName || player.username}
+          </span>
+        )}
+        {/* Мой стек на мобиле показан над картами (GameRoom), в плашке seat'а — только у соперников. */}
+        {!isMe && (
+          <span className="text-[10px] font-black text-amber-300 tabular-nums">
+            {formatChips(player.chips, bigBlind, displayMode)}
+          </span>
+        )}
+        {/* Подсказка комбинации у соперника (по тумблеру; для админа — видит чужие). Своя — в блоке карт. */}
+        {showHint && !isMe && !player.isFolded && player.handHint && (
+          <span className="text-[8px] font-semibold text-emerald-300/90 leading-tight truncate max-w-[80px] [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]">
+            {player.handHint}
+          </span>
+        )}
       </div>
 
-      {/* Opponent рубашки в раздаче — маленькие 18×26 ПОД плашкой, side-by-side без веера. */}
-      {hasCardsInHand && !player.isFolded && !showHand && !isMe && (
-        <div className="flex gap-0.5 mt-0.5">
-          {[0, 1].map((i) => (
-            <div
-              key={i}
-              className="w-[18px] h-[26px] rounded-sm ring-1 ring-white/30 shadow-sm"
-              style={{
-                backgroundImage:
-                  'repeating-linear-gradient(45deg, rgba(255,255,255,0.08) 0 2px, transparent 2px 4px), linear-gradient(135deg, #1e40af, #1e3a8a)',
-              }}
-            />
-          ))}
-        </div>
-      )}
 
       {/* FOLD pill НАД аватаром (для me — низ занят fixed-cards блоком) */}
       {player.isFolded && (
-        <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-red-600/85 text-white text-[9px] font-bold px-1.5 py-0 rounded-full shadow whitespace-nowrap z-10">
+        <div className="absolute -top-3 left-1/2 -translate-x-1/2 text-red-400 text-[10px] font-black whitespace-nowrap z-10 [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]">
           Фолд
         </div>
       )}
 
       {/* Disconnected indicator (если не fold — иначе fold pill уже занят) */}
       {player.disconnected && !player.isFolded && (
-        <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-orange-600/85 text-white text-[9px] font-bold px-1.5 py-0 rounded-full shadow whitespace-nowrap z-10">
+        <div className="absolute -top-3 left-1/2 -translate-x-1/2 text-[12px] whitespace-nowrap z-10 [filter:drop-shadow(0_1px_2px_rgba(0,0,0,0.9))]">
           🔌
         </div>
       )}
@@ -264,28 +302,33 @@ const MobilePlayerSeatImpl = ({
         </div>
       )}
 
-      {/* Timebank индикатор — в левом верхнем углу плашки */}
-      {timebankEnabled && typeof player.timebank === 'number' && !(isCurrent && timebankSecondsLeft != null) && (
-        <div
-          title={player.timebank > 0 ? 'Таймбанк' : 'Таймбанк исчерпан'}
-          className={
-            'absolute top-0 left-0 -translate-y-1 -translate-x-1 min-w-[14px] h-[14px] px-0.5 rounded-full text-[8px] font-bold border flex items-center justify-center ' +
-            (player.timebank > 0
-              ? 'bg-orange-500/30 text-orange-200 border-orange-400/40'
-              : 'bg-white/5 text-white/40 border-white/15')
-          }
-        >
-          {player.timebank}
-        </div>
-      )}
-
-      {/* Winner overlay — золотой glow поверх плашки */}
+      {/* Winner overlay — золотой glow + «WIN +сумма» над картами + комбинация под плашкой */}
       {isWinner && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="absolute inset-0 pointer-events-none rounded-md bg-yellow-500/15"
-        />
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="absolute inset-0 pointer-events-none rounded-md bg-yellow-500/15"
+          />
+          {/* WIN + сумма — золотой бейдж над аватаром/картами (не перекрывает сами карты) */}
+          <motion.div
+            initial={{ opacity: 0, y: 6, scale: 0.8 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            className="absolute -top-10 left-1/2 -translate-x-1/2 z-40 text-amber-300 text-[12px] font-black whitespace-nowrap pointer-events-none tabular-nums [text-shadow:0_1px_3px_rgba(0,0,0,0.95)]"
+          >
+            WIN{typeof winAmount === 'number' && winAmount > 0 ? ' +' + formatChips(winAmount, bigBlind, displayMode) : ''}
+          </motion.div>
+          {/* Комбинация — под плашкой */}
+          {handName && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="absolute -bottom-4 left-1/2 -translate-x-1/2 z-40 text-yellow-200 text-[9px] font-bold whitespace-nowrap pointer-events-none max-w-[120px] truncate [text-shadow:0_1px_2px_rgba(0,0,0,0.95)]"
+            >
+              {handName}
+            </motion.div>
+          )}
+        </>
       )}
     </div>
   );

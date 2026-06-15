@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { SOCKET_EVENTS } from '@poker-room/shared';
 import { useSocketEvent } from './useSocketEvent';
+import { playSound } from '../lib/sound';
 
 // Эфемерные «речевые» пузыри над игроками: последнее действие + эмодзи-реакция.
 // key инкрементируется (Date.now) чтобы перезапускать анимацию; авто-очистка через 2 сек,
@@ -16,9 +17,12 @@ export interface EmojiBubbleData {
   key: number;
 }
 
-export function useEphemeralBubbles(): {
+const CHIP_ACTIONS = new Set(['call', 'raise', 'all-in', 'bet']);
+
+export function useEphemeralBubbles(soundEnabled = false): {
   actionBubbles: Record<string, ActionBubbleData>;
   emojiBubbles: Record<string, EmojiBubbleData>;
+  clearPlayerBubbles: (ids: string[]) => void;
 } {
   const [actionBubbles, setActionBubbles] = useState<Record<string, ActionBubbleData>>({});
   const [emojiBubbles, setEmojiBubbles] = useState<Record<string, EmojiBubbleData>>({});
@@ -26,6 +30,11 @@ export function useEphemeralBubbles(): {
   useSocketEvent<{ playerId: string; action: string; amount?: number }>(
     SOCKET_EVENTS.PLAYER_ACTION_BROADCAST,
     ({ playerId, action, amount }) => {
+      if (soundEnabled) {
+        if (CHIP_ACTIONS.has(action)) playSound('bet');
+        else if (action === 'fold') playSound('fold');
+        else if (action === 'check') playSound('check');
+      }
       const key = Date.now();
       setActionBubbles((prev) => ({ ...prev, [playerId]: { action, amount, key } }));
       setTimeout(() => {
@@ -54,5 +63,18 @@ export function useEphemeralBubbles(): {
     },
   );
 
-  return { actionBubbles, emojiBubbles };
+  const clearPlayerBubbles = useCallback((ids: string[]) => {
+    setActionBubbles(prev => {
+      const next = { ...prev };
+      ids.forEach(id => delete next[id]);
+      return next;
+    });
+    setEmojiBubbles(prev => {
+      const next = { ...prev };
+      ids.forEach(id => delete next[id]);
+      return next;
+    });
+  }, []);
+
+  return { actionBubbles, emojiBubbles, clearPlayerBubbles };
 }
