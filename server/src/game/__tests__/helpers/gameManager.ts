@@ -103,6 +103,7 @@ export interface GameManagerLike {
   handlePlayerAction(roomId: string, userId: string, action: string, amount?: number): void;
   getGameState(roomId: string, viewerId?: string, withPeek?: boolean): unknown;
   getCountdownEndsAt(roomId: string): number | null;
+  restoreActiveHands(): void;
   setAutoTopUp(
     roomId: string,
     userId: string,

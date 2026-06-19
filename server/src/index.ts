@@ -62,6 +62,8 @@ gameManager.statsRecorder = recordHandStat;
 gameManager.roomEventRecorder = recordRoomCreated;
 // История раздач (ROADMAP §10.10) — снимок каждой раздачи в hands-detailed.json.
 gameManager.handRecorder = recordHand;
+// Восстановление активных раздач после рестарта (ROADMAP §9.2) — строго после колбэков выше.
+gameManager.restoreActiveHands();
 
 // Роуты по доменам (ROADMAP §9.3-C). Публичные пути — на '/', auth/admin — под своими префиксами.
 app.use('/', createPublicRouter(gameManager));

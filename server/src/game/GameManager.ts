@@ -29,6 +29,7 @@ import { selectTier } from './badBeatDrop.js';
 import { detectBadBeat, computeBadBeatPayout } from './badBeatDetect.js';
 import { resolveShowdown } from './showdownService.js';
 import { sendNotification, type InboxNotification } from './inboxService.js';
+import { serializeActiveHand, applyActiveHandSnapshot } from './activeHandPersistence.js';
 import type { GameState as SharedGameState, RoomInfo, TimebankConfig, TimebankSettings } from '@poker-room/shared';
 export type { RoomInfo, TimebankConfig, TimebankSettings };
 import {
@@ -333,6 +334,9 @@ export class GameManager implements GameManagerForBots {
       // Запускаем режим сразу — BotManager создаст автостолы.
       this.botManager.enableMode();
     }
+    // Восстановление активных раздач (§9.2) — НЕ здесь: index.ts проставляет
+    // statsRecorder/roomEventRecorder/handRecorder сразу после `new GameManager(io)`,
+    // restoreActiveHands() должен вызываться явно ПОСЛЕ этого (см. restoreActiveHands).
   }
 
   // Удалить из rooms все бот-столы, восстановленные из snapshot'а (после рестарта).
@@ -472,6 +476,71 @@ export class GameManager implements GameManagerForBots {
       writeJSON('rooms.json', snapshots);
     } catch {
       // best-effort снапшот — следующий saveRoomsSnapshot перезапишет
+    }
+    this.persistActiveHands();
+  }
+
+  // Восстановление активных раздач из active-hands.json (§9.2) — вызывается ОДИН раз после
+  // конструктора (this.rooms уже заполнен loadRoomsSnapshot/purgeBotTablesFromSnapshot).
+  // Применяем снимки на уже созданные «пустые» комнаты, затем для каждой — возобновляем
+  // ровно тем же путём, которым GameManager обычно продолжает раздачу:
+  //  - очередь не пуста → scheduleWaitlistPromotion (свежий полный таймер, как обычно)
+  //  - waiting (игроки сидят, раздача не шла) → scheduleAutoStart
+  //  - showdown → cleanupHand немедленно (5с окно показа заведомо истекло за даунтайм)
+  //  - иначе (preflop/flop/turn/river) → emitCurrentTurn — текущий игрок disconnected=true
+  //    (см. applyActiveHandSnapshot), сработает обычная сит-аут ветка (быстрый auto-act).
+  // Публичный — вызывается явно из index.ts ПОСЛЕ statsRecorder/roomEventRecorder/handRecorder
+  // (не из конструктора: раньше был отложен через setImmediate, но это давало вызову срабатывать
+  // в случайный момент под vi.useFakeTimers() в НЕ относящихся к рестарту тестах — любой
+  // vi.advanceTimersByTime() флашит и виртуальные setImmediate).
+  restoreActiveHands(): void {
+    let snapshots: ReturnType<typeof serializeActiveHand>[];
+    try {
+      snapshots = readJSON('active-hands.json') as ReturnType<typeof serializeActiveHand>[];
+      if (!Array.isArray(snapshots)) return;
+    } catch {
+      return; // файла нет или повреждён — ничего восстанавливать
+    }
+
+    const restoredRoomIds: string[] = [];
+    snapshots.forEach((snap) => {
+      if (!snap) return;
+      const room = this.rooms.get(snap.roomId);
+      if (!room || room.isBotTable) return;
+      applyActiveHandSnapshot(room, snap);
+      restoredRoomIds.push(snap.roomId);
+    });
+
+    if (restoredRoomIds.length > 0) {
+      console.log(`Restored ${restoredRoomIds.length} active hand(s) from snapshot`);
+    }
+
+    restoredRoomIds.forEach((roomId) => {
+      const room = this.rooms.get(roomId);
+      if (!room) return;
+      if (room.waitlist.length > 0) this.scheduleWaitlistPromotion(roomId);
+      if (room.status === 'waiting') {
+        this.scheduleAutoStart(roomId);
+      } else if (room.phase === 'showdown') {
+        this.cleanupHand(roomId);
+      } else {
+        this.emitCurrentTurn(roomId);
+      }
+    });
+  }
+
+  // Снимок активных раздач (deck/pot/players/phase/...) — отдельно от метаданных rooms.json
+  // (ROADMAP §9.2). Бот-столы и пустые комнаты не пишутся (serializeActiveHand → null).
+  // Вызывается из saveRoomsSnapshot (создание/удаление комнат) и broadcastGameState
+  // (любое значимое изменение раздачи) — см. restoreActiveHands для восстановления.
+  private persistActiveHands(): void {
+    const snapshots = Array.from(this.rooms.values())
+      .map(r => serializeActiveHand(r))
+      .filter((s): s is NonNullable<typeof s> => s !== null);
+    try {
+      writeJSON('active-hands.json', snapshots);
+    } catch {
+      // best-effort — следующая запись перезапишет
     }
   }
 
@@ -1596,7 +1665,8 @@ export class GameManager implements GameManagerForBots {
     // Раньше: this.persistRoomChips(room) синхронизировал стеки с банкроллом.
     // Сейчас банкролл и стек живут раздельно (списание на посадке, возврат на выходе),
     // поэтому здесь синкать не надо — стек продолжает жить в памяти Player.chips.
-    // Trade-off: при крэше сервера стек теряется (см. CLAUDE.md 9.2).
+    // При рестарте/крэше стек восстанавливается из active-hands.json (см. activeHandPersistence.ts,
+    // ROADMAP §9.2) — теряется только если процесс упал ДО следующего broadcastGameState.
 
     // Боты: фиксируем PnL раздачи в runtime + persist обновлённый стек.
     // Делаем ДО autoLeaveBrokePlayers (иначе бот удалится и runtime не успеет обновиться).
@@ -1860,6 +1930,9 @@ export class GameManager implements GameManagerForBots {
   private broadcastGameState(roomId: string): void {
     const room = this.rooms.get(roomId);
     if (!room) return;
+    // Снимок активной раздачи — ДО проверки сокетов (рестарт-восстановление §9.2: сразу
+    // после холодного старта в комнате 0 сокетов, но состояние всё равно должно персистнуться).
+    this.persistActiveHands();
     const roomSockets = this.io.sockets.adapter.rooms.get(roomId);
     if (!roomSockets || roomSockets.size === 0) return;
 
