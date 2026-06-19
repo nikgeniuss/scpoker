@@ -5,6 +5,7 @@ vi.mock('../../auth/storage.js', () => import('./helpers/storage.js'));
 import { resetStorage, createTestGameManager, seatPlayer, type GameManagerLike } from './helpers/gameManager.js';
 import { setStorage } from './helpers/storage.js';
 import { getBadBeatState } from '../badBeatService.js';
+import { getNotifications } from '../inboxService.js';
 import { card, buildDeck } from './helpers/cards.js';
 
 // Интеграционные тесты Bad Beat Jackpot — врезка в GameManager.showdown (Фазы 2+3).
@@ -136,6 +137,19 @@ describe('GameManager — Bad Beat Jackpot (showdown-врезка, Фазы 2+3)
     expect(chipsOf(gm, roomId, 'B')).toBe(base + (120 - drop) + oppB); // B ещё забрал банк (минус дроп)
     expect(chipsOf(gm, roomId, 'C')).toBe(base + oth);
     expect(chipsOf(gm, roomId, 'D')).toBe(base + oth);
+
+    // Уведомление во «Входящие» каждому получателю выплаты (§10.13).
+    const fmt = (n: number) => (n / 100).toFixed(2);
+    expect(getNotifications('A', 1)[0]?.text).toBe(
+      `Бэд-бит Джекпот! Ваша рука проиграла, но вы получили $${fmt(winA)} из пула.`
+    );
+    expect(getNotifications('B', 1)[0]?.text).toBe(
+      `Бэд-бит Джекпот! Вы получили $${fmt(oppB)} из пула на столе «BadBeatRoom».`
+    );
+    expect(getNotifications('C', 1)[0]?.text).toBe(
+      `Бэд-бит Джекпот! Вы получили $${fmt(oth)} из пула на столе «BadBeatRoom».`
+    );
+    expect(getNotifications('D', 1)[0]?.type).toBe('broadcast');
   });
 
   it('гейт ≥10×BB: тот же бэд-бит, но малый банк → ни дропа, ни выплаты', async () => {
@@ -159,6 +173,7 @@ describe('GameManager — Bad Beat Jackpot (showdown-врезка, Фазы 2+3)
     // Джекпот не тронут: нет срабатываний, пул без изменений (дроп не отчислялся).
     expect(state.hits).toHaveLength(0);
     expect(state.pool).toBe(SEED);
+    expect(getNotifications('A', 1)).toHaveLength(0);
   });
 
   it('джекпот выключен: дроп/детект не выполняются даже на квалифицирующем банке', async () => {
