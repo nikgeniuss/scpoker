@@ -2,24 +2,30 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '../store/authStore';
 import { useNavigate } from 'react-router-dom';
+import { DataTab } from './admin/DataTab';
 import { DesignTab } from './admin/DesignTab';
 import { PlayersTab } from './admin/PlayersTab';
+import { ChipsTab } from './admin/ChipsTab';
 import { RoomsTab } from './admin/RoomsTab';
 import { BotsTab } from './admin/BotsTab';
 import { SettingsTab } from './admin/SettingsTab';
+import { PaidFeaturesTab } from './admin/PaidFeaturesTab';
 
 const tabs = [
+  { id: 'data', label: '📊 Данные' },
   { id: 'design', label: '🎨 Дизайн' },
   { id: 'players', label: '👥 Игроки' },
+  { id: 'chips', label: '💰 Фишки' },
   { id: 'rooms', label: '🎮 Комнаты' },
   { id: 'bots', label: '🧠 Боты' },
   { id: 'settings', label: '⚙️ Настройки' },
+  { id: 'paidFeatures', label: '💎 Платные фичи' },
 ];
 
 export const Admin = () => {
   const navigate = useNavigate();
   const { isAdmin } = useAuthStore();
-  const [activeTab, setActiveTab] = useState('design');
+  const [activeTab, setActiveTab] = useState('data');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const activeTabLabel = tabs.find((t) => t.id === activeTab)?.label ?? '';
@@ -135,11 +141,14 @@ export const Admin = () => {
         transition={{ delay: 0.2 }}
         className="flex-1 p-4 md:p-8 overflow-y-auto"
       >
+        {activeTab === 'data' && <DataTab />}
         {activeTab === 'design' && <DesignTab />}
         {activeTab === 'players' && <PlayersTab />}
+        {activeTab === 'chips' && <ChipsTab />}
         {activeTab === 'rooms' && <RoomsTab />}
         {activeTab === 'bots' && <BotsTab />}
         {activeTab === 'settings' && <SettingsTab />}
+        {activeTab === 'paidFeatures' && <PaidFeaturesTab />}
       </motion.div>
     </div>
   );

@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
 import { useAdminApi } from '../../hooks/useAdminApi';
 import { ROOM_PHASE_LABEL } from './types';
+import { formatMoney } from '../../config/chipFormat';
 import type { AdminRoom } from './types';
 
 export const RoomsTab = () => {
@@ -27,10 +28,16 @@ export const RoomsTab = () => {
   }, [load]);
 
   const kickPlayer = async (roomId: string, userId: string, username: string) => {
-    if (!window.confirm('Кикнуть ' + username + ' из комнаты?')) return;
+    // Временный кик: на сколько минут закрыть повторный вход за этот стол (0 — без блокировки, не бан).
+    const input = window.prompt(
+      'Кикнуть ' + username + ' со стола.\nНа сколько минут закрыть повторный вход за этот стол? (0 — без блокировки)',
+      '5',
+    );
+    if (input === null) return; // отмена
+    const cooldownMin = Math.max(0, Math.min(1440, Math.floor(Number(input) || 0)));
     try {
-      await api.post('/admin/rooms/' + roomId + '/kick/' + userId);
-      toast.success(username + ' кикнут');
+      await api.post('/admin/rooms/' + roomId + '/kick/' + userId, { cooldownMin });
+      toast.success(username + (cooldownMin > 0 ? ' кикнут на ' + cooldownMin + ' мин' : ' кикнут'));
       load();
     } catch (e) {
       toast.error((e as Error).message);
@@ -82,10 +89,10 @@ export const RoomsTab = () => {
               <span className="text-xs text-yellow-400">🔒</span>
             )}
             <span className="text-sm text-gray-400">
-              SB/BB: {room.smallBlind}/{room.bigBlind}
+              SB/BB: {formatMoney(room.smallBlind)}/{formatMoney(room.bigBlind)}
             </span>
             <span className="text-sm text-gray-400">
-              Банк: {room.pot} 💰
+              Банк: {formatMoney(room.pot)} 💰
             </span>
             <span className="text-sm text-gray-400">
               {room.players.length}/{room.maxPlayers}
@@ -106,7 +113,7 @@ export const RoomsTab = () => {
                   className="flex flex-wrap items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-900/60"
                 >
                   <span className="text-white text-sm font-semibold">{p.username}</span>
-                  <span className="text-xs text-gray-400">{p.chips} 💰</span>
+                  <span className="text-xs text-gray-400">{formatMoney(p.chips)} 💰</span>
                   {p.isFolded && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-900/60 text-red-300 font-bold">
                       FOLD

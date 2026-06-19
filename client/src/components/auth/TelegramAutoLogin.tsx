@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
 import { API_URL } from '../../config/api';
-import { getTelegramInitData } from '../../lib/telegram';
+import { getTelegramInitData, getTelegramStartParam } from '../../lib/telegram';
 
 // Внутри Telegram Mini App автоматически логинит юзера через initData → JWT.
 // Если уже есть token в localStorage — ничего не делает.
@@ -18,13 +18,40 @@ export function TelegramAutoLogin() {
 
   useEffect(() => {
     if (triedRef.current) return;
-    if (token) return; // уже залогинен — ничего не делаем
 
     const initData = getTelegramInitData();
     if (!initData) return; // не TG или нет initData
 
-    triedRef.current = true;
+    const startParam = getTelegramStartParam();
 
+    // Привязка существующего аккаунта (открыт deep-link ?startapp=<code>) — приоритетнее автологина.
+    if (startParam) {
+      triedRef.current = true;
+      (async () => {
+        try {
+          const res = await fetch(API_URL + '/auth/link/confirm', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ initData, code: startParam }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            toast.error(data.error || 'Не удалось привязать аккаунт');
+            return;
+          }
+          login(data.token, data.user);
+          toast.success('Telegram привязан, баланс объединён');
+          navigate('/lobby', { replace: true });
+        } catch {
+          toast.error('Ошибка привязки');
+        }
+      })();
+      return;
+    }
+
+    // Обычный автологин по initData (если ещё не залогинен).
+    if (token) return;
+    triedRef.current = true;
     (async () => {
       try {
         const res = await fetch(API_URL + '/auth/telegram', {

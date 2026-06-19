@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isRoundComplete } from '../phaseRules.js';
+import { isRoundComplete, computePhaseTransition } from '../phaseRules.js';
 
 // Чистый предикат закрытия круга ставок (вынесен из GameManager, ROADMAP §9.3-B).
 // Строим минимальный room-like с нужными полями.
@@ -46,7 +46,7 @@ describe('isRoundComplete', () => {
     expect(isRoundComplete(r)).toBe(true);
   });
 
-  it('сфолдившие игнорируются', () => {
+  it('folded players ignored', () => {
     const r = room(
       [
         { id: 'A', isFolded: true, chips: 100, currentBet: 0 },
@@ -56,5 +56,40 @@ describe('isRoundComplete', () => {
       20, ['B', 'C'],
     );
     expect(isRoundComplete(r)).toBe(true);
+  });
+});
+
+describe('computePhaseTransition', () => {
+  const deck52 = Array.from({ length: 52 }, (_, i) => ({ rank: String(i), suit: 'spades' as const }));
+
+  it('preflop → flop: 3 карты борда (burn + 3 = 4 из колоды)', () => {
+    const t = computePhaseTransition('preflop', [...deck52]);
+    expect(t.nextPhase).toBe('flop');
+    expect(t.newCards).toHaveLength(3);
+    expect(t.remainingDeck).toHaveLength(48); // 52 - burn(1) - flop(3)
+    expect(t.isShowdown).toBe(false);
+  });
+
+  it('flop → turn: 1 карта борда (burn + 1 = 2 из колоды)', () => {
+    const t = computePhaseTransition('flop', [...deck52]);
+    expect(t.nextPhase).toBe('turn');
+    expect(t.newCards).toHaveLength(1);
+    expect(t.remainingDeck).toHaveLength(50); // 52 - burn(1) - turn(1)
+    expect(t.isShowdown).toBe(false);
+  });
+
+  it('turn → river: 1 карта борда (burn + 1 = 2 из колоды)', () => {
+    const t = computePhaseTransition('turn', [...deck52]);
+    expect(t.nextPhase).toBe('river');
+    expect(t.newCards).toHaveLength(1);
+    expect(t.remainingDeck).toHaveLength(50); // 52 - burn(1) - river(1)
+    expect(t.isShowdown).toBe(false);
+  });
+
+  it('river → showdown: без карт', () => {
+    const t = computePhaseTransition('river', [...deck52]);
+    expect(t.isShowdown).toBe(true);
+    expect(t.newCards).toHaveLength(0);
+    expect(t.remainingDeck).toHaveLength(52);
   });
 });

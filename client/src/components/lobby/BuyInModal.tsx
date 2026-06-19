@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Coins, X } from 'lucide-react';
 import { useBankroll } from '../../hooks/useBankroll';
+import { formatMoney } from '../../config/chipFormat';
 import type { RoomInfo } from '@poker-room/shared';
 
 // Модалка выбора суммы бай-ина. Банкролл грузится через useBankroll (§9.3-E).
@@ -55,7 +56,7 @@ export const BuyInModal = ({ room, onClose, onSubmit }: BuyInModalProps) => {
         </div>
 
         <div className="text-sm text-gray-400 mb-3">
-          Блайнды <span className="text-white">{room.smallBlind}/{room.bigBlind}</span> · диапазон <span className="text-white">{room.buyInMinBb}-{room.buyInMaxBb} BB</span> ({minBuyIn}-{maxBuyIn})
+          Блайнды <span className="text-white">{formatMoney(room.smallBlind)}/{formatMoney(room.bigBlind)}</span> · диапазон <span className="text-white">{room.buyInMinBb}-{room.buyInMaxBb} BB</span> ({formatMoney(minBuyIn)}-{formatMoney(maxBuyIn)})
         </div>
 
         {bankroll === null && !loadError && (
@@ -71,7 +72,7 @@ export const BuyInModal = ({ room, onClose, onSubmit }: BuyInModalProps) => {
         {bankroll !== null && !canSit && (
           <div className="space-y-3">
             <div className="rounded-xl bg-red-500/10 border border-red-500/30 p-3 text-sm text-red-300">
-              Недостаточно фишек для минимального бай-ина: нужно <b>{minBuyIn}</b>, у вас <b>{bankroll}</b>.
+              Недостаточно фишек для минимального бай-ина: нужно <b>{formatMoney(minBuyIn)}</b>, у вас <b>{formatMoney(bankroll)}</b>.
             </div>
             <button
               type="button"
@@ -88,9 +89,9 @@ export const BuyInModal = ({ room, onClose, onSubmit }: BuyInModalProps) => {
             <div>
               <label className="text-sm text-gray-400 mb-1 flex justify-between">
                 <span>Сумма бай-ина</span>
-                <span className="text-gray-500">банкролл: <span className="text-white">{bankroll}</span></span>
+                <span className="text-gray-500">банкролл: <span className="text-white">{formatMoney(bankroll)}</span></span>
               </label>
-              <div className="text-2xl font-bold text-emerald-400 mb-2">{amount}</div>
+              <div className="text-2xl font-bold text-emerald-400 mb-2">{formatMoney(amount)}</div>
               <input
                 type="range"
                 min={minBuyIn}
@@ -101,8 +102,8 @@ export const BuyInModal = ({ room, onClose, onSubmit }: BuyInModalProps) => {
                 className="w-full accent-emerald-500"
               />
               <div className="flex justify-between text-[11px] text-gray-500 mt-1">
-                <span>{minBuyIn}</span>
-                <span>{ceiling}</span>
+                <span>{formatMoney(minBuyIn)}</span>
+                <span>{formatMoney(ceiling)}</span>
               </div>
             </div>
 
@@ -112,14 +113,14 @@ export const BuyInModal = ({ room, onClose, onSubmit }: BuyInModalProps) => {
                 onClick={() => setAmount(minBuyIn)}
                 className="flex-1 px-3 py-1.5 rounded-lg text-sm font-bold bg-gray-800 border border-white/10 text-gray-300 hover:border-emerald-500/40"
               >
-                Min ({minBuyIn})
+                Min ({formatMoney(minBuyIn)})
               </button>
               <button
                 type="button"
                 onClick={() => setAmount(ceiling)}
                 className="flex-1 px-3 py-1.5 rounded-lg text-sm font-bold bg-gray-800 border border-white/10 text-gray-300 hover:border-emerald-500/40"
               >
-                Max ({ceiling})
+                Max ({formatMoney(ceiling)})
               </button>
             </div>
 
@@ -127,7 +128,7 @@ export const BuyInModal = ({ room, onClose, onSubmit }: BuyInModalProps) => {
               type="submit"
               className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 font-bold text-white shadow-lg shadow-emerald-500/30"
             >
-              Сесть с {amount}
+              Сесть с {formatMoney(amount)}
             </button>
           </form>
         )}

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { LogOut, Settings, Smile, Info, Coins, History, Eye } from 'lucide-react';
+import { LogOut, Settings, Smile, Info, Coins, History, Eye, Zap } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { API_URL } from '../config/api';
 import type { GamePhase } from '@poker-room/shared';
@@ -10,6 +10,7 @@ import { PlayerSeat } from '../components/game/PlayerSeat';
 import { ChipStack } from '../components/game/ChipStack';
 import { CardsTurnTimer } from '../components/game/CardsTurnTimer';
 import { ActionPanel } from '../components/game/ActionPanel';
+import { PreSelectPanel, type PreSelectAction } from '../components/game/PreSelectPanel';
 import { GameSettingsModal } from '../components/game/GameSettingsModal';
 import { TableInfoModal } from '../components/game/TableInfoModal';
 import { ActionBubble } from '../components/game/ActionBubble';
@@ -18,8 +19,11 @@ import { EmojiPalette } from '../components/game/EmojiPalette';
 import { MobileTableMenu } from '../components/game/MobileTableMenu';
 import { TablePills } from '../components/game/TablePills';
 import { DealAnimation } from '../components/game/DealAnimation';
+import { ChipFlyAnimation } from '../components/game/ChipFlyAnimation';
+import { useChipFlyAnimation } from '../hooks/useChipFlyAnimation';
 import { buildDealCards } from '../components/game/dealLayout';
 import { HandHistoryModal } from '../components/game/HandHistoryModal';
+import { PlayerInfoPopup } from '../components/game/PlayerInfoPopup';
 import { MobilePlayerSeat } from '../components/game/MobilePlayerSeat';
 import { DEFAULT_DESIGN } from '../config/design';
 import { loadBetPresets, saveBetPresets } from '../config/betPresets';
@@ -35,6 +39,7 @@ import { triggerHaptic } from '../lib/haptic';
 import type { CardData } from '../components/game/Card';
 import type { DesignConfig } from '../config/design';
 import { useGameRoom } from '../hooks/useGameRoom';
+import { useOpponentNotesStore } from '../store/opponentNotesStore';
 import { useTableSwipe } from '../hooks/useTableSwipe';
 import { useEphemeralBubbles } from '../hooks/useEphemeralBubbles';
 import { useTableClock } from '../hooks/useTableClock';
@@ -69,9 +74,13 @@ export const GameRoom = () => {
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const userChips = useAuthStore((s) => s.user?.chips);
   const isAdmin = useAuthStore((s) => s.isAdmin);
+  const token = useAuthStore((s) => s.token);
+  const opponentNotes = useOpponentNotesStore((s) => s.notes);
+  const fetchOpponentNotes = useOpponentNotesStore((s) => s.fetchNotes);
+  const setOpponentNote = useOpponentNotesStore((s) => s.setNote);
 
   // Транспорт + ядро состояния стола (подписки, реджойн, эмиттеры)
-  const { state, winners, winningCards, winHandName, winAmounts, countdownEndsAt, sendAction, leave, sendEmoji, setAutoTopUp, setHandHint, showCard } =
+  const { state, isConnected, winners, winningCards, winHandName, winAmounts, countdownEndsAt, sendAction, leave, sendEmoji, setAutoTopUp, setHandHint, showCard, requestRabbitHunt } =
     useGameRoom(roomId, observe);
   // Admin-peek toggle: при on сервер шлёт нам карты всех игроков + futureBoard.
   // По умолчанию off — админ играет «честно», peek включается осознанно.
@@ -90,12 +99,20 @@ export const GameRoom = () => {
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   // Раскрыт ли блок рейза в ActionPanel — чтобы прятать кнопку меню стола под ним (mobile).
   const [raiseOpen, setRaiseOpen] = useState(false);
+  // Предвыбор действия (галочки «когда дойдёт ход, сразу X»).
+  const [preselect, setPreselect] = useState<PreSelectAction | null>(null);
+  // Тап по аватару оппонента — поп-ап с HUD-статистикой.
+  const [avatarPopupPlayer, setAvatarPopupPlayer] = useState<import('../components/game/PlayerSeat').PlayerView | null>(null);
 
   // Админ-наблюдатель: сервер уже включил peek (шлёт карты соперников). Отражаем это в UI
   // сразу — рендер открытых карт завязан на локальный peekOn. Кнопка-глаз остаётся выключателем.
   useEffect(() => {
     if (observe && isAdmin) setPeekOn(true);
   }, [observe, isAdmin]);
+
+  useEffect(() => {
+    if (token) fetchOpponentNotes(token);
+  }, [token, fetchOpponentNotes]);
 
   useEffect(() => {
     fetch(API_URL + '/design')
@@ -141,6 +158,10 @@ export const GameRoom = () => {
   // Рассадка: desktop эллипс + mobile presets
   const { seatPositions, mobileSeatPositions } = useTableGeometry(state, me);
 
+  // Анимация фишек pot → победитель (desktop и mobile, отдельные координатные пространства)
+  const { flyChips: desktopFlyChips, clearFlyChips: clearDesktopFly } = useChipFlyAnimation(winners, seatPositions);
+  const { flyChips: mobileFlyChips, clearFlyChips: clearMobileFly } = useChipFlyAnimation(winners, mobileSeatPositions, 50, 48);
+
   const isMyTurn =
     !!state &&
     !!me &&
@@ -149,14 +170,25 @@ export const GameRoom = () => {
     state.phase !== 'showdown';
 
   // Сигнал «твой ход»: звук + вибрация на фронте появления хода (по настройкам игры).
+  // Также: авто-выполнение предвыбранного действия (preselect).
   const prevMyTurn = useRef(false);
   useEffect(() => {
     if (isMyTurn && !prevMyTurn.current) {
       if (gameSettings.soundEnabled) playSound('turn');
       if (gameSettings.vibrationEnabled) triggerHaptic('medium');
+      if (preselect && me && state) {
+        const callAmt = Math.max(0, state.currentBet - me.currentBet);
+        const canChk = callAmt === 0;
+        const act: 'fold' | 'check' | 'call' | null =
+          preselect === 'fold' ? 'fold' :
+          preselect === 'check-fold' ? (canChk ? 'check' : 'fold') :
+          preselect === 'call-any' ? (canChk ? 'check' : 'call') : null;
+        setPreselect(null);
+        if (act) setTimeout(() => sendAction(act), 80);
+      }
     }
     prevMyTurn.current = isMyTurn;
-  }, [isMyTurn, gameSettings.soundEnabled, gameSettings.vibrationEnabled]);
+  }, [isMyTurn, gameSettings.soundEnabled, gameSettings.vibrationEnabled, preselect, me, state]);
 
   // Преференция авто-докупки → серверу: при посадке (me появился) и при смене настроек.
   // Сервер применит её между раздачами; единицы — в ББ (на сервере умножатся на bigBlind).
@@ -237,6 +269,21 @@ export const GameRoom = () => {
       onTouchStart={swipe.onTouchStart}
       onTouchEnd={swipe.onTouchEnd}
     >
+      {/* Баннер переподключения — показывается при потере сокет-соединения */}
+      <AnimatePresence>
+        {!isConnected && (
+          <motion.div
+            key="reconnect-banner"
+            initial={{ opacity: 0, y: -24 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -24 }}
+            className="absolute top-0 inset-x-0 z-50 flex items-center justify-center gap-2 py-1.5 bg-orange-900/90 backdrop-blur text-orange-200 text-xs font-semibold pointer-events-none"
+          >
+            <span className="animate-pulse">●</span> Переподключение…
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Мультитейблинг: пилюли открытых столов (мои карты + подсветка хода) + «+». Видно на всех таргетах. */}
       <div className="absolute top-3 left-3 z-30">
         <TablePills />
@@ -354,14 +401,14 @@ export const GameRoom = () => {
         <div className="poker-spotlight absolute inset-0 pointer-events-none z-0" />
         {/* Decorative oval rail — themed: gold/chrome/wood с nailheads */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="poker-oval-rail w-[90%] max-w-4xl aspect-[2/1]" />
+          <div className="poker-oval-rail w-[90%] max-w-4xl aspect-[200/115]" />
         </div>
-        {/* Watermark — фирменный монограмм, большой, полупрозрачный, под интерактивом */}
-        <div className="poker-watermark absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none select-none">
-          SK
+        {/* Watermark — бренд-монограмма, не название стола */}
+        <div className="poker-watermark poker-watermark--room absolute top-[42%] left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none select-none">
+          POKER HUB
         </div>
 
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-2 z-10">
+        <div className="absolute top-[65%] left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-2 z-10">
           {/* Фаза игры — переехала сюда из верхнего бара */}
           <div className="text-poker-gold text-xs font-bold uppercase tracking-widest">
             {PHASE_LABEL[state.phase]}
@@ -373,6 +420,12 @@ export const GameRoom = () => {
           <div className="text-white/30 text-[11px] font-bold uppercase tracking-widest -mt-1">
             {state.format === 'shortdeck' ? 'Шорт-дэк' : 'NLH'}: {formatMoney(state.smallBlind)}/{formatMoney(state.bigBlind)}
           </div>
+          {state.badBeatEligible && (
+            <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-500/15 border border-yellow-500/30 text-yellow-400 text-[10px] font-bold uppercase tracking-widest -mt-0.5">
+              <Zap size={9} className="fill-yellow-400" />
+              Bad Beat Jackpot
+            </div>
+          )}
           <motion.div
             key={state.pot}
             initial={{ scale: 0.85 }}
@@ -418,6 +471,19 @@ export const GameRoom = () => {
           {peekOn && (
             <div className="text-red-400/80 text-[10px] font-bold uppercase tracking-widest mt-1">
               🔮 admin-peek
+            </div>
+          )}
+          {state.observers && state.observers.length > 0 && (
+            <div className="flex items-center gap-1 mt-1.5">
+              <span className="text-white/30 text-[9px] uppercase tracking-widest">👁</span>
+              {state.observers.slice(0, 5).map(o => (
+                <div key={o.id} title={o.username} className="w-4 h-4 rounded-full bg-white/15 flex items-center justify-center text-[7px] font-bold text-white/60 uppercase">
+                  {o.username[0]}
+                </div>
+              ))}
+              {state.observers.length > 5 && (
+                <span className="text-white/30 text-[8px]">+{state.observers.length - 5}</span>
+              )}
             </div>
           )}
         </div>
@@ -572,6 +638,7 @@ export const GameRoom = () => {
                       ? timebankPercent
                       : undefined
                   }
+                  onAvatarClick={player.id !== myId ? setAvatarPopupPlayer : undefined}
                 />
               </div>
             </div>
@@ -587,16 +654,18 @@ export const GameRoom = () => {
             onDone={() => setDealing(false)}
           />
         )}
+        {/* Анимация фишек: pot → победитель (desktop) */}
+        <ChipFlyAnimation chips={desktopFlyChips} onDone={clearDesktopFly} />
       </div>
 
       {/* MOBILE: овальный стол с seats по периметру (плана §1-§4 + design-review priorities).
           theme-clubgg на mobile-блоке принудительно (вид стола зашит; тема/сукно из админки убраны).
           Геометрия под эталон ClubGG (бок 7% / верх 18% / низ 12%) — те же пропорции, под которые
           подобран border-radius стадиона 50%/29% в .theme-clubgg .poker-oval-rail (index.css). */}
-      <div className="md:hidden theme-clubgg mobile-table-felt absolute inset-x-[4%] top-[11%] bottom-[12%] pointer-events-none" style={{ perspective: '750px' }}>
+      <div className="md:hidden theme-clubgg mobile-table-felt absolute inset-x-[4%] top-[6%] bottom-[2%] pointer-events-none" style={{ perspective: '750px' }}>
         {/* Фетр/рейл — наклонённый фоновый слой (perspective+rotateX), как у ClubGG: верх уже / низ шире.
             Контент (банк, борд, плашки) сюда НЕ кладём — иначе перекосит; он плоским слоем ниже. */}
-        <div className="poker-oval-rail pointer-events-none" style={{ position: 'absolute', inset: 0, transform: 'rotateX(24deg)' }}>
+        <div className="poker-oval-rail pointer-events-none" style={{ position: 'absolute', inset: 0, transform: 'translateY(-4%) rotateX(24deg) scaleY(1.15)' }}>
           {/* spotlight на поверхности стола — наклоняется вместе с фетром */}
           <div className="poker-spotlight absolute inset-0 pointer-events-none rounded-[50%]" />
         </div>
@@ -606,14 +675,17 @@ export const GameRoom = () => {
 
           {/* Layer 1: центр — watermark + NLH-pill + roomName сверху, pot-plate ПОД данными стола
               (иерархия "данные → банк → борд"), community-cards внизу. */}
-          <div className="absolute inset-0 flex flex-col items-center justify-start pt-[16%] gap-2 pointer-events-none z-10 px-4">
+          <div className="absolute inset-0 flex flex-col items-center justify-start pt-[54%] gap-2 pointer-events-none z-10 px-4">
             <div className="poker-watermark poker-watermark--center select-none mt-2">POKER HUB</div>
             <div className="text-emerald-300 text-[13px] font-bold uppercase tracking-widest [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]">
               {state.format === 'shortdeck' ? 'Шорт-дэк' : 'NLH'} {formatMoney(state.smallBlind)}/{formatMoney(state.bigBlind)}
             </div>
-            <div className="text-white/40 text-[10px] font-semibold tracking-wide max-w-[80%] truncate text-center">
-              {state.roomName}
-            </div>
+            {state.badBeatEligible && (
+              <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-500/15 border border-yellow-500/30 text-yellow-400 text-[9px] font-bold uppercase tracking-widest">
+                <Zap size={8} className="fill-yellow-400" />
+                Bad Beat Jackpot
+              </div>
+            )}
             {state.pot > 0 && state.phase !== 'showdown' && (
               <div className="pot-plate-mobile">
                 <div className="pot-label">Банк</div>
@@ -653,6 +725,19 @@ export const GameRoom = () => {
             ) : state.phase !== 'waiting' ? (
               <div className="text-white/30 text-[10px] italic mt-1">карты ещё не открыты</div>
             ) : null}
+            {state.observers && state.observers.length > 0 && (
+              <div className="flex items-center gap-1 mt-1">
+                <span className="text-white/30 text-[8px]">👁</span>
+                {state.observers.slice(0, 4).map(o => (
+                  <div key={o.id} title={o.username} className="w-3.5 h-3.5 rounded-full bg-white/15 flex items-center justify-center text-[6px] font-bold text-white/60 uppercase">
+                    {o.username[0]}
+                  </div>
+                ))}
+                {state.observers.length > 4 && (
+                  <span className="text-white/30 text-[8px]">+{state.observers.length - 4}</span>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Layer 2: seats по периметру овала (mobileSeatPositions, me на индексе 0 = bottom-center) */}
@@ -704,6 +789,7 @@ export const GameRoom = () => {
                   handName={winners?.includes(player.id) ? winHandName : undefined}
                   isAdminPeek={peekOn && state.phase !== 'showdown'}
                   showHint={gameSettings.handHintEnabled}
+                  onAvatarClick={player.id !== myId ? setAvatarPopupPlayer : undefined}
                 />
               </div>
             );
@@ -763,6 +849,8 @@ export const GameRoom = () => {
               onDone={() => setDealing(false)}
             />
           )}
+          {/* Анимация фишек: pot → победитель (mobile) */}
+          <ChipFlyAnimation chips={mobileFlyChips} onDone={clearMobileFly} />
         </div>
       </div>
 
@@ -886,6 +974,33 @@ export const GameRoom = () => {
         </div>
       )}
 
+      {/* Rabbit Hunting (платная фича §10.12): рука кончилась раньше ривера — за плату узнать,
+          какие карты пришли бы. Доступно любому за столом (вкл. сфолдивших), пока окно showdown открыто. */}
+      {me && state?.rabbitHunt && (
+        <div className="fixed bottom-48 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-1.5 pointer-events-auto">
+          {state.rabbitHunt.revealed ? (
+            <>
+              <span className="text-white/75 text-[11px] font-semibold [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]">
+                Карты, которые пришли бы
+              </span>
+              <div className="flex gap-2">
+                {state.rabbitHunt.revealed.map((c, i) => (
+                  <Card key={i} card={c} faceStyle="classic" backStyle={design.cardBackStyle} deck={cardDeck} size="md" />
+                ))}
+              </div>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={requestRabbitHunt}
+              className="px-4 py-2 rounded-xl bg-black/70 backdrop-blur border border-amber-400/40 text-amber-300 text-[12px] font-bold shadow-lg hover:bg-black/85 transition-colors"
+            >
+              🐇 Что пришло бы? ({formatChips(state.rabbitHunt.price, state.bigBlind, chipDisplay)})
+            </button>
+          )}
+        </div>
+      )}
+
       {me && isMyTurn && (
         <ActionPanel
           chips={me.chips}
@@ -899,6 +1014,10 @@ export const GameRoom = () => {
           onAction={sendAction}
           onRaiseOpenChange={setRaiseOpen}
         />
+      )}
+
+      {me && !isMyTurn && state && state.phase !== 'waiting' && state.phase !== 'showdown' && (
+        <PreSelectPanel value={preselect} onChange={setPreselect} />
       )}
 
       <HandHistoryModal
@@ -938,6 +1057,15 @@ export const GameRoom = () => {
           setGameSettings(nextSettings);
           saveGameSettings(nextSettings);
         }}
+      />
+
+      <PlayerInfoPopup
+        player={avatarPopupPlayer}
+        note={avatarPopupPlayer ? opponentNotes[avatarPopupPlayer.id] ?? '' : ''}
+        onNoteChange={(text) => {
+          if (avatarPopupPlayer && token) setOpponentNote(token, avatarPopupPlayer.id, text);
+        }}
+        onClose={() => setAvatarPopupPlayer(null)}
       />
     </div>
   );

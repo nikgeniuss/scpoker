@@ -4,7 +4,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../../auth/storage.js', () => import('./helpers/storage.js'));
 
 import { resetStorage, createTestGameManager, seatPlayer, type GameManagerLike } from './helpers/gameManager.js';
-import type { MockIo } from './helpers/ioMock.js';
 import { card, buildDeck } from './helpers/cards.js';
 
 // Тесты §2 (blinds), §7 (turn order), §10 (heads-up) из POKER_RULES.md.

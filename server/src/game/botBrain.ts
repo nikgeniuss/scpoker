@@ -71,6 +71,7 @@ export interface BotDecisionContext {
   persona: BotPersona;
   targetPnL: BotPnLTarget;
   runtime: BotRuntime;
+  lifetimePnL: number;
   peekMode: BotPeekMode;
 
   // Детерминированный RNG (seed = botId + handIndex) — воспроизводимо для дебага
@@ -280,8 +281,8 @@ export function computePnLZone(
   // allowedLossNow: сколько fish-стиля позволено сейчас (chips)
   // over   → 12 BB (хорошо в плюсе, можем «лиrнуть»)
   // neutral → 4 BB (умеренно)
-  // under  → 1 BB (бережём стек)
-  const allowedLossBB = zone === 'over' ? 12 : zone === 'neutral' ? 4 : 1;
+  // under  → 3 BB (бережём стек, но не фолдим каждую мелкую ставку)
+  const allowedLossBB = zone === 'over' ? 12 : zone === 'neutral' ? 4 : 3;
   const allowedLossNow = allowedLossBB * bigBlind;
 
   // needWinPressure: насколько push'ить known-win
@@ -338,7 +339,7 @@ const BASE_BY_PHASE: Record<GamePhase, { fold: number; call: number; raise: numb
 function initDecisionState(ctx: BotDecisionContext): DecisionState {
   const {
     myCards, myCurrentBet, board, currentBet, phase, bigBlind,
-    activeOpponents, futureBoard, persona, targetPnL, runtime, peekMode,
+    activeOpponents, futureBoard, persona, targetPnL, runtime, lifetimePnL, peekMode,
   } = ctx;
 
   const toCall = Math.max(0, currentBet - myCurrentBet);
@@ -361,7 +362,7 @@ function initDecisionState(ctx: BotDecisionContext): DecisionState {
   }
 
   // Шаг 2: PnL drift → riskShift
-  const riskShift = computeRiskShift(runtime.realizedPnL, targetPnL, runtime.handsPlayed, bigBlind);
+  const riskShift = computeRiskShift(lifetimePnL, targetPnL, runtime.handsPlayed, bigBlind);
 
   // Шаг 3: базовые пороги, скорректированные на persona.
   // persona.aggression смещает callThreshold (агрессивные чаще call'ят 3-bet) и raiseThreshold
@@ -511,9 +512,9 @@ function rulePotOdds(s: DecisionState): BotDecision | null {
 // пробивает known-win агрессивно, в нуле — стандартно. 5% случаев игнорируем override (mistake).
 // Может вернуть null (neutral zone / edge case) → падение в терминальную лестницу порогов.
 function rulePeekPnL(s: DecisionState): BotDecision | null {
-  const { persona, currentBet, pot, bigBlind, myChips, myCurrentBet, phase, peekMode, targetPnL, runtime, rng } = s.ctx;
+  const { persona, currentBet, pot, bigBlind, myChips, myCurrentBet, phase, peekMode, targetPnL, runtime, lifetimePnL, rng } = s.ctx;
   if (peekAvailable(peekMode, phase) && (s.knownWinIfShowdown || s.knownLossIfShowdown) && rng() > 0.05) {
-    const pnl = computePnLZone(runtime.realizedPnL, targetPnL, runtime.handsPlayed, bigBlind);
+    const pnl = computePnLZone(lifetimePnL, targetPnL, runtime.handsPlayed, bigBlind);
 
     if (s.knownLossIfShowdown) {
       // Знаем что проиграем showdown.

@@ -100,9 +100,30 @@ describe('GameManager — test infrastructure smoke', () => {
     expect(alice.chips).toBe(4000);
   });
 
+  it('club-members-only: не-член не может войти в клубную комнату', async () => {
+    const { gm } = await createTestGameManager();
+    const { roomId } = gm.createRoom(
+      {
+        name: 'ClubRoom',
+        smallBlind: 5,
+        bigBlind: 10,
+        maxPlayers: 6,
+        turnDurationSec: 30,
+        buyInMinBb: 20,
+        buyInMaxBb: 100,
+        clubId: 'club-xyz',
+      },
+      'owner',
+    ) as { roomId: string };
+
+    // clubs.json пустой (getStorage), значит readClubs() вернёт [] → не-член
+    const deny = gm.canJoinRoom(roomId, 'outsider', undefined, 1000);
+    expect(deny).toBe('club-members-only');
+  });
+
   it('MockIo получает emit\'ы от GameManager', async () => {
     const { gm, io } = await createTestGameManager();
-    const { roomId } = gm.createRoom(
+    gm.createRoom(
       {
         name: 'EmitRoom',
         smallBlind: 5,

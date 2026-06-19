@@ -2,10 +2,24 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Coins, Clock, Users, Lock, Info, Hash } from 'lucide-react';
 import { API_URL } from '../../config/api';
-import { formatChips } from '../../config/chipFormat';
+import { formatChips, formatMoney } from '../../config/chipFormat';
 import type { ChipDisplay } from '../../config/chipFormat';
 // RoomMeta — это публичный RoomInfo из общего контракта shared (модалка читает подмножество полей).
 import type { RoomInfo as RoomMeta } from '@poker-room/shared';
+
+interface WinnerEntry {
+  t: number;
+  winners: { id: string; username: string; amount: number }[];
+  handName?: string;
+}
+
+function timeAgo(t: number): string {
+  const diff = (Date.now() - t) / 1000;
+  if (diff < 60) return 'только что';
+  if (diff < 3600) return Math.floor(diff / 60) + ' мин назад';
+  if (diff < 86400) return Math.floor(diff / 3600) + ' ч назад';
+  return new Date(t).toLocaleDateString('ru-RU');
+}
 
 interface Props {
   open: boolean;
@@ -26,21 +40,28 @@ export const TableInfoModal = ({
 }: Props) => {
   const [room, setRoom] = useState<RoomMeta | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [winners, setWinners] = useState<WinnerEntry[]>([]);
 
   useEffect(() => {
     if (!open) return;
     setRoom(null);
     setLoadError(null);
+    setWinners([]);
     fetch(API_URL + '/rooms/' + roomId)
       .then((r) => (r.ok ? r.json() : Promise.reject('http ' + r.status)))
       .then((data: RoomMeta) => setRoom(data))
       .catch((e) => setLoadError(String(e)));
+    fetch(API_URL + '/rooms/' + roomId + '/winners')
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: WinnerEntry[]) => setWinners(data))
+      .catch(() => {});
   }, [open, roomId]);
 
   return (
     <AnimatePresence>
       {open && (
         <motion.div
+          data-noswipe
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -84,10 +105,10 @@ export const TableInfoModal = ({
                     {room.description && (
                       <Row label="Описание" value={room.description} multiline />
                     )}
-                    <Row label="Вид игры" value="No Limit Hold'em" />
+                    <Row label="Вид игры" value={room.format === 'shortdeck' ? 'Шорт-дэк (Short Deck)' : "No Limit Hold'em"} />
                     <Row
                       label="Блайнды"
-                      value={room.smallBlind + ' / ' + room.bigBlind}
+                      value={formatMoney(room.smallBlind) + ' / ' + formatMoney(room.bigBlind)}
                     />
                     <Row
                       label="Создатель"
@@ -116,8 +137,8 @@ export const TableInfoModal = ({
                       label="Бай-ин"
                       value={
                         room.buyInMinBb + '-' + room.buyInMaxBb + ' BB (' +
-                        (room.bigBlind * room.buyInMinBb) + '-' +
-                        (room.bigBlind * room.buyInMaxBb) + ')'
+                        formatMoney(room.bigBlind * room.buyInMinBb) + '-' +
+                        formatMoney(room.bigBlind * room.buyInMaxBb) + ')'
                       }
                       icon={<Coins size={12} className="text-emerald-400" />}
                     />
@@ -125,6 +146,15 @@ export const TableInfoModal = ({
                       label="Время на ход"
                       value={room.turnDurationSec + ' сек'}
                       icon={<Clock size={12} className="text-emerald-400" />}
+                    />
+                    <Row
+                      label="Рейк"
+                      value={
+                        room.rake.percent > 0
+                          ? room.rake.percent + '% (cap ' + room.rake.capBb + ' BB)'
+                          : 'без рейка'
+                      }
+                      icon={<Coins size={12} className="text-emerald-400" />}
                     />
                     <Row
                       label="ID стола"
@@ -146,6 +176,28 @@ export const TableInfoModal = ({
                       />
                     )}
                   </Section>
+
+                  {winners.length > 0 && (
+                    <Section title="История победителей">
+                      <div className="space-y-2">
+                        {winners.map((w, i) => (
+                          <div key={i} className="flex items-start justify-between gap-3 text-sm">
+                            <div className="min-w-0">
+                              <div className="text-white font-semibold truncate">
+                                {w.winners.map((p) => p.username).join(', ')}
+                              </div>
+                              <div className="text-white/40 text-[11px]">
+                                {w.handName ?? 'без вскрытия'} · {timeAgo(w.t)}
+                              </div>
+                            </div>
+                            <span className="text-emerald-400 font-bold shrink-0 tabular-nums">
+                              +{formatChips(w.winners.reduce((sum, p) => sum + p.amount, 0), room.bigBlind, displayMode)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </Section>
+                  )}
                 </>
               )}
             </div>

@@ -1,4 +1,6 @@
 import type { Room, TimebankConfig } from './GameManager.js';
+import type { RakeConfig } from './rake.js';
+import type { GameFormat } from './types.js';
 
 // Фабрика комнаты — дедуп идентичного ~30-полевого литерала из loadRoomsSnapshot/createRoom/createBotTable
 // (ROADMAP §9.3-B, RoomStore). Варьируются 14 полей; остальные — константы «свежей» комнаты в waiting
@@ -16,8 +18,17 @@ export function makeRoom(params: {
   buyInMinBb: number;
   buyInMaxBb: number;
   timebank: TimebankConfig;
+  rake: RakeConfig;
+  ante: number;
+  format: GameFormat;
+  autoStartPlayers: number;
+  sessionDurationHours: number;
+  sessionEndsAt?: number | null;
+  sitOutTimeoutMin: number;
+  waitlistDelayMin: number;
   isBotTable: boolean;
   botTableLevel?: 'micro' | 'low' | 'mid';
+  clubId?: string;
 }): Room {
   return {
     id: params.id,
@@ -38,6 +49,8 @@ export function makeRoom(params: {
     smallBlind: params.smallBlind,
     bigBlind: params.bigBlind,
     actionsThisRound: new Set(),
+    lastRaiseSize: 0,
+    lockedCallers: new Set(),
     startTimer: null,
     startCountdownEndsAt: null,
     turnTimer: null,
@@ -52,6 +65,23 @@ export function makeRoom(params: {
     turnTimebankPlayerId: null,
     isBotTable: params.isBotTable,
     botTableLevel: params.botTableLevel,
+    clubId: params.clubId,
     handIndex: 0,
+    rake: params.rake,
+    lastHandRake: 0,
+    ante: params.ante,
+    format: params.format,
+    autoStartPlayers: params.autoStartPlayers,
+    sessionDurationHours: params.sessionDurationHours,
+    sessionEndsAt: params.sessionEndsAt ?? null,
+    sessionTimer: null,
+    sitOutTimeoutMin: params.sitOutTimeoutMin,
+    kickCooldowns: new Map(),
+    waitlistDelayMin: params.waitlistDelayMin,
+    waitlist: [],
+    waitlistTimer: null,
+    waitlistPromoteEndsAt: null,
+    observers: new Map(),
+    rabbitHuntPaidBy: new Set(),
   };
 }

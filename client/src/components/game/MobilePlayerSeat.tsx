@@ -59,6 +59,7 @@ interface MobilePlayerSeatProps {
   // Если true — D/SB/BB-бейдж внутри плашки не рисуется (родитель рендерит «на столе»).
   hideRoleBadge?: boolean;
   showHint?: boolean; // показывать подсказку комбинации у чужих аватаров (своя — в блоке карт GameRoom)
+  onAvatarClick?: (player: PlayerView) => void;
 }
 
 const MobilePlayerSeatImpl = ({
@@ -88,6 +89,7 @@ const MobilePlayerSeatImpl = ({
   isAdminPeek,
   hideRoleBadge,
   showHint,
+  onAvatarClick,
 }: MobilePlayerSeatProps) => {
   const grad = avatarColor(player.username);
   const avatarPx = isMe ? 48 : 40;
@@ -179,13 +181,15 @@ const MobilePlayerSeatImpl = ({
             'w-full h-full rounded-full bg-gradient-to-br overflow-hidden ' +
             grad +
             ' shadow ' +
-            avatarRing
+            avatarRing +
+            (onAvatarClick ? ' cursor-pointer' : '')
           }
+          onClick={onAvatarClick ? () => onAvatarClick(player) : undefined}
         >
           <ReactNiceAvatar
             className="w-full h-full"
             shape="circle"
-            {...avatarConfig(player.id)}
+            {...avatarConfig(player.avatar || player.id)}
           />
         </div>
 
@@ -270,6 +274,12 @@ const MobilePlayerSeatImpl = ({
         {showHint && !isMe && !player.isFolded && player.handHint && (
           <span className="text-[8px] font-semibold text-emerald-300/90 leading-tight truncate max-w-[80px] [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]">
             {player.handHint}
+          </span>
+        )}
+        {/* HUD-lite: VPIP/PFR (достаточно ≥10 рук). */}
+        {!isMe && player.hudStats && player.hudStats.hands >= 10 && (
+          <span className="text-[7px] text-white/30 leading-tight tabular-nums [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]">
+            {player.hudStats.vpip}/{player.hudStats.pfr}
           </span>
         )}
       </div>

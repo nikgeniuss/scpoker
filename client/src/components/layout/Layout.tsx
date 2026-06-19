@@ -5,18 +5,21 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Coins, Home, LayoutGrid, UserCircle, LogOut, Trophy, Crown, Shield } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
+import { useMyClub } from '../../hooks/useMyClub';
 import { useDecksStore } from '../../store/decksStore';
+import { useInboxStore } from '../../store/inboxStore';
 import { disconnectSocket } from '../../lib/socket';
-import { SOCKET_EVENTS } from '@poker-room/shared';
+import { SOCKET_EVENTS, type InboxNotification } from '@poker-room/shared';
 import { API_URL } from '../../config/api';
 import { useSocketEvent } from '../../hooks/useSocketEvent';
 import { formatMoney } from '../../config/chipFormat';
 import { TablesManager } from '../game/TablesManager';
 import { DebugOverlay } from '../debug/DebugOverlay';
 
-// Кнопка в админку — lazy, грузится только для админа (код не в бандле игрока).
+// Кнопки в панели — lazy, код не в бандле обычного игрока.
 const AdminNavButton = lazy(() => import('../admin/AdminNavButton'));
 const ClubAdminNavButton = lazy(() => import('../admin/ClubAdminNavButton'));
+const MyClubNavButton = lazy(() => import('../club/MyClubNavButton'));
 
 interface LayoutProps {
   children: ReactNode;
@@ -26,6 +29,10 @@ export const Layout = ({ children }: LayoutProps) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, isAdmin, logout, token, setChips } = useAuthStore();
+  const { myClub } = useMyClub();
+  const { unread: inboxUnread, fetchInbox, addNotification } = useInboxStore();
+  // Кнопка «Мой клуб» — только не-админ владелец (у администраторов свои вкладки Клуб/Админ)
+  const isClubOwner = !!myClub && !!user && myClub.ownerId === user.id && !isAdmin;
   const loadDecks = useDecksStore((s) => s.load);
 
   // Загружаем список колод один раз при mount — нужен Card.tsx для отрисовки картинок вместо текста
@@ -40,7 +47,11 @@ export const Layout = ({ children }: LayoutProps) => {
   const showBottomBar = !!user && !isGameRoom && !isGuestPage;
 
   // Свайп влево/вправо для переключения вкладок нижнего бара
-  const tabRoutes = isAdmin ? ['/', '/lobby', '/club-admin', '/admin'] : ['/', '/lobby'];
+  const tabRoutes = isAdmin
+    ? ['/', '/lobby', '/club-admin', '/admin']
+    : isClubOwner
+      ? ['/', '/lobby', '/my-club']
+      : ['/', '/lobby'];
   const touchStartX = useRef<number | null>(null);
   const touchStartY = useRef<number | null>(null);
 
@@ -73,6 +84,11 @@ export const Layout = ({ children }: LayoutProps) => {
       .catch(() => {});
   }, [token, user?.id, setChips]);
 
+  // Загрузить inbox при логине.
+  useEffect(() => {
+    if (token && user?.id) fetchInbox(token);
+  }, [token, user?.id, fetchInbox]);
+
   // Подписки через useSocketEvent — авто-off при размонтировании, без ручного on/off (§9.3-F).
 
   // Обновление банкролла (посадка/выход/админ-правки).
@@ -89,6 +105,16 @@ export const Layout = ({ children }: LayoutProps) => {
       toast.error('Эта вкладка отключена — игра открыта в другой вкладке', { duration: 5000 });
       disconnectSocket();
       navigate('/lobby');
+    },
+    !!user,
+  );
+
+  // Входящее уведомление (фишки/бан/broadcast) — добавляем в store и показываем тост.
+  useSocketEvent<{ notification: InboxNotification }>(
+    SOCKET_EVENTS.INBOX_NOTIFICATION,
+    ({ notification }) => {
+      addNotification(notification);
+      toast(notification.text, { duration: 4000 });
     },
     !!user,
   );
@@ -151,7 +177,7 @@ export const Layout = ({ children }: LayoutProps) => {
                 <NavLink to="/" label="Главная" active={path === '/'} onClick={() => navigate('/')} />
                 <NavLink to="/lobby" label="Лобби" active={path === '/lobby'} onClick={() => navigate('/lobby')} />
                 <NavLink to="/tournaments" label="Турниры" active={false} disabled hint="скоро" />
-                <NavLink to="/profile" label="Профиль" active={false} disabled hint="скоро" />
+                <NavLink to="/profile" label="Профиль" active={path === '/profile'} onClick={() => navigate('/profile')} badge={inboxUnread || undefined} />
               </div>
             )}
           </div>
@@ -170,6 +196,13 @@ export const Layout = ({ children }: LayoutProps) => {
                   </span>
                 )}
                 {/* На мобиле admin-кнопки живут в нижнем баре (см. ниже); тут — только десктоп */}
+                {isClubOwner && (
+                  <div className="hidden md:flex items-center gap-2 md:gap-3">
+                    <Suspense fallback={null}>
+                      <MyClubNavButton onClick={() => navigate('/my-club')} />
+                    </Suspense>
+                  </div>
+                )}
                 {isAdmin && (
                   <div className="hidden md:flex items-center gap-2 md:gap-3">
                     <Suspense fallback={null}>
@@ -224,7 +257,7 @@ export const Layout = ({ children }: LayoutProps) => {
         <nav
           className="md:hidden fixed bottom-0 left-0 right-0 z-40 backdrop-blur-md bg-black/70 border-t border-white/10 pb-[env(safe-area-inset-bottom)]"
         >
-          <div className={'grid h-16 ' + (isAdmin ? 'grid-cols-6' : 'grid-cols-4')}>
+          <div className={'grid h-16 ' + (isAdmin ? 'grid-cols-6' : isClubOwner ? 'grid-cols-5' : 'grid-cols-4')}>
             <TabButton
               icon={<Home size={20} />}
               label="Главная"
@@ -247,10 +280,19 @@ export const Layout = ({ children }: LayoutProps) => {
             <TabButton
               icon={<UserCircle size={20} />}
               label="Профиль"
-              active={false}
-              disabled
-              hint={isAdmin ? undefined : 'скоро'}
+              active={path === '/profile'}
+              onClick={() => navigate('/profile')}
+              badge={inboxUnread || undefined}
             />
+            {/* Кнопка владельца клуба — только не-admin владельцам */}
+            {!isAdmin && isClubOwner && (
+              <TabButton
+                icon={<Crown size={20} />}
+                label="Мой клуб"
+                active={location.pathname.startsWith('/my-club')}
+                onClick={() => navigate('/my-club')}
+              />
+            )}
             {/* Admin-only: видны только админам (исходно были в верхней панели). */}
             {isAdmin && (
               <>
@@ -281,6 +323,7 @@ const NavLink = ({
   active,
   disabled,
   hint,
+  badge,
   onClick,
 }: {
   to: string;
@@ -288,13 +331,14 @@ const NavLink = ({
   active: boolean;
   disabled?: boolean;
   hint?: string;
+  badge?: number;
   onClick?: () => void;
 }) => (
   <button
     onClick={disabled ? undefined : onClick}
     disabled={disabled}
     className={
-      'px-3 py-1.5 rounded-lg text-sm font-bold transition-colors ' +
+      'relative px-3 py-1.5 rounded-lg text-sm font-bold transition-colors ' +
       (active
         ? 'bg-emerald-500/15 text-emerald-300'
         : disabled
@@ -304,6 +348,11 @@ const NavLink = ({
   >
     {label}
     {hint && <span className="ml-1 text-[10px] opacity-60">({hint})</span>}
+    {!!badge && (
+      <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center">
+        {badge > 9 ? '9+' : badge}
+      </span>
+    )}
   </button>
 );
 
@@ -313,6 +362,7 @@ const TabButton = ({
   active,
   disabled,
   hint,
+  badge,
   onClick,
 }: {
   icon: React.ReactNode;
@@ -320,13 +370,14 @@ const TabButton = ({
   active: boolean;
   disabled?: boolean;
   hint?: string;
+  badge?: number;
   onClick?: () => void;
 }) => (
   <button
     onClick={disabled ? undefined : onClick}
     disabled={disabled}
     className={
-      'flex flex-col items-center justify-center gap-0.5 min-h-[44px] min-w-0 px-0.5 transition-all duration-200 ' +
+      'relative flex flex-col items-center justify-center gap-0.5 min-h-[44px] min-w-0 px-0.5 transition-all duration-200 ' +
       (active
         ? 'text-emerald-300 [filter:drop-shadow(0_0_4px_#34d399)_drop-shadow(0_0_10px_#10b981)]'
         : disabled
@@ -334,7 +385,14 @@ const TabButton = ({
         : 'text-gray-400 hover:text-emerald-200 hover:[filter:drop-shadow(0_0_5px_rgba(52,211,153,0.6))]')
     }
   >
-    {icon}
+    <div className="relative">
+      {icon}
+      {!!badge && (
+        <span className="absolute -top-1 -right-1.5 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center">
+          {badge > 9 ? '9+' : badge}
+        </span>
+      )}
+    </div>
     <span className="text-[10px] font-bold tracking-wide max-w-full truncate">
       {label}
       {hint && <span className="ml-1 opacity-60">({hint})</span>}

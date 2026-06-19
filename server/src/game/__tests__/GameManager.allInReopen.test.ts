@@ -11,13 +11,12 @@ import { card, buildDeck } from './helpers/cards.js';
 // Код: любой all-in, который повышает currentBet, сбрасывает actionsThisRound = {userId}.
 //      Это позволяет уже-сходившим re-raise против incomplete all-in.
 //
-// Сценарий: BB=10, 4 игрока со стеками A=200 B=200 C=200 D=100. На флопе:
+// Сценарий: BB=10, 4 игрока со стеками A=200 B=200 C=200 D=100 (на флопе; buyIn=110, −10 BB). На флопе:
 //   A bets 30 → currentBet=30, lastRaiseSize=30
 //   B raises to 90 → raise-size=60 (полный, ≥30), currentBet=90, lastRaiseSize=60
 //   C calls 90
 //   D all-in 100 → raise-size=10 (incomplete, <60), currentBet=100 (bumped, но incomplete)
 //   По спеке: B и C могут только call/fold; A может ещё raise.
-//   Код: A, B, C — все могут raise (action re-opened).
 
 async function setup() {
   const { gm, io } = await createTestGameManager();
@@ -39,7 +38,7 @@ async function setup() {
   seatPlayer(gm, io, { roomId, userId: 'A', username: 'A', bankroll: 10_000, buyIn: 200 });
   seatPlayer(gm, io, { roomId, userId: 'B', username: 'B', bankroll: 10_000, buyIn: 200 });
   seatPlayer(gm, io, { roomId, userId: 'C', username: 'C', bankroll: 10_000, buyIn: 200 });
-  seatPlayer(gm, io, { roomId, userId: 'D', username: 'D', bankroll: 10_000, buyIn: 100 });
+  seatPlayer(gm, io, { roomId, userId: 'D', username: 'D', bankroll: 10_000, buyIn: 110 }); // −10 BB → 100 chips на флопе
   return { gm, io, roomId };
 }
 
@@ -108,7 +107,7 @@ describe('GameManager — incomplete all-in re-opens action (POKER_RULES §5.2, 
     vi.spyOn(console, 'log').mockImplementation(() => {});
   });
 
-  it.fails('A3: после incomplete all-in от D, B не может re-raise (он уже call\'нул full raise)', async () => {
+  it('A3: после incomplete all-in от D, B не может re-raise (он уже call\'нул full raise)', async () => {
     const { gm, roomId } = await setup();
     await setupFlopScenario(gm, roomId);
     const s = getState(gm, roomId);
@@ -131,7 +130,7 @@ describe('GameManager — incomplete all-in re-opens action (POKER_RULES §5.2, 
     expect(after.currentBet).toBe(beforeBet); // должно быть 100, но код позволит 200
   });
 
-  it.fails('A3: после incomplete all-in от D, C не может re-raise', async () => {
+  it('A3: после incomplete all-in от D, C не может re-raise', async () => {
     const { gm, roomId } = await setup();
     await setupFlopScenario(gm, roomId);
     // Пропускаем A (fold) и B (call)

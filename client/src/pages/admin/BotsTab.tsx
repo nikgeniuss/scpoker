@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
 import { useAdminApi } from '../../hooks/useAdminApi';
 import { TARGET_LABEL, TARGET_COLOR } from './types';
+import { formatMoney, parseMoney } from '../../config/chipFormat';
 import type { BotMetaView } from './types';
 
 export const BotsTab = () => {
@@ -43,7 +44,7 @@ export const BotsTab = () => {
     setRefilling(true);
     try {
       const data = await api.post<{ refilled: number; chips: number }>('/admin/bots/refill', { chips: refillAmount });
-      toast.success(`Пополнено: ${data.refilled} ботов по ${data.chips}`);
+      toast.success(`Пополнено: ${data.refilled} ботов по ${formatMoney(data.chips)}`);
       load();
     } catch {
       toast.error('Не удалось пополнить');
@@ -52,10 +53,26 @@ export const BotsTab = () => {
     }
   };
 
+  const [resetting, setResetting] = useState(false);
+
+  const resetPnL = async () => {
+    if (resetting) return;
+    setResetting(true);
+    try {
+      const data = await api.post<{ reset: number }>('/admin/bots/reset-pnl', {});
+      toast.success(`PnL сброшен у ${data.reset} ботов`);
+      load();
+    } catch {
+      toast.error('Не удалось сбросить PnL');
+    } finally {
+      setResetting(false);
+    }
+  };
+
   const refillOne = async (botId: string) => {
     try {
       await api.patch('/admin/bots/' + encodeURIComponent(botId), { chips: refillAmount });
-      toast.success(`Бот пополнен до ${refillAmount}`);
+      toast.success(`Бот пополнен до ${formatMoney(refillAmount)}`);
       load();
     } catch {
       toast.error('Не удалось пополнить');
@@ -80,10 +97,9 @@ export const BotsTab = () => {
           <input
             type="number"
             min={0}
-            max={10000000}
-            step={1000}
-            value={refillAmount}
-            onChange={(e) => setRefillAmount(Math.max(0, Math.min(10000000, Math.round(Number(e.target.value) || 0))))}
+            step={10}
+            value={refillAmount / 100}
+            onChange={(e) => setRefillAmount(parseMoney(e.target.value))}
             className="w-32 px-3 py-2 rounded-lg bg-gray-900 border border-white/10 text-white outline-none focus:border-poker-gold"
           />
         </div>
@@ -92,10 +108,17 @@ export const BotsTab = () => {
           disabled={refilling}
           className="px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-500 to-green-600 text-white font-bold shadow-lg shadow-emerald-500/30 disabled:opacity-50"
         >
-          {refilling ? 'Пополняем…' : `Пополнить всем по ${refillAmount.toLocaleString('ru')}`}
+          {refilling ? 'Пополняем…' : `Пополнить всем по ${formatMoney(refillAmount)}`}
+        </button>
+        <button
+          onClick={resetPnL}
+          disabled={resetting}
+          className="px-4 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white font-bold disabled:opacity-50"
+        >
+          {resetting ? 'Сброс…' : 'Сбросить totalPnL'}
         </button>
         <p className="text-xs text-gray-500 flex-1 min-w-[200px]">
-          Сбрасывает PnL/handsPlayed всех ботов. Сумма применяется и кнопкой «↻» у каждого бота.
+          «Пополнить» — сбрасывает session-PnL/раздачи. «Сбросить totalPnL» — обнуляет lifetime-PnL (§9.2).
         </p>
       </div>
 
@@ -126,19 +149,19 @@ export const BotsTab = () => {
                   Банкролл
                   <button
                     onClick={() => refillOne(b.id)}
-                    title={`Пополнить до ${refillAmount.toLocaleString('ru')}`}
+                    title={`Пополнить до ${formatMoney(refillAmount)}`}
                     className="text-[10px] text-emerald-400 hover:text-emerald-300 leading-none"
                   >
                     ↻
                   </button>
                 </div>
-                <div className="text-white font-bold">{b.chips.toLocaleString('ru')}</div>
+                <div className="text-white font-bold">{formatMoney(b.chips)}</div>
               </div>
               <div>
-                <div className="text-gray-500">PnL</div>
-                <div className={'font-bold ' + (b.realizedPnL >= 0 ? 'text-emerald-400' : 'text-rose-400')}>
-                  {b.realizedPnL >= 0 ? '+' : ''}
-                  {b.realizedPnL.toLocaleString('ru')}
+                <div className="text-gray-500">PnL (total)</div>
+                <div className={'font-bold ' + (b.totalPnL >= 0 ? 'text-emerald-400' : 'text-rose-400')}>
+                  {b.totalPnL >= 0 ? '+' : ''}
+                  {formatMoney(b.totalPnL)}
                 </div>
               </div>
               <div>

@@ -119,8 +119,8 @@ describe('GameManager — property-based invariants', () => {
     );
   });
 
-  it.fails(
-    'A1 property: re-raise на (currentBet + lastRaiseSize) должен быть принят (currently fails — A1 bug)',
+  it(
+    'A1 property: re-raise на (currentBet + lastRaiseSize) должен быть принят',
     async () => {
       await fc.assert(
         fc.asyncProperty(

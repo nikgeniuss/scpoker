@@ -9,12 +9,20 @@ export const DENY_MESSAGES: Record<string, string> = {
   'full': 'Комната заполнена',
   'in-game': 'Раздача уже идёт — дождитесь окончания',
   'kicked': 'Вас удалил админ',
+  'on-cooldown': 'Вход за стол временно закрыт админом',
   'closed': 'Комната закрыта админом',
   'no-chips': 'У вас закончились фишки',
   'insufficient-bankroll': 'Недостаточно фишек для минимального бай-ина',
   'invalid-buyin': 'Сумма бай-ина вне допустимого диапазона',
+  'too-many-tables': 'Открыто максимум столов (3) — закройте один',
+  'club-members-only': 'Стол только для членов клуба',
 };
 
-export function denyMessage(reason: string, fallback: string): string {
+export function denyMessage(reason: string, fallback: string, retryAfterSec?: number): string {
+  // Временный кик: показываем остаток времени, если сервер его прислал.
+  if (reason === 'on-cooldown' && retryAfterSec && retryAfterSec > 0) {
+    const min = Math.ceil(retryAfterSec / 60);
+    return 'Вход за стол закрыт админом. Попробуйте через ' + min + ' мин';
+  }
   return DENY_MESSAGES[reason] ?? fallback;
 }

@@ -255,15 +255,6 @@ describe('GameManager — pot distribution (§6, §8.3, §9)', () => {
     // B raises to 30. C calls 30. A (BB) folds → A's BB=10 остаётся в pot.
     // Контест между B и C. Тот, кто выиграет, забирает pot включая 10 от A.
     const { gm, roomId } = await setup(3, { buyIns: [1000, 1000, 1000] });
-    const deck = buildDeck(
-      card('2', 's'), card('3', 's'), // A hole (irrelevant — fold)
-      card('K', 's'), card('K', 'h'), // B (winner: pair of kings)
-      card('5', 's'), card('6', 's'), // C
-      card('2', 'c'),
-      card('7', 'd'), card('8', 'h'), card('9', 's'), // flop: gives no help to anyone except maybe C straight draw
-      card('3', 'c'), card('10', 'd'),  // turn — нет, 10 даёт C стрит 6-7-8-9-10? нет, 5-6 и 7-8-9-10 = 6-7-8-9-10 → стрит C
-      card('4', 'c'), card('J', 'h'),
-    );
     // Чтобы B (KK) выиграл, board не должен давать C стрит. Перестроим:
     // C hole 5♠6♠, не должно быть карт 7-8-9-10 как стрит. Нужны: 2,3,4 etc.
     // Простой board: 2c (burn), 7d 7h 7s — это 3 семёрки + B's KK → KK+777=full house. Хорошо.
@@ -337,15 +328,6 @@ describe('GameManager — pot distribution (§6, §8.3, §9)', () => {
     // Make C weakest. Simple: A=AA, B=KK, C=2-7 offsuit. Board favors B too.
     // Board: К на board → KK trips/full house → B wins side. A also has AA, wins main.
     const { gm, roomId } = await setup(3, { buyIns: [100, 500, 500] });
-    const deck = buildDeck(
-      card('A', 's'), card('A', 'h'), // A wins main with AA
-      card('K', 's'), card('K', 'h'), // B
-      card('2', 's'), card('7', 'd'), // C
-      card('2', 'c'),
-      card('K', 'd'), card('5', 'h'), card('6', 's'), // board has K → B gets trips
-      card('3', 'c'), card('4', 'd'),
-      card('5', 'c'), card('3', 'h'),
-    );
     // На борде K → B имеет KKK. A имеет AA.
     // K K K vs A A K K vs A A K K... wait, B has K K + board K = trips. A has A A + board K = two pair AA-KK. Trips beats two pair → B wins!
     // Нужно чтобы A выиграл main. Сделаю board без K: 2c burn, 5h 6d 7s, etc. Тогда B = KK pair, A = AA pair, A wins.
@@ -513,8 +495,10 @@ describe('GameManager — pot distribution (§6, §8.3, §9)', () => {
     gm.handlePlayerAction(roomId, 'B', 'check');
     const gws = io.emitted.filter((e) => e.event === 'gameWinner');
     expect(gws.length).toBe(1);
-    const payload = gws[0].payload as { winners: string[]; handName: string };
+    const payload = gws[0].payload as { winners: string[]; handName: string; amounts: Record<string, number> };
     expect(payload.winners).toEqual(['A']);
+    // Сумма выигрыша приходит в payload (для показа «+сумма» на showdown)
+    expect(payload.amounts['A']).toBeGreaterThan(0);
   });
 
   it('room.pot=0 после showdown distribution', async () => {

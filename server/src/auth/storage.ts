@@ -25,7 +25,9 @@ async function flushOne(filename: string, data: unknown): Promise<void> {
     await fsPromises.writeFile(tmpPath, serialized, 'utf-8');
     await fsPromises.rename(tmpPath, fullPath);
   } catch (err) {
-    try { await fsPromises.unlink(tmpPath); } catch {}
+    try { await fsPromises.unlink(tmpPath); } catch {
+      // tmp-файл уже не существует (rename успел до сбоя) — не критично
+    }
     console.error('writeJSON async flush failed for', filename, err);
   }
 }
@@ -38,7 +40,9 @@ function flushSyncOne(filename: string, data: unknown): void {
     writeFileSync(tmpPath, serialized, 'utf-8');
     renameSync(tmpPath, fullPath);
   } catch (err) {
-    try { unlinkSync(tmpPath); } catch {}
+    try { unlinkSync(tmpPath); } catch {
+      // tmp-файл уже не существует (rename успел до сбоя) — не критично
+    }
     console.error('writeJSON sync-shutdown flush failed for', filename, err);
   }
 }
@@ -55,15 +59,15 @@ function flushAllSync(): void {
 }
 
 // Регистрируем shutdown-хуки один раз (защита от double-register при HMR/тестах).
-declare const globalThis: { __storageShutdownRegistered?: boolean };
-if (!globalThis.__storageShutdownRegistered) {
-  globalThis.__storageShutdownRegistered = true;
+const globalState = globalThis as { __storageShutdownRegistered?: boolean };
+if (!globalState.__storageShutdownRegistered) {
+  globalState.__storageShutdownRegistered = true;
   process.on('beforeExit', () => { flushAllSync(); });
   process.on('SIGINT', () => { flushAllSync(); process.exit(); });
   process.on('SIGTERM', () => { flushAllSync(); process.exit(); });
 }
 
-export function readJSON(filename: string): any {
+export function readJSON(filename: string): unknown {
   // Если есть pending write — читаем последнюю версию из буфера (свежее чем диск).
   // Иначе read-modify-write терял бы свежие данные между debounce-окнами.
   // Re-serialize чтобы вернуть независимую копию (старый readJSON всегда возвращал новый объект через JSON.parse).

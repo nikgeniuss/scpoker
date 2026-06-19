@@ -4,7 +4,11 @@ import {
   loginUser,
   validateTelegramInitData,
   loginOrRegisterTelegramUser,
+  createTelegramLinkCode,
+  linkTelegramToAccount,
+  setAvatarSeed,
 } from '../auth/auth.js';
+import { AVATAR_PRESETS } from '@poker-room/shared';
 import { TELEGRAM_BOT_TOKEN } from '../config.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { readJSON } from '../auth/storage.js';
@@ -83,6 +87,62 @@ export function createAuthRouter(): Router {
       user: {
         id: user.id,
         username: user.username,
+        displayName: user.displayName,
+        role: user.role,
+        chips: user.chips,
+        publicId: user.publicId,
+        country: user.country,
+      },
+    });
+  });
+
+  // Привязка Telegram — шаг 1: залогиненный (browser) юзер запрашивает одноразовый код.
+  // Клиент откроет t.me/<bot>/<app>?startapp=<code>, Mini App подтвердит на /link/confirm.
+  router.post('/link/start', authMiddleware, (req, res) => {
+    if (!TELEGRAM_BOT_TOKEN) {
+      res.status(503).json({ error: 'Telegram не сконфигурирован на сервере' });
+      return;
+    }
+    const jwtUser = (req as unknown as { user: { id: string } }).user;
+    const code = createTelegramLinkCode(jwtUser.id);
+    res.json({ code });
+  });
+
+  // Привязка Telegram — шаг 2: Mini App присылает initData + code. Привязываем TG к аккаунту из
+  // кода, сливаем баланс TG-дубля (если был). Возвращаем токен объединённого аккаунта.
+  router.post('/link/confirm', (req, res) => {
+    if (!TELEGRAM_BOT_TOKEN) {
+      res.status(503).json({ error: 'Telegram не сконфигурирован на сервере' });
+      return;
+    }
+    const { initData, code } = req.body as { initData?: string; code?: string };
+    if (!initData || typeof initData !== 'string' || !code || typeof code !== 'string') {
+      res.status(400).json({ error: 'initData и code обязательны' });
+      return;
+    }
+    const tgUser = validateTelegramInitData(initData, TELEGRAM_BOT_TOKEN);
+    if (!tgUser) {
+      res.status(401).json({ error: 'Невалидная подпись initData' });
+      return;
+    }
+    const result = linkTelegramToAccount(code, tgUser);
+    if ('error' in result) {
+      const map = {
+        code: [400, 'Код привязки недействителен или истёк'],
+        banned: [403, 'Аккаунт заблокирован'],
+        conflict: [409, 'К этому аккаунту уже привязан другой Telegram'],
+      } as const;
+      const [status, error] = map[result.error];
+      res.status(status).json({ error });
+      return;
+    }
+    const { token, user } = result;
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        username: user.username,
+        displayName: user.displayName,
         role: user.role,
         chips: user.chips,
         publicId: user.publicId,
@@ -92,21 +152,38 @@ export function createAuthRouter(): Router {
   });
 
   router.get('/me', authMiddleware, (req, res) => {
-    const jwtUser = (req as any).user;
-    // Догружаем актуальные chips/publicId/country из users.json — клиенту нужен банкролл для BuyInModal
+    const jwtUser = (req as unknown as { user: { id: string; username: string; role: string } }).user;
+    // Догружаем актуальные chips/publicId/country/avatarSeed из users.json — клиенту нужен банкролл для BuyInModal
     let chips = 0;
     let publicId: string | undefined;
     let country: string | undefined;
+    let avatarSeed: string | undefined;
     try {
-      const users = readJSON('users.json') as Array<{ id: string; chips: number; publicId?: string; country?: string }>;
+      const users = readJSON('users.json') as Array<{ id: string; chips: number; publicId?: string; country?: string; avatarSeed?: string }>;
       const u = users.find(x => x.id === jwtUser.id);
       if (u) {
         chips = u.chips;
         publicId = u.publicId;
         country = u.country;
+        avatarSeed = u.avatarSeed;
       }
-    } catch {}
-    res.json({ user: { ...jwtUser, chips, publicId, country } });
+    } catch {
+      // users.json временно недоступен (race с writeJSON-дебаунсом) — отдаём jwtUser без догрузки
+    }
+    res.json({ user: { ...jwtUser, chips, publicId, country, avatarSeed } });
+  });
+
+  // Выбор аватара из фиксированного списка (профиль → карусель). Любой авторизованный.
+  router.put('/avatar', authMiddleware, (req, res) => {
+    const userId = (req as unknown as { user: { id: string } }).user.id;
+    const seed = req.body?.seed;
+    if (typeof seed !== 'string' || !AVATAR_PRESETS.includes(seed)) {
+      res.status(400).json({ error: 'seed: один из AVATAR_PRESETS' });
+      return;
+    }
+    const ok = setAvatarSeed(userId, seed);
+    if (!ok) { res.status(404).json({ error: 'Пользователь не найден' }); return; }
+    res.json({ avatarSeed: seed });
   });
 
   return router;

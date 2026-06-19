@@ -1,4 +1,5 @@
 import type { TimebankConfig, TimebankSettings, CreateRoomOptions } from './GameManager.js';
+import { validateRakeConfig } from './rake.js';
 
 // Чистые функции валидации/трансформации конфига комнаты — вынесены из GameManager (ROADMAP §9.3-B).
 // Без состояния/io/socket: тестируются изолированно (эталон hands.ts/deck.ts). Сообщения 1:1 с прежними.
@@ -46,8 +47,8 @@ export function validateCreateOptions(opts: CreateRoomOptions): string | null {
   if (opts.bigBlind < opts.smallBlind * 2) {
     return 'Большой блайнд должен быть не меньше 2× малого';
   }
-  if (!Number.isInteger(opts.maxPlayers) || opts.maxPlayers < 2 || opts.maxPlayers > 9) {
-    return 'Лимит игроков — от 2 до 9';
+  if (!Number.isInteger(opts.maxPlayers) || opts.maxPlayers < 2 || opts.maxPlayers > 12) {
+    return 'Лимит игроков — от 2 до 12';
   }
   if (
     !Number.isInteger(opts.turnDurationSec) ||
@@ -78,6 +79,35 @@ export function validateCreateOptions(opts: CreateRoomOptions): string | null {
   }
   if (opts.description !== undefined && opts.description.length > 200) {
     return 'Описание — не больше 200 символов';
+  }
+  if (opts.rake !== undefined) {
+    const rakeErr = validateRakeConfig(opts.rake);
+    if (rakeErr) return rakeErr;
+  }
+  if (opts.ante !== undefined) {
+    if (!Number.isInteger(opts.ante) || opts.ante < 0 || opts.ante > opts.bigBlind) {
+      return 'Анте — целое от 0 до большого блайнда';
+    }
+  }
+  if (opts.sessionDurationHours !== undefined) {
+    if (!Number.isInteger(opts.sessionDurationHours) || opts.sessionDurationHours < 0 || opts.sessionDurationHours > 24) {
+      return 'Длительность игры — 0..24 часа';
+    }
+  }
+  if (opts.autoStartPlayers !== undefined) {
+    if (!Number.isInteger(opts.autoStartPlayers) || opts.autoStartPlayers < 2 || opts.autoStartPlayers > opts.maxPlayers) {
+      return 'Автостарт — от 2 до размера стола';
+    }
+  }
+  if (opts.sitOutTimeoutMin !== undefined) {
+    if (!Number.isInteger(opts.sitOutTimeoutMin) || opts.sitOutTimeoutMin < 5 || opts.sitOutTimeoutMin > 30) {
+      return 'Время сит-аута — от 5 до 30 минут';
+    }
+  }
+  if (opts.waitlistDelayMin !== undefined) {
+    if (!Number.isInteger(opts.waitlistDelayMin) || opts.waitlistDelayMin < 2 || opts.waitlistDelayMin > 10) {
+      return 'Задержка очереди — от 2 до 10 минут';
+    }
   }
   return null;
 }

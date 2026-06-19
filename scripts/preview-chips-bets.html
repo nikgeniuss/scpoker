@@ -1,0 +1,428 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+ body{margin:0;background:#137a3a;font-family:Arial,sans-serif;color:#fff;padding:24px}
+ h2{margin:0 0 4px} h3{margin:18px 0 8px;font-size:14px}
+ .row{display:flex;gap:26px;align-items:flex-end;flex-wrap:wrap;background:rgba(0,0,0,.12);padding:18px;border-radius:12px}
+ .cell{display:flex;flex-direction:column;align-items:center;gap:5px}
+ .amt{background:rgba(0,0,0,.75);color:#fcd34d;font-weight:700;font-size:11px;padding:1px 6px;border-radius:5px}
+</style></head><body>
+ <h2>Разбивка банка на фишки — фиксированная лестница, любой банк точно</h2>
+ <h3>Центы / микро</h3><div class="row"><div class="cell"><div style="display:flex;align-items:flex-end;gap:3px"><div style="position:relative;width:26px;height:26px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-white.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#1a1a1a;text-shadow:0 1px 1px rgba(255,255,255,.4)">0.01</span>
+       </div></div></div><div class="amt">0.01</div></div><div class="cell"><div style="display:flex;align-items:flex-end;gap:3px"><div style="position:relative;width:26px;height:26px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-pink.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">0.05</span>
+       </div></div></div><div class="amt">0.05</div></div><div class="cell"><div style="display:flex;align-items:flex-end;gap:3px"><div style="position:relative;width:26px;height:26px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-cyan.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">0.25</span>
+       </div></div></div><div class="amt">0.25</div></div><div class="cell"><div style="display:flex;align-items:flex-end;gap:3px"><div style="position:relative;width:26px;height:26px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-cyan.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">0.25</span>
+       </div></div><div style="position:relative;width:26px;height:31px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-pink.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">0.05</span>
+       </div><div style="position:absolute;left:0;bottom:5px;z-index:1;width:26px;height:26px">
+         <img src="../client/public/chips/chip-pink.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">0.05</span>
+       </div></div><div style="position:relative;width:26px;height:31px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-white.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#1a1a1a;text-shadow:0 1px 1px rgba(255,255,255,.4)">0.01</span>
+       </div><div style="position:absolute;left:0;bottom:5px;z-index:1;width:26px;height:26px">
+         <img src="../client/public/chips/chip-white.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#1a1a1a;text-shadow:0 1px 1px rgba(255,255,255,.4)">0.01</span>
+       </div></div></div><div class="amt">0.37</div></div><div class="cell"><div style="display:flex;align-items:flex-end;gap:3px"><div style="position:relative;width:26px;height:26px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-blue.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 11px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">1</span>
+       </div></div><div style="position:relative;width:26px;height:26px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-cyan.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">0.25</span>
+       </div></div><div style="position:relative;width:26px;height:31px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-pink.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">0.05</span>
+       </div><div style="position:absolute;left:0;bottom:5px;z-index:1;width:26px;height:26px">
+         <img src="../client/public/chips/chip-pink.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">0.05</span>
+       </div></div><div style="position:relative;width:26px;height:31px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-white.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#1a1a1a;text-shadow:0 1px 1px rgba(255,255,255,.4)">0.01</span>
+       </div><div style="position:absolute;left:0;bottom:5px;z-index:1;width:26px;height:26px">
+         <img src="../client/public/chips/chip-white.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#1a1a1a;text-shadow:0 1px 1px rgba(255,255,255,.4)">0.01</span>
+       </div></div></div><div class="amt">1.37</div></div><div class="cell"><div style="display:flex;align-items:flex-end;gap:3px"><div style="position:relative;width:26px;height:31px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-blue.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 11px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">1</span>
+       </div><div style="position:absolute;left:0;bottom:5px;z-index:1;width:26px;height:26px">
+         <img src="../client/public/chips/chip-blue.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 11px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">1</span>
+       </div></div><div style="position:relative;width:26px;height:26px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-cyan.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">0.25</span>
+       </div></div><div style="position:relative;width:26px;height:31px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-pink.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">0.05</span>
+       </div><div style="position:absolute;left:0;bottom:5px;z-index:1;width:26px;height:26px">
+         <img src="../client/public/chips/chip-pink.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">0.05</span>
+       </div></div><div style="position:relative;width:26px;height:31px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-white.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#1a1a1a;text-shadow:0 1px 1px rgba(255,255,255,.4)">0.01</span>
+       </div><div style="position:absolute;left:0;bottom:5px;z-index:1;width:26px;height:26px">
+         <img src="../client/public/chips/chip-white.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#1a1a1a;text-shadow:0 1px 1px rgba(255,255,255,.4)">0.01</span>
+       </div></div></div><div class="amt">2.37</div></div></div>
+ <h3>Мелкие банки</h3><div class="row"><div class="cell"><div style="display:flex;align-items:flex-end;gap:3px"><div style="position:relative;width:26px;height:26px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-blue.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 11px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">1</span>
+       </div></div></div><div class="amt">1.00</div></div><div class="cell"><div style="display:flex;align-items:flex-end;gap:3px"><div style="position:relative;width:26px;height:26px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-red.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 11px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">5</span>
+       </div></div><div style="position:relative;width:26px;height:31px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-blue.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 11px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">1</span>
+       </div><div style="position:absolute;left:0;bottom:5px;z-index:1;width:26px;height:26px">
+         <img src="../client/public/chips/chip-blue.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 11px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">1</span>
+       </div></div></div><div class="amt">7.00</div></div><div class="cell"><div style="display:flex;align-items:flex-end;gap:3px"><div style="position:relative;width:26px;height:36px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-red.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 11px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">5</span>
+       </div><div style="position:absolute;left:0;bottom:5px;z-index:1;width:26px;height:26px">
+         <img src="../client/public/chips/chip-red.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 11px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">5</span>
+       </div><div style="position:absolute;left:0;bottom:10px;z-index:2;width:26px;height:26px">
+         <img src="../client/public/chips/chip-red.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 11px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">5</span>
+       </div></div></div><div class="amt">15.00</div></div><div class="cell"><div style="display:flex;align-items:flex-end;gap:3px"><div style="position:relative;width:26px;height:36px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-green.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 9px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">25</span>
+       </div><div style="position:absolute;left:0;bottom:5px;z-index:1;width:26px;height:26px">
+         <img src="../client/public/chips/chip-green.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 9px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">25</span>
+       </div><div style="position:absolute;left:0;bottom:10px;z-index:2;width:26px;height:26px">
+         <img src="../client/public/chips/chip-green.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 9px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">25</span>
+       </div></div><div style="position:relative;width:26px;height:41px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-red.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 11px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">5</span>
+       </div><div style="position:absolute;left:0;bottom:5px;z-index:1;width:26px;height:26px">
+         <img src="../client/public/chips/chip-red.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 11px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">5</span>
+       </div><div style="position:absolute;left:0;bottom:10px;z-index:2;width:26px;height:26px">
+         <img src="../client/public/chips/chip-red.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 11px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">5</span>
+       </div><div style="position:absolute;left:0;bottom:15px;z-index:3;width:26px;height:26px">
+         <img src="../client/public/chips/chip-red.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 11px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">5</span>
+       </div></div><div style="position:relative;width:26px;height:41px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-blue.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 11px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">1</span>
+       </div><div style="position:absolute;left:0;bottom:5px;z-index:1;width:26px;height:26px">
+         <img src="../client/public/chips/chip-blue.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 11px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">1</span>
+       </div><div style="position:absolute;left:0;bottom:10px;z-index:2;width:26px;height:26px">
+         <img src="../client/public/chips/chip-blue.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 11px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">1</span>
+       </div><div style="position:absolute;left:0;bottom:15px;z-index:3;width:26px;height:26px">
+         <img src="../client/public/chips/chip-blue.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 11px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">1</span>
+       </div></div><div style="position:relative;width:26px;height:36px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-cyan.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">0.25</span>
+       </div><div style="position:absolute;left:0;bottom:5px;z-index:1;width:26px;height:26px">
+         <img src="../client/public/chips/chip-cyan.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">0.25</span>
+       </div><div style="position:absolute;left:0;bottom:10px;z-index:2;width:26px;height:26px">
+         <img src="../client/public/chips/chip-cyan.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">0.25</span>
+       </div></div><div style="position:relative;width:26px;height:41px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-pink.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">0.05</span>
+       </div><div style="position:absolute;left:0;bottom:5px;z-index:1;width:26px;height:26px">
+         <img src="../client/public/chips/chip-pink.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">0.05</span>
+       </div><div style="position:absolute;left:0;bottom:10px;z-index:2;width:26px;height:26px">
+         <img src="../client/public/chips/chip-pink.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">0.05</span>
+       </div><div style="position:absolute;left:0;bottom:15px;z-index:3;width:26px;height:26px">
+         <img src="../client/public/chips/chip-pink.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">0.05</span>
+       </div></div><div style="position:relative;width:26px;height:41px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-white.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#1a1a1a;text-shadow:0 1px 1px rgba(255,255,255,.4)">0.01</span>
+       </div><div style="position:absolute;left:0;bottom:5px;z-index:1;width:26px;height:26px">
+         <img src="../client/public/chips/chip-white.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#1a1a1a;text-shadow:0 1px 1px rgba(255,255,255,.4)">0.01</span>
+       </div><div style="position:absolute;left:0;bottom:10px;z-index:2;width:26px;height:26px">
+         <img src="../client/public/chips/chip-white.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#1a1a1a;text-shadow:0 1px 1px rgba(255,255,255,.4)">0.01</span>
+       </div><div style="position:absolute;left:0;bottom:15px;z-index:3;width:26px;height:26px">
+         <img src="../client/public/chips/chip-white.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#1a1a1a;text-shadow:0 1px 1px rgba(255,255,255,.4)">0.01</span>
+       </div></div></div><div class="amt">99.99</div></div></div>
+ <h3>Крупные / хай-стейкс</h3><div class="row"><div class="cell"><div style="display:flex;align-items:flex-end;gap:3px"><div style="position:relative;width:26px;height:26px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-orange.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 9px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">1K</span>
+       </div></div></div><div class="amt">1,000.00</div></div><div class="cell"><div style="display:flex;align-items:flex-end;gap:3px"><div style="position:relative;width:26px;height:31px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-gold.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 9px Arial;color:#1a1a1a;text-shadow:0 1px 1px rgba(255,255,255,.4)">5K</span>
+       </div><div style="position:absolute;left:0;bottom:5px;z-index:1;width:26px;height:26px">
+         <img src="../client/public/chips/chip-gold.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 9px Arial;color:#1a1a1a;text-shadow:0 1px 1px rgba(255,255,255,.4)">5K</span>
+       </div></div><div style="position:relative;width:26px;height:36px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-orange.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 9px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">1K</span>
+       </div><div style="position:absolute;left:0;bottom:5px;z-index:1;width:26px;height:26px">
+         <img src="../client/public/chips/chip-orange.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 9px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">1K</span>
+       </div><div style="position:absolute;left:0;bottom:10px;z-index:2;width:26px;height:26px">
+         <img src="../client/public/chips/chip-orange.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 9px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">1K</span>
+       </div></div><div style="position:relative;width:26px;height:26px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-purple.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 8px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">500</span>
+       </div></div><div style="position:relative;width:26px;height:31px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-black.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 8px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">100</span>
+       </div><div style="position:absolute;left:0;bottom:5px;z-index:1;width:26px;height:26px">
+         <img src="../client/public/chips/chip-black.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 8px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">100</span>
+       </div></div></div><div class="amt">13,700.00</div></div><div class="cell"><div style="display:flex;align-items:flex-end;gap:3px"><div style="position:relative;width:26px;height:41px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-brown.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 8px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">25K</span>
+       </div><div style="position:absolute;left:0;bottom:5px;z-index:1;width:26px;height:26px">
+         <img src="../client/public/chips/chip-brown.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 8px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">25K</span>
+       </div><div style="position:absolute;left:0;bottom:10px;z-index:2;width:26px;height:26px">
+         <img src="../client/public/chips/chip-brown.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 8px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">25K</span>
+       </div><div style="position:absolute;left:0;bottom:15px;z-index:3;width:26px;height:26px">
+         <img src="../client/public/chips/chip-brown.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 8px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">25K</span>
+       </div></div><div style="position:relative;width:26px;height:41px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-gold.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 9px Arial;color:#1a1a1a;text-shadow:0 1px 1px rgba(255,255,255,.4)">5K</span>
+       </div><div style="position:absolute;left:0;bottom:5px;z-index:1;width:26px;height:26px">
+         <img src="../client/public/chips/chip-gold.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 9px Arial;color:#1a1a1a;text-shadow:0 1px 1px rgba(255,255,255,.4)">5K</span>
+       </div><div style="position:absolute;left:0;bottom:10px;z-index:2;width:26px;height:26px">
+         <img src="../client/public/chips/chip-gold.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 9px Arial;color:#1a1a1a;text-shadow:0 1px 1px rgba(255,255,255,.4)">5K</span>
+       </div><div style="position:absolute;left:0;bottom:15px;z-index:3;width:26px;height:26px">
+         <img src="../client/public/chips/chip-gold.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 9px Arial;color:#1a1a1a;text-shadow:0 1px 1px rgba(255,255,255,.4)">5K</span>
+       </div></div><div style="position:relative;width:26px;height:36px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-orange.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 9px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">1K</span>
+       </div><div style="position:absolute;left:0;bottom:5px;z-index:1;width:26px;height:26px">
+         <img src="../client/public/chips/chip-orange.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 9px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">1K</span>
+       </div><div style="position:absolute;left:0;bottom:10px;z-index:2;width:26px;height:26px">
+         <img src="../client/public/chips/chip-orange.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 9px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">1K</span>
+       </div></div><div style="position:relative;width:26px;height:41px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-black.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 8px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">100</span>
+       </div><div style="position:absolute;left:0;bottom:5px;z-index:1;width:26px;height:26px">
+         <img src="../client/public/chips/chip-black.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 8px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">100</span>
+       </div><div style="position:absolute;left:0;bottom:10px;z-index:2;width:26px;height:26px">
+         <img src="../client/public/chips/chip-black.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 8px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">100</span>
+       </div><div style="position:absolute;left:0;bottom:15px;z-index:3;width:26px;height:26px">
+         <img src="../client/public/chips/chip-black.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 8px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">100</span>
+       </div></div><div style="position:relative;width:26px;height:31px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-green.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 9px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">25</span>
+       </div><div style="position:absolute;left:0;bottom:5px;z-index:1;width:26px;height:26px">
+         <img src="../client/public/chips/chip-green.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 9px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">25</span>
+       </div></div><div style="position:relative;width:26px;height:26px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-red.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 11px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">5</span>
+       </div></div><div style="position:relative;width:26px;height:26px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-blue.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 11px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">1</span>
+       </div></div><div style="position:relative;width:26px;height:36px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-cyan.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">0.25</span>
+       </div><div style="position:absolute;left:0;bottom:5px;z-index:1;width:26px;height:26px">
+         <img src="../client/public/chips/chip-cyan.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">0.25</span>
+       </div><div style="position:absolute;left:0;bottom:10px;z-index:2;width:26px;height:26px">
+         <img src="../client/public/chips/chip-cyan.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">0.25</span>
+       </div></div><div style="position:relative;width:26px;height:36px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:26px;height:26px">
+         <img src="../client/public/chips/chip-white.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#1a1a1a;text-shadow:0 1px 1px rgba(255,255,255,.4)">0.01</span>
+       </div><div style="position:absolute;left:0;bottom:5px;z-index:1;width:26px;height:26px">
+         <img src="../client/public/chips/chip-white.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#1a1a1a;text-shadow:0 1px 1px rgba(255,255,255,.4)">0.01</span>
+       </div><div style="position:absolute;left:0;bottom:10px;z-index:2;width:26px;height:26px">
+         <img src="../client/public/chips/chip-white.svg" style="width:100%;height:100%;display:block"/>
+         <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 6px Arial;color:#1a1a1a;text-shadow:0 1px 1px rgba(255,255,255,.4)">0.01</span>
+       </div></div></div><div class="amt">123,456.78</div></div></div>
+ <h3>Единая стопка (демонстрация — все фишки банка в одной кучке, крупные снизу)</h3>
+ <div class="row" style="align-items:flex-end">
+   <div class="cell"><div style="position:relative;width:42px;height:332px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:42px;height:42px">
+     <img src="../client/public/chips/chip-brown.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 13px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">25K</span>
+   </div><div style="position:absolute;left:0;bottom:29px;z-index:1;width:42px;height:42px">
+     <img src="../client/public/chips/chip-gold.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 15px Arial;color:#1a1a1a;text-shadow:0 1px 1px rgba(255,255,255,.4)">5K</span>
+   </div><div style="position:absolute;left:0;bottom:58px;z-index:2;width:42px;height:42px">
+     <img src="../client/public/chips/chip-orange.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 15px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">1K</span>
+   </div><div style="position:absolute;left:0;bottom:87px;z-index:3;width:42px;height:42px">
+     <img src="../client/public/chips/chip-purple.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 13px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">500</span>
+   </div><div style="position:absolute;left:0;bottom:116px;z-index:4;width:42px;height:42px">
+     <img src="../client/public/chips/chip-black.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 13px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">100</span>
+   </div><div style="position:absolute;left:0;bottom:145px;z-index:5;width:42px;height:42px">
+     <img src="../client/public/chips/chip-green.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 15px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">25</span>
+   </div><div style="position:absolute;left:0;bottom:174px;z-index:6;width:42px;height:42px">
+     <img src="../client/public/chips/chip-red.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 18px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">5</span>
+   </div><div style="position:absolute;left:0;bottom:203px;z-index:7;width:42px;height:42px">
+     <img src="../client/public/chips/chip-blue.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 18px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">1</span>
+   </div><div style="position:absolute;left:0;bottom:232px;z-index:8;width:42px;height:42px">
+     <img src="../client/public/chips/chip-cyan.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 10px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">0.25</span>
+   </div><div style="position:absolute;left:0;bottom:261px;z-index:9;width:42px;height:42px">
+     <img src="../client/public/chips/chip-pink.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 10px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">0.05</span>
+   </div><div style="position:absolute;left:0;bottom:290px;z-index:10;width:42px;height:42px">
+     <img src="../client/public/chips/chip-white.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 10px Arial;color:#1a1a1a;text-shadow:0 1px 1px rgba(255,255,255,.4)">0.01</span>
+   </div></div><div class="amt">по 1 каждого</div></div>
+   <div class="cell"><div style="position:relative;width:42px;height:187px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:42px;height:42px">
+     <img src="../client/public/chips/chip-black.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 13px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">100</span>
+   </div><div style="position:absolute;left:0;bottom:29px;z-index:1;width:42px;height:42px">
+     <img src="../client/public/chips/chip-green.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 15px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">25</span>
+   </div><div style="position:absolute;left:0;bottom:58px;z-index:2;width:42px;height:42px">
+     <img src="../client/public/chips/chip-red.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 18px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">5</span>
+   </div><div style="position:absolute;left:0;bottom:87px;z-index:3;width:42px;height:42px">
+     <img src="../client/public/chips/chip-red.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 18px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">5</span>
+   </div><div style="position:absolute;left:0;bottom:116px;z-index:4;width:42px;height:42px">
+     <img src="../client/public/chips/chip-blue.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 18px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">1</span>
+   </div><div style="position:absolute;left:0;bottom:145px;z-index:5;width:42px;height:42px">
+     <img src="../client/public/chips/chip-blue.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 18px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">1</span>
+   </div></div><div class="amt">137.00</div></div>
+   <div class="cell"><div style="position:relative;width:42px;height:477px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:42px;height:42px">
+     <img src="../client/public/chips/chip-purple.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 13px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">500</span>
+   </div><div style="position:absolute;left:0;bottom:29px;z-index:1;width:42px;height:42px">
+     <img src="../client/public/chips/chip-black.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 13px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">100</span>
+   </div><div style="position:absolute;left:0;bottom:58px;z-index:2;width:42px;height:42px">
+     <img src="../client/public/chips/chip-black.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 13px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">100</span>
+   </div><div style="position:absolute;left:0;bottom:87px;z-index:3;width:42px;height:42px">
+     <img src="../client/public/chips/chip-black.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 13px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">100</span>
+   </div><div style="position:absolute;left:0;bottom:116px;z-index:4;width:42px;height:42px">
+     <img src="../client/public/chips/chip-black.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 13px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">100</span>
+   </div><div style="position:absolute;left:0;bottom:145px;z-index:5;width:42px;height:42px">
+     <img src="../client/public/chips/chip-green.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 15px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">25</span>
+   </div><div style="position:absolute;left:0;bottom:174px;z-index:6;width:42px;height:42px">
+     <img src="../client/public/chips/chip-green.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 15px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">25</span>
+   </div><div style="position:absolute;left:0;bottom:203px;z-index:7;width:42px;height:42px">
+     <img src="../client/public/chips/chip-green.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 15px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">25</span>
+   </div><div style="position:absolute;left:0;bottom:232px;z-index:8;width:42px;height:42px">
+     <img src="../client/public/chips/chip-red.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 18px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">5</span>
+   </div><div style="position:absolute;left:0;bottom:261px;z-index:9;width:42px;height:42px">
+     <img src="../client/public/chips/chip-red.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 18px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">5</span>
+   </div><div style="position:absolute;left:0;bottom:290px;z-index:10;width:42px;height:42px">
+     <img src="../client/public/chips/chip-blue.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 18px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">1</span>
+   </div><div style="position:absolute;left:0;bottom:319px;z-index:11;width:42px;height:42px">
+     <img src="../client/public/chips/chip-blue.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 18px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">1</span>
+   </div><div style="position:absolute;left:0;bottom:348px;z-index:12;width:42px;height:42px">
+     <img src="../client/public/chips/chip-cyan.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 10px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">0.25</span>
+   </div><div style="position:absolute;left:0;bottom:377px;z-index:13;width:42px;height:42px">
+     <img src="../client/public/chips/chip-cyan.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 10px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">0.25</span>
+   </div><div style="position:absolute;left:0;bottom:406px;z-index:14;width:42px;height:42px">
+     <img src="../client/public/chips/chip-pink.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 10px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">0.05</span>
+   </div><div style="position:absolute;left:0;bottom:435px;z-index:15;width:42px;height:42px">
+     <img src="../client/public/chips/chip-pink.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 10px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">0.05</span>
+   </div></div><div class="amt">987.65</div></div>
+   <div class="cell"><div style="position:relative;width:42px;height:100px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:42px;height:42px">
+     <img src="../client/public/chips/chip-orange.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 15px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">1K</span>
+   </div><div style="position:absolute;left:0;bottom:29px;z-index:1;width:42px;height:42px">
+     <img src="../client/public/chips/chip-orange.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 15px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">1K</span>
+   </div><div style="position:absolute;left:0;bottom:58px;z-index:2;width:42px;height:42px">
+     <img src="../client/public/chips/chip-purple.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 13px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">500</span>
+   </div></div><div class="amt">2,500.00</div></div>
+   <div class="cell"><div style="position:relative;width:42px;height:477px"><div style="position:absolute;left:0;bottom:0px;z-index:0;width:42px;height:42px">
+     <img src="../client/public/chips/chip-gold.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 15px Arial;color:#1a1a1a;text-shadow:0 1px 1px rgba(255,255,255,.4)">5K</span>
+   </div><div style="position:absolute;left:0;bottom:29px;z-index:1;width:42px;height:42px">
+     <img src="../client/public/chips/chip-gold.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 15px Arial;color:#1a1a1a;text-shadow:0 1px 1px rgba(255,255,255,.4)">5K</span>
+   </div><div style="position:absolute;left:0;bottom:58px;z-index:2;width:42px;height:42px">
+     <img src="../client/public/chips/chip-orange.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 15px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">1K</span>
+   </div><div style="position:absolute;left:0;bottom:87px;z-index:3;width:42px;height:42px">
+     <img src="../client/public/chips/chip-orange.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 15px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">1K</span>
+   </div><div style="position:absolute;left:0;bottom:116px;z-index:4;width:42px;height:42px">
+     <img src="../client/public/chips/chip-black.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 13px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">100</span>
+   </div><div style="position:absolute;left:0;bottom:145px;z-index:5;width:42px;height:42px">
+     <img src="../client/public/chips/chip-black.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 13px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">100</span>
+   </div><div style="position:absolute;left:0;bottom:174px;z-index:6;width:42px;height:42px">
+     <img src="../client/public/chips/chip-black.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 13px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">100</span>
+   </div><div style="position:absolute;left:0;bottom:203px;z-index:7;width:42px;height:42px">
+     <img src="../client/public/chips/chip-green.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 15px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">25</span>
+   </div><div style="position:absolute;left:0;bottom:232px;z-index:8;width:42px;height:42px">
+     <img src="../client/public/chips/chip-red.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 18px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">5</span>
+   </div><div style="position:absolute;left:0;bottom:261px;z-index:9;width:42px;height:42px">
+     <img src="../client/public/chips/chip-red.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 18px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">5</span>
+   </div><div style="position:absolute;left:0;bottom:290px;z-index:10;width:42px;height:42px">
+     <img src="../client/public/chips/chip-red.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 18px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">5</span>
+   </div><div style="position:absolute;left:0;bottom:319px;z-index:11;width:42px;height:42px">
+     <img src="../client/public/chips/chip-red.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 18px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">5</span>
+   </div><div style="position:absolute;left:0;bottom:348px;z-index:12;width:42px;height:42px">
+     <img src="../client/public/chips/chip-cyan.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 10px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">0.25</span>
+   </div><div style="position:absolute;left:0;bottom:377px;z-index:13;width:42px;height:42px">
+     <img src="../client/public/chips/chip-cyan.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 10px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">0.25</span>
+   </div><div style="position:absolute;left:0;bottom:406px;z-index:14;width:42px;height:42px">
+     <img src="../client/public/chips/chip-pink.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 10px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">0.05</span>
+   </div><div style="position:absolute;left:0;bottom:435px;z-index:15;width:42px;height:42px">
+     <img src="../client/public/chips/chip-pink.svg" style="width:100%;height:100%;display:block"/>
+     <span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:900 10px Arial;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)">0.05</span>
+   </div></div><div class="amt">12,345.67</div></div>
+ </div>
+</body></html>

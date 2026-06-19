@@ -10,6 +10,7 @@ export interface PendingJoin {
   room: RoomInfo;
   stage: 'password' | 'buyin';
   password?: string;
+  queue?: boolean; // true — вступление в очередь на полный стол (а не обычная посадка)
 }
 
 export function useJoinFlow(myId: string | null) {
@@ -35,23 +36,40 @@ export function useJoinFlow(myId: string | null) {
     }
   };
 
+  // Встать в очередь на полный стол: тот же флоу (пароль → бай-ин), но с флагом queue.
+  const handleQueue = (room: RoomInfo) => {
+    const imIn = !!myId && room.playerIds.includes(myId);
+    if (imIn) return; // уже за столом
+    if (room.hasPassword) {
+      setPendingJoin({ room, stage: 'password', queue: true });
+    } else {
+      setPendingJoin({ room, stage: 'buyin', queue: true });
+    }
+  };
+
+  const handleLeaveQueue = (room: RoomInfo) => {
+    getSocket().emit(SOCKET_EVENTS.LEAVE_WAITLIST, { roomId: room.id });
+  };
+
   const handlePasswordSubmit = (password: string) => {
     if (!pendingJoin || pendingJoin.stage !== 'password') return;
-    setPendingJoin({ room: pendingJoin.room, stage: 'buyin', password });
+    setPendingJoin({ room: pendingJoin.room, stage: 'buyin', password, queue: pendingJoin.queue });
   };
 
   const handleBuyInSubmit = (amount: number) => {
     if (!pendingJoin || pendingJoin.stage !== 'buyin') return;
-    getSocket().emit(SOCKET_EVENTS.JOIN_ROOM, {
+    const event = pendingJoin.queue ? SOCKET_EVENTS.JOIN_WAITLIST : SOCKET_EVENTS.JOIN_ROOM;
+    getSocket().emit(event, {
       roomId: pendingJoin.room.id,
       password: pendingJoin.password,
       buyInAmount: amount,
     });
+    if (pendingJoin.queue) toast.success('Вы встали в очередь');
     setPendingJoin(null);
   };
 
   // Стабильная ссылка — используется как onJoinDenied-колбэк в useLobbyData (deps).
   const reset = useCallback(() => setPendingJoin(null), []);
 
-  return { pendingJoin, handleJoin, handlePasswordSubmit, handleBuyInSubmit, reset };
+  return { pendingJoin, handleJoin, handleQueue, handleLeaveQueue, handlePasswordSubmit, handleBuyInSubmit, reset };
 }

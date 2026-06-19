@@ -8,6 +8,7 @@ interface AuthUser {
   chips?: number; // банкролл; обновляется через socket-event 'bankrollUpdate' + при mount Layout
   publicId?: string; // короткий публичный ID в формате XXXX-XXXX
   country?: string;  // ISO 3166-1 alpha-2 (например, 'RU')
+  avatarSeed?: string; // выбранный seed аватара (из AVATAR_PRESETS); не задан = фоллбэк на id
 }
 
 interface AuthState {
@@ -17,6 +18,7 @@ interface AuthState {
   login: (token: string, user: AuthUser) => void;
   logout: () => void;
   setChips: (chips: number) => void;
+  setAvatarSeed: (seed: string) => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -27,6 +29,10 @@ export const useAuthStore = create<AuthState>((set) => ({
   login: (token, user) => {
     localStorage.setItem('token', token);
     localStorage.setItem('user', JSON.stringify(user));
+    // Сменили аккаунт/токен (в т.ч. при привязке Telegram с объединением) — старый сокет
+    // авторизован под прежним id. Сбрасываем, чтобы следующий getSocket() переподключился
+    // под новым токеном (иначе посадка ищет фишки по старому/удалённому id → «нет фишек»).
+    disconnectSocket();
     set({ token, user, isAdmin: user.role === 'admin' });
   },
 
@@ -41,6 +47,14 @@ export const useAuthStore = create<AuthState>((set) => ({
     set((state) => {
       if (!state.user) return {};
       const updated = { ...state.user, chips };
+      localStorage.setItem('user', JSON.stringify(updated));
+      return { user: updated };
+    }),
+
+  setAvatarSeed: (avatarSeed) =>
+    set((state) => {
+      if (!state.user) return {};
+      const updated = { ...state.user, avatarSeed };
       localStorage.setItem('user', JSON.stringify(updated));
       return { user: updated };
     }),

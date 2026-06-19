@@ -59,7 +59,7 @@ function makeDeck(playerCount: number) {
   return buildDeck(...cardsList);
 }
 
-async function setupTable(playerCount: number, opts?: { timebank?: typeof TIMEBANK_SETTINGS }) {
+async function setupTable(playerCount: number, _opts?: { timebank?: typeof TIMEBANK_SETTINGS }) {
   const { gm, io } = await createTestGameManager();
   const create = gm.createRoom(
     {
@@ -276,7 +276,7 @@ describe('GameManager — lifecycle, timers, disconnect, late entry', () => {
 
   describe('Disconnect handling', () => {
     it('disconnect в waiting → немедленный removePlayer, стек возвращается в банкролл', async () => {
-      const { gm, io, roomId } = await setupTable(2);
+      const { gm, roomId } = await setupTable(2);
       // status=waiting (не стартовали)
       const beforeStorage = getStorage('users.json') as Array<{ id: string; chips: number }>;
       const aBefore = beforeStorage.find((u) => u.id === 'A')!.chips;
@@ -299,7 +299,7 @@ describe('GameManager — lifecycle, timers, disconnect, late entry', () => {
       const s = getState(gm, roomId);
       const a = s.players.find((p) => p.id === 'A')!;
       expect(a.disconnected).toBe(true);
-      // A всё ещё в комнате (grace 30с не истёк)
+      // A всё ещё в комнате (сит-аут не истёк)
       expect(a).toBeDefined();
     });
 
@@ -307,7 +307,7 @@ describe('GameManager — lifecycle, timers, disconnect, late entry', () => {
       const { gm, roomId } = await setupTable(2);
       gm.startGame(roomId, makeDeck(2));
       // Ход у B. Дисконнектим B. После фикса §11.51 instant-fold убран:
-      // B только помечается disconnected, fold случится по turn-timer или 30с grace.
+      // B только помечается disconnected, fold случится по turn-timer / сит-аут авто-фолду.
       gm.handleDisconnect('B');
       const s = getState(gm, roomId);
       const b = s.players.find((p) => p.id === 'B')!;
@@ -315,7 +315,7 @@ describe('GameManager — lifecycle, timers, disconnect, late entry', () => {
       expect(b.isFolded).toBe(false);
     });
 
-    it('reconnect внутри 30с — disconnected=false, стек сохранён', async () => {
+    it('reconnect внутри сит-аута — disconnected=false, стек сохранён', async () => {
       const { gm, io, roomId } = await setupTable(2);
       gm.startGame(roomId, makeDeck(2));
       gm.handleDisconnect('A');
@@ -329,17 +329,99 @@ describe('GameManager — lifecycle, timers, disconnect, late entry', () => {
       expect(a.chips).toBeGreaterThan(0);
     });
 
-    it('disconnect timeout 30с → removePlayer, стек в банкролл', async () => {
+    it('сит-аут истёк (дефолт 30 мин) → removePlayer, стек в банкролл', async () => {
       const { gm, roomId } = await setupTable(2);
       gm.startGame(roomId, makeDeck(2));
       // Дисконнектим A (не текущий)
       gm.handleDisconnect('A');
       const aBefore = (getStorage('users.json') as Array<{ id: string; chips: number }>).find((u) => u.id === 'A')!.chips;
-      // Прокручиваем 30 секунд
-      vi.advanceTimersByTime(30_001);
-      // A удалён, банкролл получает остаток стека
+      // До истечения сит-аута (29 мин) A ещё за столом
+      vi.advanceTimersByTime(29 * 60_000);
+      const stillThere = (getStorage('users.json') as Array<{ id: string; chips: number }>).find((u) => u.id === 'A')!.chips;
+      expect(stillThere).toBe(aBefore);
+      // Прокручиваем за 30 минут — A удалён, банкролл получает остаток стека
+      vi.advanceTimersByTime(60_001);
       const aAfter = (getStorage('users.json') as Array<{ id: string; chips: number }>).find((u) => u.id === 'A')!.chips;
       expect(aAfter).toBeGreaterThan(aBefore);
+    });
+
+    it('сит-аут: ход доходит до отключённого → быстрый авто-фолд/чек (не ждёт полный turn-таймер)', async () => {
+      const { gm, roomId } = await setupTable(2);
+      gm.startGame(roomId, makeDeck(2));
+      // Ход у B (D/SB preflop). Дисконнектим A (BB, не текущий) — он в сит-ауте.
+      gm.handleDisconnect('A');
+      // B коллирует → ход переходит к отключённому A, армится короткий sit-out-таймер (не turn 30с).
+      gm.handlePlayerAction(roomId, 'B', 'call');
+      // Прокручиваем всего 1.6с (< turnDurationSec=30): A уже авто-сходил (BB, call=0 → check),
+      // префлоп-раунд завершён → раздан флоп. Без быстрого пути A бы ещё ждал turn-таймер.
+      vi.advanceTimersByTime(1600);
+      expect(getState(gm, roomId).communityCards.length).toBe(3);
+    });
+  });
+
+  describe('Admin kick cooldown (временный кик)', () => {
+    it('кик с кулдауном → on-cooldown до истечения, потом снова можно сесть', async () => {
+      const { gm, roomId } = await setupTable(3);
+      gm.adminKickPlayer(roomId, 'A', 5);
+      expect(gm.canJoinRoom(roomId, 'A')).toBe('on-cooldown');
+      // За секунду до истечения ещё закрыт
+      vi.advanceTimersByTime(5 * 60_000 - 1000);
+      expect(gm.canJoinRoom(roomId, 'A')).toBe('on-cooldown');
+      // После 5 минут — кулдаун снят, вход разрешён (банкролл вернулся при кике)
+      vi.advanceTimersByTime(2000);
+      expect(gm.canJoinRoom(roomId, 'A')).toBeNull();
+    });
+
+    it('кик без кулдауна (0) → вход разрешён сразу', async () => {
+      const { gm, roomId } = await setupTable(3);
+      gm.adminKickPlayer(roomId, 'A', 0);
+      expect(gm.canJoinRoom(roomId, 'A')).toBeNull();
+    });
+  });
+
+  describe('Waitlist (очередь на полный стол)', () => {
+    // Полный стол на 2 места (A, B) с задержкой очереди 2 мин.
+    async function fullTable() {
+      const { gm, io } = await createTestGameManager();
+      const create = gm.createRoom(
+        { name: 'WaitRoom', smallBlind: 5, bigBlind: 10, maxPlayers: 2, turnDurationSec: 30, buyInMinBb: 20, buyInMaxBb: 100, waitlistDelayMin: 2 },
+        'system',
+      ) as { roomId: string };
+      const roomId = create.roomId;
+      seatPlayer(gm, io, { roomId, userId: 'A', username: 'A', bankroll: 10000, buyIn: 1000 });
+      seatPlayer(gm, io, { roomId, userId: 'B', username: 'B', bankroll: 10000, buyIn: 1000 });
+      return { gm, io, roomId };
+    }
+
+    it('место освободилось → через задержку (2 мин) авто-посадка первого из очереди', async () => {
+      const { gm, io, roomId } = await fullTable();
+      // C встаёт в очередь (стол полный): seatPlayer создаёт сокет+банкролл, addPlayer падает (full).
+      const { socket: sockC } = seatPlayer(gm, io, { roomId, userId: 'C', username: 'C', bankroll: 10000, buyIn: 1000 });
+      const res = (gm as unknown as { joinWaitlist: (...a: unknown[]) => unknown })
+        .joinWaitlist(roomId, 'C', 'C', sockC, undefined, 1000);
+      expect(res).toEqual({ queued: 1 });
+
+      gm.removePlayer(roomId, 'A'); // место освободилось (B остался) → запланирована посадка
+      expect(getState(gm, roomId).players.find((p) => p.id === 'C')).toBeUndefined();
+      vi.advanceTimersByTime(2 * 60_000 + 100);
+      expect(getState(gm, roomId).players.find((p) => p.id === 'C')).toBeDefined();
+      expect(sockC.emitted.some((e) => e.event === 'seatFromWaitlist')).toBe(true);
+    });
+
+    it('офлайн-игрок в очереди пропускается → садится следующий валидный', async () => {
+      const { gm, io, roomId } = await fullTable();
+      const { socket: sockC } = seatPlayer(gm, io, { roomId, userId: 'C', username: 'C', bankroll: 10000, buyIn: 1000 });
+      const { socket: sockD } = seatPlayer(gm, io, { roomId, userId: 'D', username: 'D', bankroll: 10000, buyIn: 1000 });
+      const g = gm as unknown as { joinWaitlist: (...a: unknown[]) => unknown };
+      g.joinWaitlist(roomId, 'C', 'C', sockC, undefined, 1000);
+      g.joinWaitlist(roomId, 'D', 'D', sockD, undefined, 1000);
+      io.removeSocket(sockC.id); // C ушёл оффлайн до посадки
+
+      gm.removePlayer(roomId, 'A');
+      vi.advanceTimersByTime(2 * 60_000 + 100);
+      const state = getState(gm, roomId);
+      expect(state.players.find((p) => p.id === 'C')).toBeUndefined();
+      expect(state.players.find((p) => p.id === 'D')).toBeDefined();
     });
   });
 
@@ -448,6 +530,47 @@ describe('GameManager — lifecycle, timers, disconnect, late entry', () => {
       const s = getState(gm, roomId);
       // A auto-folded (call > 0 после raise)
       expect(s.players.find((p) => p.id === 'A')!.isFolded).toBe(true);
+    });
+  });
+
+  describe('Авто-докупка стека (auto top-up)', () => {
+    // Сценарий опирается на числа из «стеки переходят между раздачами»:
+    // B (D=SB) фолдит, теряет SB=5 → стек 995; без докупки во 2-й раздаче (B=BB, -10) станет 985.
+    it('доливает стек проигравшего между раздачами из банкролла; победителя не трогает', async () => {
+      const { gm, roomId } = await setupTable(2);
+      // B — авто-докупка до полного бай-ина (100 ББ = 1000 фишек) при падении ниже него.
+      gm.setAutoTopUp(roomId, 'B', { enabled: true, thresholdBb: 100, targetBb: 100 });
+
+      gm.startGame(roomId, makeDeck(2));
+      gm.handlePlayerAction(roomId, 'B', 'fold');
+      // cleanupHand: B 995 < 1000 → долив +5 до 1000 (банкролл 9000 → 8995), затем 2-я раздача
+      // (B=BB платит 10 → 990). Без докупки было бы 985.
+      vi.advanceTimersByTime(5001);
+
+      const after = getState(gm, roomId);
+      expect(after.players.find((p) => p.id === 'B')!.chips).toBe(990);
+      // A выиграл раздачу, авто-докупки у него нет — стек обычной логики (1005 → SB -5 → 1000).
+      expect(after.players.find((p) => p.id === 'A')!.chips).toBe(1000);
+
+      // Списание строго на величину долива; чужой банкролл не тронут.
+      const users = getStorage('users.json') as Array<{ id: string; chips: number }>;
+      expect(users.find((u) => u.id === 'B')!.chips).toBe(8995);
+      expect(users.find((u) => u.id === 'A')!.chips).toBe(9000);
+    });
+
+    it('выключенная авто-докупка — no-op (стек и банкролл не меняются)', async () => {
+      const { gm, roomId } = await setupTable(2);
+      gm.setAutoTopUp(roomId, 'B', { enabled: false, thresholdBb: 100, targetBb: 100 });
+
+      gm.startGame(roomId, makeDeck(2));
+      gm.handlePlayerAction(roomId, 'B', 'fold');
+      vi.advanceTimersByTime(5001);
+
+      const after = getState(gm, roomId);
+      // Долива нет → как в базовом тесте: 995 - 10 (BB 2-й раздачи) = 985.
+      expect(after.players.find((p) => p.id === 'B')!.chips).toBe(985);
+      const users = getStorage('users.json') as Array<{ id: string; chips: number }>;
+      expect(users.find((u) => u.id === 'B')!.chips).toBe(9000);
     });
   });
 });

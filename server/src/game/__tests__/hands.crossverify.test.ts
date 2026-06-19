@@ -7,7 +7,7 @@
 //
 // Если этот тест начинает падать после правок hands.ts — починить hands.ts (или явно
 // сказать пользователю, что pokersolver не прав в этом edge-case'е).
-import { describe, it, expect } from 'vitest';
+import { describe, it } from 'vitest';
 // @ts-expect-error — у pokersolver нет .d.ts
 import { Hand } from 'pokersolver';
 import { evaluateHand, compareHands } from '../hands.js';

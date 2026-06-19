@@ -11,7 +11,7 @@
 
 Эти правила критичны для безопасности/корректности. Если кажется, что одно из них «можно обойти ради задачи» — нельзя. Спросить пользователя.
 
-1. **Не отдавать карты соперников клиенту до showdown.** `broadcastGameState` ходит per-socket; `getGameState(roomId, viewerId, withPeek)` отдаёт `cards` только владельцу, всем — на `showdown`, админу — при включённом peek. Была реальная утечка через DevTools (фикс 2026-05-17, [server/src/game/GameManager.ts](server/src/game/GameManager.ts)).
+1. **Не отдавать карты соперников клиенту до showdown.** `broadcastGameState` ходит per-socket; `getGameState(roomId, viewerId, withPeek)` отдаёт `cards` только владельцу; на `showdown` — ТОЛЬКО дошедшим до вскрытия (не сфолдившим; ≥2 контестера — иначе выигрыш без вскрытия и карты не раскрываются, фикс 2026-06-12); админу — при включённом peek; плюс добровольно показанные карты (`shownCards`, тап после раздачи) — видны всем. Была реальная утечка через DevTools (фикс 2026-05-17, [server/src/game/GameManager.ts](server/src/game/GameManager.ts)). Наблюдатель (сокет в socket.io-комнате, но не в `room.players` — режим `observeRoom`, 2026-06-12) попадает под ту же защиту: `broadcastGameState` шлёт ему base-state без карт соперников; админ-наблюдатель видит карты только через auto-peek (по роли из JWT, не по клиентскому флагу). Подсказки `handHint`/`winChance` (тумблер «Подсказка комбинации», 2026-06-12) — под той же защитой: название комбинации отдаётся только тем, кому видны карты (своё место / админ-peek / showdown), а шанс на выигрыш считается против СЛУЧАЙНЫХ рук (Монте-Карло, [equity.ts](server/src/game/equity.ts), БЕЗ знания чужих карт) — иначе по точному проценту можно было бы вычислить руку соперника.
 
 2. **Не редактировать `server/src/*` если пользователь сейчас за реальным столом.** Каждое изменение в `server/src` триггерит nodemon-рестарт, активная раздача (deck/pot/turnTimer) пропадает. Перед серверным Edit'ом — спросить «играешь?». Клиентские правки (`client/src/*`) безопасны (HMR).
 
@@ -33,7 +33,9 @@
 
 11. **Модульность-first (разделение ответственностей).** Новый код писать модульно: одна функция/файл — одна ответственность. Транспорт (socket/`io`/`fetch`) не смешивать с доменной логикой; правила покера — чистыми функциями (эталон [hands.ts](server/src/game/hands.ts)/[deck.ts](server/src/game/deck.ts)). Перед добавлением логики в большой файл (god-файлы: `GameManager.ts`, `index.ts`, `Admin.tsx`, `Lobby.tsx`, `GameRoom.tsx`) спросить себя: «это сюда по ответственности — или новый модуль/хук/сервис?». Дубль типа/события/конфига — выносить в общий модуль, не копировать (события — через `SOCKET_EVENTS`, см. §6). **Не противоречит §1**: рабочий код молча НЕ рефакторить — крупная развязка идёт в [ROADMAP §9.3](docs/ROADMAP.md) + спросить пользователя. Итог: новое — сразу модульно; старое — не раздувать god-файлы, но и не переписывать без задачи.
 
-12. **Админ-фичи: не видны и не в бандле обычного игрока; защита — серверная.** Настоящая защита админ-действий — ВСЕГДА на сервере: `adminMiddleware` (роль из подписанного JWT через `jwt.verify`) на всех `/api/admin/*` и проверка `role === 'admin'` в сокет-обработчиках (`adminPeekToggle`). Клиентский `isAdmin` (из `localStorage`) — UX/обфускация: его можно подделать руками, но это НИЧЕГО не даёт (сервер всё режет 403). Любой админ-UI: **(а)** lazy-чанк (`React.lazy`) — код НЕ в основном бандле игрока; **(б)** за `RequireAdmin` (route-гейт, редиректит не-админа ДО загрузки чанка) либо `{isAdmin && …}` (inline). Эталон: [pages/Admin.tsx](client/src/pages/Admin.tsx) (lazy за `RequireAdmin` в [App.tsx](client/src/App.tsx)), [components/admin/](client/src/components/admin/) `AdminTableControls`/`AdminNavButton` (lazy; peek-логика тоже там). Новую админ-фичу — строго по паттерну (lazy + серверный `adminMiddleware`); НЕ инлайнить админ-код/эндпоинты в общий клиентский бандл. Абсолют («код вообще не на сервере игрока») — только отдельным admin-билдом, но безопасность от этого не меняется (она серверная).
+12. **`BotInfo.totalPnL` — источник правды для PnL-решений бота.** В `botBrain.ts` PnL-логика (`computeRiskShift`, `computePnLZone`) использует `ctx.lifetimePnL` (= `meta.bot.totalPnL` из `BotInfo`), который персистируется в `bots.json`. НЕ использовать `runtime.realizedPnL` для бизнес-решений — он session-only и сбрасывается при рестарте. Все таргеты ботов — только `'zero'` или `'plus'` (добавлено 2026-06-14).
+
+13. **Админ-фичи: не видны и не в бандле обычного игрока; защита — серверная.** Настоящая защита админ-действий — ВСЕГДА на сервере: `adminMiddleware` (роль из подписанного JWT через `jwt.verify`) на всех `/api/admin/*` и проверка `role === 'admin'` в сокет-обработчиках (`adminPeekToggle`). Клиентский `isAdmin` (из `localStorage`) — UX/обфускация: его можно подделать руками, но это НИЧЕГО не даёт (сервер всё режет 403). Любой админ-UI: **(а)** lazy-чанк (`React.lazy`) — код НЕ в основном бандле игрока; **(б)** за `RequireAdmin` (route-гейт, редиректит не-админа ДО загрузки чанка) либо `{isAdmin && …}` (inline). Эталон: [pages/Admin.tsx](client/src/pages/Admin.tsx) и [pages/ClubAdmin.tsx](client/src/pages/ClubAdmin.tsx) (оба lazy за `RequireAdmin` в [App.tsx](client/src/App.tsx); входы — lazy `AdminNavButton`/`ClubAdminNavButton` под `{isAdmin && …}` в [Layout.tsx](client/src/components/layout/Layout.tsx)), [components/admin/](client/src/components/admin/) `AdminTableControls`/`AdminNavButton`/`ClubAdminNavButton` (lazy; peek-логика тоже там). Новую админ-фичу — строго по паттерну (lazy + серверный `adminMiddleware`); НЕ инлайнить админ-код/эндпоинты в общий клиентский бандл. Абсолют («код вообще не на сервере игрока») — только отдельным admin-билдом, но безопасность от этого не меняется (она серверная).
 
 ---
 
@@ -151,7 +153,8 @@
 - `npm run dev` (из корня) — клиент + сервер через `concurrently`
 - `npm run dev:client` / `npm run dev:server` — отдельно
 - Vite: `:5173`, Express: `:3001`
-- `npm run check` (из корня) — guard контракта + typecheck (server+client) + client lint + server vitest. `npm run check:contract` — только guard синхронности `SOCKET_EVENTS` (быстро). Прогонять после правок. Полностью зелёный с 2026-06-04.
+- `npm run check` (из корня) — guard контракта + typecheck (server+client) + client lint + server vitest + client vitest. `npm run check:contract` — только guard синхронности `SOCKET_EVENTS` (быстро). Прогонять после правок. Полностью зелёный с 2026-06-04 (390 серверных + 61 клиентский тест на 2026-06-14).
+- Клиентские тесты: vitest 4 + jsdom + @testing-library/react. Конфиг — [client/vitest.config.ts](client/vitest.config.ts), setup — [client/src/test/setup.ts](client/src/test/setup.ts). Файлы — `*.test.ts(x)` рядом с исходником. `npm --prefix client run test` (или `test:watch`).
 
 Не запускать `npm install` без необходимости. Не делать `build` без запроса.
 
@@ -196,7 +199,10 @@ $ports=@(3001,5173,5174); foreach($p in $ports){ Get-NetTCPConnection -LocalPort
 - При неоднозначном выборе показывать **2–4 варианта** через AskUserQuestion с пометкой «рекомендую». Не выбирать молча.
 - Триггеры extended thinking: «**ультрадумай**», «**тщательно**», «**хорошо подумай**».
 - «**По важности**» = отсортировать оставшиеся задачи и предложить первой самую критичную.
-- После задачи — резюме тремя блоками: **«что сделано»**, **«что НЕ делал и почему»**, **«возможные шероховатости»**.
+- **Лаконичный режим (по умолчанию, договорённость 2026-06-12).** Отвечать коротко и плотно, нормальным русским: без преамбул/расшаркиваний/повторов, минимум таблиц, только суть. Экономит output-токены. Развёрнуто — только по явному запросу. НЕ переспрашивать про это.
+- После задачи — **только «возможные шероховатости»** коротко (1–2 строки, без воды). Блоки «что сделано» / «что НЕ делал и почему» НЕ писать (договорённость 2026-06-13).
+- **Журнал для заказчика [docs/REPORT.md](docs/REPORT.md).** В конце сессии (особенно при переходе в новый чат) дописывать туда простым языком, что сделано — для отчёта заказчику. Когда пользователь просит **«отчёт»/«дай отчёт»** — выдать содержимое REPORT.md и **очистить файл** (оставить только шапку) под новое наполнение.
+- **Новая фича → ДОПИСАТЬ тесты (если требуется).** Добавили новую функциональность — в том же заходе **дописать НОВЫЕ тесты в существующий набор** (server vitest / client vitest, рядом с исходником `*.test.ts(x)`), а не просто прогнать имеющиеся. Покрывать: чистую логику (правила покера, equity, сериализация, валидация), серверное поведение, граничные случаи. Обязательно — чистые функции и инварианты §0. Чисто-визуальные/вёрстка-правки — тесты по необходимости (или отметить в резюме, почему не покрыто). После — `npm run check` (он и прогонит новые тесты вместе со всеми).
 - Шероховатости → в [memory/postmortems-2026-Q2.md](memory/postmortems-2026-Q2.md), и **только если** удовлетворяют правилу из §8 (становится тестом / правилом / hook'ом).
 - Цель «адаптив под мобилу» = **всё помещается без скролла** на iPhone SE 375×667.
 - При багах сервера в первый заход — **минимально-инвазивный фикс с guard'ом**. Корневые причины — отдельным пунктом roadmap.
@@ -207,30 +213,88 @@ $ports=@(3001,5173,5174); foreach($p in $ports){ Get-NetTCPConnection -LocalPort
 - Ручные тесты (TWA, прогон по таргетам) — выполнить не могу, сообщить пользователю и предложить чеклист.
 - Серверный лог фоновой dev-задачи мониторю сам (по запросу или для проверки крашей после правок). Клиент не должен запускать команды для проверки.
 - **Дизайн-вдохновение — GGPoker**.
+- **Экономия лимита: модель по типу задачи (договорённость 2026-06-14).** По умолчанию пользователь держит **Sonnet** для рутины (UI/вёрстка, правки по чёткому ТЗ, тесты, типы, понятные баги). На **сложной** задаче (§2.1: §0-инварианты — карты/showdown/банкролл/сайд-поты; многослойная синхронизация клиент↔сервер; проектирование с неочевидным выбором) — **напомнить пользователю переключиться на Opus** (`/model`), решение и переключение за ним: сам модель сменить не могу. Тяжёлый перебор файлов при необходимости отдавать дешёвому субагенту (`Agent` с `model: haiku`/`sonnet`), не основному диалогу.
 
 ---
 
 ## §11. GStack workflow
 
-В окружении установлен [GStack](https://github.com/garrytan/gstack) (`~/.claude/skills/gstack/`) — 48+ skills. Использовать **проактивно**.
+В окружении установлен [GStack](https://github.com/garrytan/gstack) (`~/.claude/skills/gstack/`) — 48+ skills, использовать **проактивно**. Таблица триггеров «какой skill когда вызывать» + правила «что не делать» вынесены в [docs/GSTACK_WORKFLOW.md](docs/GSTACK_WORKFLOW.md) — прочитать при работе со skill'ами (баг → `/investigate`, UI → `/qa`, ship → `/ship`, ревью → `/review`, security → `/cso`, работа с `server/data` → `/careful`).
 
-| Триггер от пользователя или контекст                                                | Какой skill вызвать                  | Почему                                                              |
-| ----------------------------------------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------- |
-| «баг», «не работает», «500», stack trace, exception в логе                          | `/investigate`                       | Root-cause через 4 фазы                                             |
-| «протестируй UI», «проверь как выглядит», «UI ломается на mobile»                   | `/qa` (или `/qa-only` без правок)    | Реальный браузер на http://localhost:5173                           |
-| «давай задеплоим», «ship», «push в master»                                          | `/ship`                              | VERSION/CHANGELOG/commit/push/PR одним проходом                     |
-| Перед merge/ship — пользователь о ревью просит или сам обнаружил риски              | `/review`                            | Pre-landing diff review                                             |
-| «security audit», «JWT в порядке?», «CORS», работа с auth.ts                        | `/cso`                               | OWASP+STRIDE + secrets archaeology                                  |
-| Идея новой фичи без кода («хочу добавить шорт-дэк»)                                 | `/office-hours`                      | 6 forcing questions перед кодом                                     |
-| План фичи готов, надо отшлифовать архитектуру                                       | `/autoplan` или `/plan-eng-review`   | Архитектура/edge cases/performance                                  |
-| «общее состояние кода», «health check»                                              | `/health`                            | Композитный 0-10 score                                              |
-| Правлю один модуль, не хочу задеть остальные                                        | `/freeze <dir>` + потом `/unfreeze`  | Сессия-локальный замок Edit/Write                                  |
-| Работа с `server/data/*.json` (реальные банкроллы)                                  | `/careful` или `/guard`              | Warns перед rm/DROP                                                 |
-| После merge PR — обновить документацию                                              | `/document-release`                  | Reads diff, updates README/ARCHITECTURE                             |
+<!-- BEGIN sqz-claude-guidance (auto-installed by sqz init; remove this block to disable) -->
 
-**Не делать**:
-- `/qa` на проде без `/careful`.
-- `/ship` в фоне без подтверждения.
-- `/freeze` до того как осмотрелся в коде.
-- `/cso` на каждый чих (тяжёлый).
-- Браузер ad-hoc через mcp/puppeteer/playwright — только `/browse`, `/qa`, `/scrape`.
+## sqz — Context Compression (READ FIRST)
+
+sqz is installed in this project. It compresses tool output so large
+files, long logs, and verbose command output cost far fewer tokens.
+There are **two ways** sqz is wired in, and you should prefer each
+one in the situations below.
+
+### Preferred tools (MCP)
+
+The `sqz-mcp` server is registered in this project's MCP config. It
+exposes three read-only tools that compress their output through the
+sqz pipeline:
+
+- **`sqz_read_file`** — read a file from disk and return a compressed
+  view. **PREFER this over the built-in `Read` tool** for any file
+  larger than ~2KB or any file you might read more than once in the
+  same session. Repeat reads return a 13-token `§ref:HASH§` reference
+  instead of the full content.
+
+- **`sqz_grep`** — search files for a literal string or regex.
+  **PREFER this over the built-in `Grep`** for anything that might
+  match more than a handful of lines. Caps at 200 matches by default;
+  raise with `max_matches` if needed.
+
+- **`sqz_list_dir`** — list a directory. Skips `.git`, `node_modules`,
+  `target`, `dist`, `build`, `vendor`, `__pycache__` so the output
+  stays focused. **PREFER this over `ls -la` via Bash** when you want
+  to see a project layout.
+
+The built-in `Read`, `Grep`, `Glob` tools remain available. Use them for:
+- Tiny config files (<1KB) where compression can't help.
+- Byte-exact reads you'll hash or diff (lockfiles, signatures).
+- Globbing (sqz has no glob tool; `Glob` is still the right choice).
+
+### Bash commands (hooked automatically)
+
+When you run a shell command through the `Bash` tool, a PreToolUse hook
+rewrites it to pipe output through `sqz compress`. This is transparent:
+you don't need to remember to add anything, but it's useful to know
+that these commands get compressed automatically:
+
+```bash
+git status           # → git status 2>&1 | sqz compress --cmd git
+cargo test           # → cargo test 2>&1 | sqz compress --cmd cargo
+docker ps            # → docker ps 2>&1 | sqz compress --cmd docker
+kubectl get pods     # → kubectl get pods 2>&1 | sqz compress --cmd kubectl
+```
+
+The rewrite is skipped for interactive commands (`vim`, `ssh`,
+`python`), compound commands (`a && b`, `a > file.txt`), and anything
+already going through sqz.
+
+### Escape hatch — when you see a `§ref:HASH§` token
+
+If tool output contains a `§ref:a1b2c3d4§` token and you need the full
+content it points at, resolve it. Three equivalent ways:
+
+- Shell: `C:\Users\Administrator\AppData\Roaming\npm\node_modules\sqz-cli\bin\sqz.exe expand a1b2c3d4` (or paste the whole token
+  `C:\Users\Administrator\AppData\Roaming\npm\node_modules\sqz-cli\bin\sqz.exe expand §ref:a1b2c3d4§`).
+- MCP tool: call `expand` with `{ "prefix": "a1b2c3d4" }`.
+- To get uncompressed output for one command: prefix it with
+  `SQZ_NO_DEDUP=1` (e.g. `SQZ_NO_DEDUP=1 git log | sqz compress`).
+
+If the compressed output is actively making the task harder (looping
+on refs, small retries replacing one big read), call the `passthrough`
+MCP tool to get raw text.
+
+### When NOT to use sqz tools
+
+- Writing or editing files — use the built-in `Write`/`Edit` tools.
+  sqz has no write tools (by design; see issue #5 follow-up).
+- Running commands interactively or in watch mode.
+- Reading very small files (<1KB) where compression can't help.
+
+<!-- END sqz-claude-guidance -->

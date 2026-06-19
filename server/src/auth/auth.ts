@@ -5,7 +5,7 @@ import { v4 as uuid } from 'uuid';
 import { readJSON, writeJSON } from './storage.js';
 import { JWT_SECRET } from '../config.js';
 
-interface User {
+export interface User {
   id: string;
   username: string;
   email: string;
@@ -17,6 +17,19 @@ interface User {
   publicId?: string; // короткий публичный ID в формате XXXX-XXXX
   country?: string;  // ISO 3166-1 alpha-2 (например, 'RU', 'US')
   telegramId?: number; // ID пользователя в Telegram (из initData.user.id)
+  displayName?: string; // имя из Telegram (first_name [+ last_name]) — показывается за столом вместо username
+  lastLogin?: string; // ISO-время последнего успешного входа
+  alias?: string; // псевдоним-заметка админа (≤40 симв.)
+  note?: string;  // произвольное примечание админа (≤500 симв.)
+  roomTemplates?: RoomTemplate[]; // сохранённые шаблоны создания стола (per-user)
+  opponentNotes?: Record<string, string>; // приватные заметки на оппонентов: targetUserId → текст (≤300 симв.)
+  avatarSeed?: string; // выбранный seed аватара (из AVATAR_PRESETS); не задан = фоллбэк на id
+}
+
+// Шаблон создания стола. opts хранится opaque (валидируется при createRoom).
+export interface RoomTemplate {
+  name: string;
+  opts: unknown;
 }
 
 export interface TelegramUserPayload {
@@ -25,6 +38,14 @@ export interface TelegramUserPayload {
   last_name?: string;
   username?: string;
   language_code?: string;
+}
+
+// Человекочитаемое имя из TG payload для показа за столом: «Имя Фамилия» → @username → tg<id>.
+export function tgDisplayName(tg: TelegramUserPayload): string {
+  const name = [tg.first_name, tg.last_name].filter(Boolean).join(' ').trim();
+  if (name) return name;
+  if (tg.username) return tg.username;
+  return `tg${tg.id}`;
 }
 
 // Алфавит для publicId — без 0/O/1/I, чтобы не путать визуально (32 символа)
@@ -79,7 +100,9 @@ function getInitialChips(): number {
     if (typeof s.defaultPlayerChips === 'number' && s.defaultPlayerChips > 0) {
       return Math.floor(s.defaultPlayerChips);
     }
-  } catch {}
+  } catch {
+    // settings.json нет или повреждён — fallback на дефолт ниже
+  }
   return 1000;
 }
 
@@ -126,6 +149,10 @@ export function loginUser(username: string, password: string): string | null {
     return null;
   }
 
+  // Фиксируем время входа (для админ-карточки игрока)
+  user.lastLogin = new Date().toISOString();
+  writeJSON('users.json', users);
+
   const token = jwt.sign(
     { id: user.id, username: user.username, role: user.role },
     JWT_SECRET,
@@ -133,6 +160,56 @@ export function loginUser(username: string, password: string): string | null {
   );
 
   return token;
+}
+
+// Шаблоны создания стола конкретного юзера (для /api/templates).
+export function getUserTemplates(userId: string): RoomTemplate[] {
+  const users = readJSON('users.json') as User[];
+  const u = users.find((x) => x.id === userId);
+  return u && Array.isArray(u.roomTemplates) ? u.roomTemplates : [];
+}
+
+// Перезаписать весь список шаблонов юзера. Синхронно (без await) — атомарно через writeJSON.
+export function setUserTemplates(userId: string, templates: RoomTemplate[]): RoomTemplate[] {
+  const users = readJSON('users.json') as User[];
+  const u = users.find((x) => x.id === userId);
+  if (!u) return [];
+  u.roomTemplates = templates;
+  writeJSON('users.json', users);
+  return templates;
+}
+
+// Приватные заметки текущего юзера на оппонентов (ROADMAP §10.10).
+export function getOpponentNotes(userId: string): Record<string, string> {
+  const users = readJSON('users.json') as User[];
+  const u = users.find((x) => x.id === userId);
+  return u?.opponentNotes ?? {};
+}
+
+// Записать/очистить заметку на оппонента. Пустой/пробельный текст — удаляет ключ.
+export function setOpponentNote(userId: string, targetId: string, text: string): Record<string, string> {
+  const users = readJSON('users.json') as User[];
+  const u = users.find((x) => x.id === userId);
+  if (!u) return {};
+  if (!u.opponentNotes) u.opponentNotes = {};
+  const trimmed = text.trim();
+  if (trimmed) {
+    u.opponentNotes[targetId] = trimmed;
+  } else {
+    delete u.opponentNotes[targetId];
+  }
+  writeJSON('users.json', users);
+  return u.opponentNotes;
+}
+
+// Сохранить выбранный seed аватара (валидация по списку AVATAR_PRESETS — на стороне роута).
+export function setAvatarSeed(userId: string, seed: string): boolean {
+  const users = readJSON('users.json') as User[];
+  const u = users.find((x) => x.id === userId);
+  if (!u) return false;
+  u.avatarSeed = seed;
+  writeJSON('users.json', users);
+  return true;
 }
 
 export function getUserByToken(token: string): User | null {
@@ -256,8 +333,13 @@ export function loginOrRegisterTelegramUser(
     };
 
     users.push(user);
-    writeJSON('users.json', users);
   }
+
+  // Имя из Telegram — обновляем при каждом входе (могло измениться), показывается за столом.
+  user.displayName = tgDisplayName(tg);
+  // Фиксируем время входа (новый или существующий TG-юзер)
+  user.lastLogin = new Date().toISOString();
+  writeJSON('users.json', users);
 
   const token = jwt.sign(
     { id: user.id, username: user.username, role: user.role },
@@ -265,4 +347,65 @@ export function loginOrRegisterTelegramUser(
     { expiresIn: '7d' },
   );
   return { token, user };
+}
+
+// === Привязка Telegram к существующему аккаунту (browser → код → подтверждение в Mini App) ===
+
+// Одноразовые коды привязки: code → { userId, expiresAt }. В памяти — TTL короткий, переживать
+// рестарт не нужно. Протухшие чистятся лениво при обращении.
+const linkCodes = new Map<string, { userId: string; expiresAt: number }>();
+const LINK_CODE_TTL_MS = 10 * 60 * 1000;
+
+// Сгенерировать код привязки для залогиненного юзера (вызывается из защищённого роута).
+export function createTelegramLinkCode(userId: string): string {
+  const now = Date.now();
+  for (const [c, v] of linkCodes) if (v.expiresAt < now) linkCodes.delete(c);
+  const code = crypto.randomBytes(24).toString('base64url');
+  linkCodes.set(code, { userId, expiresAt: now + LINK_CODE_TTL_MS });
+  return code;
+}
+
+// Привязать TG-личность к аккаунту по коду. Если этот telegramId уже создал отдельный
+// (дубль) аккаунт — вливаем его баланс в целевой и удаляем дубль. Возвращает { token, user }
+// объединённого аккаунта либо { error }.
+export function linkTelegramToAccount(
+  code: string,
+  tg: TelegramUserPayload,
+): { token: string; user: User } | { error: 'code' | 'banned' | 'conflict' } {
+  const now = Date.now();
+  const entry = linkCodes.get(code);
+  if (!entry || entry.expiresAt < now) {
+    linkCodes.delete(code);
+    return { error: 'code' };
+  }
+
+  const users = readJSON('users.json') as User[];
+  const target = users.find((u) => u.id === entry.userId);
+  if (!target) return { error: 'code' };
+  if (target.banned) return { error: 'banned' };
+
+  // target уже привязан к ДРУГОМУ Telegram — молча не перепривязываем.
+  if (target.telegramId && target.telegramId !== tg.id) return { error: 'conflict' };
+
+  // TG-дубль (аккаунт, который этот Telegram создал ранее автологином) — вливаем баланс, удаляем.
+  const dup = users.find((u) => u.telegramId === tg.id && u.id !== target.id);
+  if (dup) {
+    if (dup.banned) return { error: 'banned' };
+    target.chips += dup.chips;
+    const idx = users.indexOf(dup);
+    if (idx >= 0) users.splice(idx, 1);
+  }
+
+  target.telegramId = tg.id;
+  target.displayName = tgDisplayName(tg);
+  target.lastLogin = new Date().toISOString();
+  writeJSON('users.json', users);
+  linkCodes.delete(code);
+
+  const token = jwt.sign(
+    { id: target.id, username: target.username, role: target.role },
+    JWT_SECRET,
+    { expiresIn: '7d' },
+  );
+  return { token, user: target };
 }

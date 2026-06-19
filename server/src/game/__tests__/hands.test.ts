@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { evaluateHand, determineWinner, compareHands, formatHandName } from '../hands.js';
-import { card, cards, hand } from './helpers/cards.js';
+import { cards, hand } from './helpers/cards.js';
 
 // Все тесты проверяют hands.ts против POKER_RULES.md §8 (ранкинг рук, шоудаун, кикеры).
 // hands.ts — чистые функции, моки не нужны.
@@ -189,8 +189,6 @@ describe('compareHands — иерархия категорий', () => {
   });
 
   it('steel wheel still beats quads (SF > quads)', () => {
-    const wheel = evaluateHand(cards('Ah 2h'), cards('3h 4h 5h 9c 9d'));
-    const quads = evaluateHand(cards('9s 9c'), cards('3h 4h 5h 9d 2s'));
     // wheel SF из борда 3h4h5h + Ah2h hole
     // quads из 9s9c + 9d (board) + 9h... wait, no 9h.
     // Перестроим: quads нужно 4 девятки. На борде есть 9c 9d. Я даю 9s 9h как hole.

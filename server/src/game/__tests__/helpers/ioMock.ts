@@ -26,6 +26,7 @@ export interface MockSocket {
   emitted: SocketEmittedEvent[];
   // socket.io API:
   emit(event: string, payload?: unknown): void;
+  join(roomId: string): void;
   leave(roomId: string): void;
   rooms: Set<string>;
 }
@@ -96,6 +97,11 @@ export function createMockIo(): MockIo {
         emitted: socketEmitted,
         emit(event, payload) {
           socketEmitted.push({ event, payload });
+        },
+        join(rid) {
+          rooms.add(rid);
+          if (!adapterRooms.has(rid)) adapterRooms.set(rid, new Set());
+          adapterRooms.get(rid)!.add(id);
         },
         leave(rid) {
           rooms.delete(rid);

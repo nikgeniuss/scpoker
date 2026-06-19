@@ -2,12 +2,16 @@
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
+import { useTelegram } from '../hooks/useTelegram';
+import { tgAppDeepLink } from '../lib/telegram';
+import { TelegramButton } from '../components/auth/TelegramButton';
 
 import { API_URL } from '../config/api';
 
 export const Login = () => {
   const navigate = useNavigate();
   const login = useAuthStore(s => s.login);
+  const { isTelegram } = useTelegram();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -69,6 +73,16 @@ export const Login = () => {
           Нет аккаунта?{' '}
           <span onClick={() => navigate('/register')} className="text-poker-gold cursor-pointer hover:underline">Регистрация</span>
         </p>
+
+        {/* Вход/регистрация через Telegram — открыть Mini App (авто-логин внутри). */}
+        {!isTelegram && (
+          <div className="mt-6 flex flex-col items-center gap-3">
+            <div className="flex items-center gap-3 w-full text-gray-500 text-xs">
+              <span className="flex-1 h-px bg-white/10" /> или <span className="flex-1 h-px bg-white/10" />
+            </div>
+            <TelegramButton label="Играть в Telegram" onClick={() => { window.location.href = tgAppDeepLink(); }} />
+          </div>
+        )}
       </motion.div>
       </div>
     </div>

@@ -33,11 +33,15 @@ export function toRoomInfo(room: Room): RoomInfo {
     status: room.status,
     createdBy: room.createdBy,
     playerIds: Array.from(room.players.keys()),
-    players: Array.from(room.players.values()).map(p => ({ id: p.id, username: p.username })),
+    players: Array.from(room.players.values()).map(p => ({ id: p.id, username: p.username, avatar: p.avatar })),
     turnDurationSec: Math.round(room.turnDurationMs / 1000),
     buyInMinBb: room.buyInMinBb,
     buyInMaxBb: room.buyInMaxBb,
     timebank: { ...room.timebank },
+    waitlistIds: room.waitlist.map(w => w.userId),
+    format: room.format,
+    clubId: room.clubId,
+    rake: room.rake,
   };
 }
 

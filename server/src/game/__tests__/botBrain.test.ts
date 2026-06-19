@@ -218,7 +218,7 @@ describe('computePnLZone', () => {
   it('сильно в минусе → zone under, бережёт стек, максимальный push', () => {
     const z = computePnLZone(-10_000, 'zero', 100, 10);
     expect(z.zone).toBe('under');
-    expect(z.allowedLossNow).toBe(1 * 10);
+    expect(z.allowedLossNow).toBe(3 * 10);
     expect(z.needWinPressure).toBe(1.0);
   });
 });
@@ -307,7 +307,7 @@ function goldenCtx(over: Partial<BotDecisionContext>, seed: number): BotDecision
     board: [], pot: 30, currentBet: 20, phase: 'preflop', bigBlind: 10,
     activeOpponents: [{ id: 'o1', cards: cards('7h 2c'), chips: 1000, currentBet: 20, isFolded: false, isBot: false }],
     futureBoard: [], persona: GOLDEN_PERSONA, targetPnL: 'zero', runtime: createBotRuntime(1000),
-    peekMode: 'river', rng: makeSeededRng(seed),
+    lifetimePnL: 0, peekMode: 'river', rng: makeSeededRng(seed),
   };
   return { ...base, ...over, rng: makeSeededRng(seed) };
 }

@@ -13,7 +13,8 @@ import { avatarColor } from './seatColors';
 export interface PlayerView {
   id: string;
   username: string;
-  displayName?: string; // имя из Telegram — показываем вместо username (аватар по-прежнему по username/id)
+  displayName?: string; // имя из Telegram — показываем вместо username
+  avatar?: string; // выбранный seed аватара (из AVATAR_PRESETS); '' / не задан = фоллбэк на id
   chips: number;
   cards: CardData[];
   isFolded: boolean;
@@ -25,6 +26,7 @@ export interface PlayerView {
   winChance?: number; // 0..100 — шанс выиграть (только своё место)
   shownCards?: (CardData | null)[]; // добровольно показанные карты соперника (тап после раздачи)
   revealedCards?: number[];         // индексы показанных карт (для своего UI)
+  hudStats?: { vpip: number; pfr: number; hands: number }; // HUD-lite
 }
 
 interface PlayerSeatProps {
@@ -54,6 +56,7 @@ interface PlayerSeatProps {
   // Если true — D/SB/BB-бейдж внутри плашки не рисуется (родитель рендерит его «на столе»).
   hideRoleBadge?: boolean;
   showHint?: boolean; // показывать подсказку комбинации/шанса (тумблер настроек)
+  onAvatarClick?: (player: PlayerView) => void;
 }
 
 
@@ -81,6 +84,7 @@ const PlayerSeatImpl = ({
   timebankEnabled,
   hideRoleBadge,
   showHint,
+  onAvatarClick,
 }: PlayerSeatProps) => {
   const avatarGrad = avatarColor(player.username);
 
@@ -178,13 +182,15 @@ const PlayerSeatImpl = ({
             className={
               'w-10 h-10 rounded-full bg-gradient-to-br ' +
               avatarGrad +
-              ' shadow-md overflow-hidden'
+              ' shadow-md overflow-hidden' +
+              (!isSelf && onAvatarClick ? ' cursor-pointer' : '')
             }
+            onClick={!isSelf && onAvatarClick ? () => onAvatarClick(player) : undefined}
           >
             <ReactNiceAvatar
               className="w-full h-full"
               shape="circle"
-              {...avatarConfig(player.id)}
+              {...avatarConfig(player.avatar || player.id)}
             />
           </div>
           {/* Карты противника веером поверх аватарки */}
@@ -286,6 +292,12 @@ const PlayerSeatImpl = ({
             <span className="text-[9px] font-semibold text-emerald-300/90 leading-tight whitespace-nowrap">
               {player.handHint}
               {typeof player.winChance === 'number' ? ' · ' + player.winChance + '%' : ''}
+            </span>
+          )}
+          {/* HUD-lite: VPIP/PFR (достаточно ≥10 рук). */}
+          {!isSelf && player.hudStats && player.hudStats.hands >= 10 && (
+            <span className="text-[8px] text-white/30 leading-tight tabular-nums">
+              {player.hudStats.vpip}/{player.hudStats.pfr}
             </span>
           )}
         </div>

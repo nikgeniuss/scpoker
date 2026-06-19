@@ -42,9 +42,9 @@ describe('validateCreateOptions', () => {
     expect(validateCreateOptions(validOpts({ smallBlind: 10, bigBlind: 15 }))).toMatch(/не меньше 2/);
   });
 
-  it('maxPlayers вне 2..9 → ошибка', () => {
-    expect(validateCreateOptions(validOpts({ maxPlayers: 1 }))).toMatch(/от 2 до 9/);
-    expect(validateCreateOptions(validOpts({ maxPlayers: 10 }))).toMatch(/от 2 до 9/);
+  it('maxPlayers вне 2..12 → ошибка', () => {
+    expect(validateCreateOptions(validOpts({ maxPlayers: 1 }))).toMatch(/от 2 до 12/);
+    expect(validateCreateOptions(validOpts({ maxPlayers: 13 }))).toMatch(/от 2 до 12/);
   });
 
   it('turnDurationSec вне 5..120 → ошибка', () => {

@@ -1,13 +1,13 @@
-import { type Card, type Rank } from './types.js';
+import { type Card, type Rank, type GameFormat } from './types.js';
 
 const RANK_ORDER: Record<Rank, number> = {
   '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8,
   '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14,
 };
 
-type HandRank = 
-  'high-card' | 'pair' | 'two-pair' | 'three-of-a-kind' | 
-  'straight' | 'flush' | 'full-house' | 'four-of-a-kind' | 
+type HandRank =
+  'high-card' | 'pair' | 'two-pair' | 'three-of-a-kind' |
+  'straight' | 'flush' | 'full-house' | 'four-of-a-kind' |
   'straight-flush' | 'royal-flush';
 
 const HAND_VALUES: Record<HandRank, number> = {
@@ -22,6 +22,23 @@ const HAND_VALUES: Record<HandRank, number> = {
   'straight-flush': 9,
   'royal-flush': 10,
 };
+
+// Шорт-дэк (Triton): флеш бьёт фулл-хаус. Меняем местами только эти два значения,
+// остальные категории сохраняют порядок (стрит > сет и т.д.).
+const SHORT_DECK_HAND_VALUES: Record<HandRank, number> = {
+  ...HAND_VALUES,
+  'flush': 7,
+  'full-house': 6,
+};
+
+function handValues(format: GameFormat): Record<HandRank, number> {
+  return format === 'shortdeck' ? SHORT_DECK_HAND_VALUES : HAND_VALUES;
+}
+
+// Младшие ранги для «колесо»-стрита по формату: NLH → A-2-3-4-5, Шорт-дэк → A-6-7-8-9.
+function wheelLowRanks(format: GameFormat): number[] {
+  return format === 'shortdeck' ? [6, 7, 8, 9] : [2, 3, 4, 5];
+}
 
 interface HandResult {
   rank: HandRank;
@@ -59,8 +76,8 @@ function pickFlushCards(cards: Card[]): Card[] {
   return [];
 }
 
-// 5 карт подряд (с поддержкой A-2-3-4-5)
-function pickStraightCards(cards: Card[]): Card[] {
+// 5 карт подряд (с поддержкой младшего «колесо»-стрита: NLH A-2-3-4-5, Шорт-дэк A-6-7-8-9)
+function pickStraightCards(cards: Card[], format: GameFormat = 'nlh'): Card[] {
   // Один представитель для каждого ранга (карты могут повторяться по рангу с разными мастями)
   const byRank: Record<number, Card> = {};
   for (const c of cards) {
@@ -73,22 +90,23 @@ function pickStraightCards(cards: Card[]): Card[] {
       return ranks.slice(i, i + 5).map(v => byRank[v]);
     }
   }
-  // A-2-3-4-5 (туз снизу)
-  if (ranks.includes(14) && [2, 3, 4, 5].every(v => ranks.includes(v))) {
-    return [byRank[5], byRank[4], byRank[3], byRank[2], byRank[14]];
+  // Колесо (туз снизу): A + 4 младших ранга колоды по формату; высшая карта — старший из младших.
+  const low = wheelLowRanks(format);
+  if (ranks.includes(14) && low.every(v => ranks.includes(v))) {
+    return [byRank[low[3]], byRank[low[2]], byRank[low[1]], byRank[low[0]], byRank[14]];
   }
   return [];
 }
 
 // Стрит-флеш: ищем стрит внутри одной масти
-function pickStraightFlushCards(cards: Card[]): Card[] {
+function pickStraightFlushCards(cards: Card[], format: GameFormat = 'nlh'): Card[] {
   const bySuit: Record<string, Card[]> = {};
   for (const c of cards) {
     (bySuit[c.suit] ||= []).push(c);
   }
   for (const suit of Object.keys(bySuit)) {
     if (bySuit[suit].length >= 5) {
-      const straight = pickStraightCards(bySuit[suit]);
+      const straight = pickStraightCards(bySuit[suit], format);
       if (straight.length === 5) return straight;
     }
   }
@@ -111,23 +129,24 @@ function countRanks(cards: Card[]): Map<number, number> {
 }
 
 // Проверка на стрит
-function isStraight(values: number[]): boolean {
+function isStraight(values: number[], format: GameFormat = 'nlh'): boolean {
   const sorted = [...new Set(values)].sort((a, b) => a - b);
   if (sorted.length < 5) return false;
-  
+
   // Обычный стрит
   for (let i = 0; i <= sorted.length - 5; i++) {
     if (sorted[i + 4] - sorted[i] === 4) return true;
   }
-  
-  // Стрит с тузом как 1 (A-2-3-4-5)
+
+  // Колесо: туз снизу. NLH → A как 1 (A-2-3-4-5); Шорт-дэк → A как 5 (A-6-7-8-9).
   if (sorted.includes(14)) {
-    const lowAce = [1, ...sorted.filter(v => v !== 14)].sort((a, b) => a - b);
+    const lowAceVal = format === 'shortdeck' ? 5 : 1;
+    const lowAce = [lowAceVal, ...sorted.filter(v => v !== 14)].sort((a, b) => a - b);
     for (let i = 0; i <= lowAce.length - 5; i++) {
       if (lowAce[i + 4] - lowAce[i] === 4) return true;
     }
   }
-  
+
   return false;
 }
 
@@ -141,31 +160,32 @@ function isFlush(cards: Card[]): boolean {
 }
 
 // Определить комбинацию
-export function evaluateHand(hand: Card[], community: Card[]): HandResult {
+export function evaluateHand(hand: Card[], community: Card[], format: GameFormat = 'nlh'): HandResult {
+  const vals = handValues(format);
   const allCards = getAllCards(hand, community);
   const values = allCards.map(c => RANK_ORDER[c.rank]).sort((a, b) => b - a);
   const rankCounts = countRanks(allCards);
-  
+
   const counts = Array.from(rankCounts.values()).sort((a, b) => b - a);
   const pairs = counts.filter(c => c === 2).length;
   const hasThree = counts.includes(3);
   const hasFour = counts.includes(4);
-  const hasStraight = isStraight(values);
+  const hasStraight = isStraight(values, format);
   const hasFlush = isFlush(allCards);
-  
+
   // Royal Flush / Straight Flush
   if (hasStraight && hasFlush) {
-    const sfCards = pickStraightFlushCards(allCards);
+    const sfCards = pickStraightFlushCards(allCards, format);
     if (sfCards.length === 5) {
       // 10-J-Q-K-A одной масти — роял-флеш
       const ranksSet = new Set(sfCards.map(c => RANK_ORDER[c.rank]));
       if ([10, 11, 12, 13, 14].every(v => ranksSet.has(v))) {
-        return { rank: 'royal-flush', value: HAND_VALUES['royal-flush'], highCards: [14], cards: sfCards };
+        return { rank: 'royal-flush', value: vals['royal-flush'], highCards: [14], cards: sfCards };
       }
       // Старшая карта стрит-флеша = sfCards[0] (pickStraightCards возвращает массив с
       // высшей первой; для wheel A-2-3-4-5 — это пятёрка, не туз).
       const highCard = RANK_ORDER[sfCards[0].rank];
-      return { rank: 'straight-flush', value: HAND_VALUES['straight-flush'], highCards: [highCard], cards: sfCards };
+      return { rank: 'straight-flush', value: vals['straight-flush'], highCards: [highCard], cards: sfCards };
     }
   }
 
@@ -176,7 +196,7 @@ export function evaluateHand(hand: Card[], community: Card[]): HandResult {
     const kicker = pickKickers(allCards, [fourRank], 1);
     return {
       rank: 'four-of-a-kind',
-      value: HAND_VALUES['four-of-a-kind'],
+      value: vals['four-of-a-kind'],
       highCards: [fourRank, RANK_ORDER[kicker[0].rank]],
       cards: [...fourCards, ...kicker],
     };
@@ -186,7 +206,8 @@ export function evaluateHand(hand: Card[], community: Card[]): HandResult {
   //  (a) trips + pair (стандарт),
   //  (b) trips + trips — вторая тройка играет как пара (например AAA+KKK на 7 картах).
   const tripsCount = counts.filter(c => c === 3).length;
-  if (hasThree && (pairs >= 1 || tripsCount >= 2)) {
+  const isFull = hasThree && (pairs >= 1 || tripsCount >= 2);
+  const fullHouseResult = (): HandResult => {
     const tripRanks = Array.from(rankCounts.entries())
       .filter(([, c]) => c === 3)
       .map(([r]) => r)
@@ -203,29 +224,35 @@ export function evaluateHand(hand: Card[], community: Card[]): HandResult {
     const pairCards = pickRankCards(allCards, pairRank, 2);
     return {
       rank: 'full-house',
-      value: HAND_VALUES['full-house'],
+      value: vals['full-house'],
       highCards: [threeRank, pairRank],
       cards: [...threeCards, ...pairCards],
     };
-  }
-
-  // Flush
-  if (hasFlush) {
+  };
+  const flushResult = (): HandResult => {
     const flushCards = pickFlushCards(allCards);
     return {
       rank: 'flush',
-      value: HAND_VALUES['flush'],
+      value: vals['flush'],
       highCards: flushCards.map(c => RANK_ORDER[c.rank]),
       cards: flushCards,
     };
+  };
+  // Шорт-дэк: флеш бьёт фулл-хаус — при наличии обоих возвращаем флеш раньше. NLH — наоборот.
+  if (format === 'shortdeck') {
+    if (hasFlush) return flushResult();
+    if (isFull) return fullHouseResult();
+  } else {
+    if (isFull) return fullHouseResult();
+    if (hasFlush) return flushResult();
   }
 
   // Straight
   if (hasStraight) {
-    const straightCards = pickStraightCards(allCards);
+    const straightCards = pickStraightCards(allCards, format);
     return {
       rank: 'straight',
-      value: HAND_VALUES['straight'],
+      value: vals['straight'],
       highCards: [RANK_ORDER[straightCards[0].rank]],
       cards: straightCards,
     };
@@ -238,7 +265,7 @@ export function evaluateHand(hand: Card[], community: Card[]): HandResult {
     const kickers = pickKickers(allCards, [threeRank], 2);
     return {
       rank: 'three-of-a-kind',
-      value: HAND_VALUES['three-of-a-kind'],
+      value: vals['three-of-a-kind'],
       highCards: [threeRank, ...kickers.map(c => RANK_ORDER[c.rank])],
       cards: [...threeCards, ...kickers],
     };
@@ -256,7 +283,7 @@ export function evaluateHand(hand: Card[], community: Card[]): HandResult {
     const kicker = pickKickers(allCards, pairRanks, 1);
     return {
       rank: 'two-pair',
-      value: HAND_VALUES['two-pair'],
+      value: vals['two-pair'],
       highCards: [...pairRanks, RANK_ORDER[kicker[0].rank]],
       cards: [...pair1Cards, ...pair2Cards, ...kicker],
     };
@@ -269,7 +296,7 @@ export function evaluateHand(hand: Card[], community: Card[]): HandResult {
     const kickers = pickKickers(allCards, [pairRank], 3);
     return {
       rank: 'pair',
-      value: HAND_VALUES['pair'],
+      value: vals['pair'],
       highCards: [pairRank, ...kickers.map(c => RANK_ORDER[c.rank])],
       cards: [...pairCards, ...kickers],
     };
@@ -279,7 +306,7 @@ export function evaluateHand(hand: Card[], community: Card[]): HandResult {
   const highCards = sortByRankDesc(allCards).slice(0, 5);
   return {
     rank: 'high-card',
-    value: HAND_VALUES['high-card'],
+    value: vals['high-card'],
     highCards: highCards.map(c => RANK_ORDER[c.rank]),
     cards: highCards,
   };
@@ -329,7 +356,8 @@ export function compareHands(result1: HandResult, result2: HandResult): number {
 // Определить победителя среди нескольких игроков
 export function determineWinner(
   players: { id: string; hand: Card[]; folded: boolean }[],
-  community: Card[]
+  community: Card[],
+  format: GameFormat = 'nlh'
 ): string[] {
   const activePlayers = players.filter(p => !p.folded);
 
@@ -341,10 +369,10 @@ export function determineWinner(
   if (activePlayers.length === 1) {
     return [activePlayers[0].id];
   }
-  
+
   const results = activePlayers.map(p => ({
     id: p.id,
-    result: evaluateHand(p.hand, community),
+    result: evaluateHand(p.hand, community, format),
   }));
   
   results.sort((a, b) => compareHands(b.result, a.result));

@@ -4,6 +4,9 @@ import { useAuthStore } from '../store/authStore';
 import { Eye, EyeOff, Lock, Mail, User, Check } from 'lucide-react';
 import { z } from 'zod';
 import toast, { Toaster } from 'react-hot-toast';
+import { useTelegram } from '../hooks/useTelegram';
+import { tgAppDeepLink } from '../lib/telegram';
+import { TelegramButton } from '../components/auth/TelegramButton';
 
 import { API_URL } from '../config/api';
 
@@ -39,6 +42,7 @@ const PremiumCardTable = ({
   onSubmit,
   navigate,
 }: PremiumCardTableProps) => {
+  const { isTelegram } = useTelegram();
   const strength = (() => {
     const p = form.password || '';
     let s = 0;
@@ -201,6 +205,16 @@ const PremiumCardTable = ({
                   Войти
                 </span>
               </p>
+
+              {/* Регистрация/вход через Telegram — открыть Mini App (авто-логин внутри). */}
+              {!isTelegram && (
+                <div className="mt-6 flex flex-col items-center gap-3">
+                  <div className="flex items-center gap-3 w-full text-white/30 text-xs">
+                    <span className="flex-1 h-px bg-white/10" /> или <span className="flex-1 h-px bg-white/10" />
+                  </div>
+                  <TelegramButton label="Играть в Telegram" onClick={() => { window.location.href = tgAppDeepLink(); }} />
+                </div>
+              )}
 
             </div>
           </div>

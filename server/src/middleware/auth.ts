@@ -12,7 +12,7 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
     res.status(401).json({ error: 'Invalid token' });
     return;
   }
-  (req as any).user = decoded;
+  (req as unknown as { user: unknown }).user = decoded;
   next();
 }
 
@@ -31,6 +31,6 @@ export function adminMiddleware(req: Request, res: Response, next: NextFunction)
     res.status(403).json({ error: 'Admin only' });
     return;
   }
-  (req as any).user = decoded;
+  (req as unknown as { user: unknown }).user = decoded;
   next();
 }

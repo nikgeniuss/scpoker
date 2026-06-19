@@ -52,6 +52,7 @@ export const ActionPanel = ({
   // правды (пресеты/слайдер/отправка); здесь только зеркалим его в строку и наоборот.
   const [raiseText, setRaiseText] = useState(() => String(minRaiseTotal));
   const [showRaise, setShowRaise] = useState(false);
+  const canRaise = maxRaiseTotal > currentBet;
 
   // Clamp на случай если currentBet поменялся внутри одного хода (редко)
   useEffect(() => {
@@ -72,6 +73,31 @@ export const ActionPanel = ({
     return () => onRaiseOpenChange?.(false);
   }, [showRaise, onRaiseOpenChange]);
 
+  // Хоткеи F/C/R/A (desktop). Не перехватываем когда фокус в input/textarea.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      const key = e.key.toUpperCase();
+      if (key === 'F') {
+        actionStart('FOLD'); onAction('fold');
+      } else if (key === 'C') {
+        if (canCheck) { actionStart('CHECK'); onAction('check'); }
+        else if (callAmount <= chips) { actionStart('CALL'); onAction('call'); }
+      } else if (key === 'R') {
+        if (!canRaise) return;
+        if (!showRaise) { setShowRaise(true); return; }
+        const amount = Math.min(Math.max(raiseAmount, minRaiseTotal), maxRaiseTotal);
+        actionStart('RAISE'); onAction('raise', amount);
+      } else if (key === 'A') {
+        if (chips > 0) { actionStart('ALL-IN'); onAction('all-in'); }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canCheck, canRaise, showRaise, raiseAmount, minRaiseTotal, maxRaiseTotal, callAmount, chips]);
+
   // Ввод в текстовое поле: пусто оставляем пустым (НЕ превращаем в 0); валидное число → в raiseAmount.
   const onRaiseTextChange = (v: string) => {
     setRaiseText(v);
@@ -89,8 +115,6 @@ export const ActionPanel = ({
     setRaiseAmount(clamped);
     setRaiseText(String(clamped));
   };
-
-  const canRaise = maxRaiseTotal > currentBet;
 
   // GGPoker-стиль: плоские «кнопки-клавиши» — мягкий градиент, тонкий верхний блик (before),
   // нижняя «ступенька»-тень + лёгкое нажатие (active:translate-y). Цвет задаётся per-button.
@@ -290,7 +314,10 @@ export const ActionPanel = ({
                 ' bg-gradient-to-b from-slate-600 to-slate-700 ring-1 ring-black/30'
               }
             >
-              <span className="relative z-10 text-sm sm:text-base">Fold</span>
+              <span className="relative z-10 flex flex-col items-center leading-none">
+                <span className="text-sm sm:text-base">Fold</span>
+                <span className="hidden md:block text-[9px] opacity-30 mt-0.5 font-normal tracking-widest">[F]</span>
+              </span>
             </motion.button>
 
             {canCheck ? (
@@ -303,7 +330,10 @@ export const ActionPanel = ({
                   ' bg-gradient-to-b from-emerald-500 to-emerald-600 ring-1 ring-black/20'
                 }
               >
-                <span className="relative z-10 text-sm sm:text-base">Check</span>
+                <span className="relative z-10 flex flex-col items-center leading-none">
+                  <span className="text-sm sm:text-base">Check</span>
+                  <span className="hidden md:block text-[9px] opacity-30 mt-0.5 font-normal tracking-widest">[C]</span>
+                </span>
               </motion.button>
             ) : (
               <motion.button
@@ -319,6 +349,7 @@ export const ActionPanel = ({
                 <span className="relative z-10 flex flex-col items-center leading-none">
                   <span className="text-sm sm:text-base">Call</span>
                   <span className="text-[10px] sm:text-xs font-semibold opacity-85 mt-0.5">{fmt(callAmount)}</span>
+                  <span className="hidden md:block text-[9px] opacity-30 mt-0.5 font-normal tracking-widest">[C]</span>
                 </span>
               </motion.button>
             )}
@@ -339,6 +370,7 @@ export const ActionPanel = ({
                 {showRaise && (
                   <span className="text-[10px] sm:text-xs font-semibold opacity-85 mt-0.5">{fmt(raiseAmount)}</span>
                 )}
+                <span className="hidden md:block text-[9px] opacity-30 mt-0.5 font-normal tracking-widest">[R]</span>
               </span>
             </motion.button>
 
@@ -355,6 +387,7 @@ export const ActionPanel = ({
               <span className="relative z-10 flex flex-col items-center leading-none">
                 <span className="text-sm sm:text-base">All-In</span>
                 <span className="text-[10px] sm:text-xs font-semibold opacity-85 mt-0.5">{fmt(chips)}</span>
+                <span className="hidden md:block text-[9px] opacity-30 mt-0.5 font-normal tracking-widest">[A]</span>
               </span>
             </motion.button>
           </div>

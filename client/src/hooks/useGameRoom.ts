@@ -16,6 +16,7 @@ import { useDebugStore } from '../store/debugStore';
 
 export interface GameRoomTransport {
   state: GameState | null;
+  isConnected: boolean;
   winners: string[] | null;
   winningCards: CardData[];
   winHandName: string | null; // имя победной комбинации (showdown)
@@ -27,11 +28,13 @@ export interface GameRoomTransport {
   setAutoTopUp: (cfg: { enabled: boolean; thresholdBb: number; targetBb: number }) => void;
   setHandHint: (enabled: boolean) => void;
   showCard: (index: number) => void;
+  requestRabbitHunt: () => void;
 }
 
 export function useGameRoom(roomId: string | undefined, observe = false): GameRoomTransport {
   const navigate = useNavigate();
   const [state, setState] = useState<GameState | null>(null);
+  const [isConnected, setIsConnected] = useState(() => getSocket().connected);
   const [winners, setWinners] = useState<string[] | null>(null);
   const [winningCards, setWinningCards] = useState<CardData[]>([]);
   const [winHandName, setWinHandName] = useState<string | null>(null);
@@ -40,6 +43,19 @@ export function useGameRoom(roomId: string | undefined, observe = false): GameRo
 
   useEffect(() => {
     const socket = getSocket();
+
+    const joinRoom = () => {
+      if (!roomId) return;
+      if (observe) {
+        socket.emit(SOCKET_EVENTS.OBSERVE_ROOM, { roomId });
+      } else {
+        socket.emit(SOCKET_EVENTS.JOIN_ROOM, { roomId });
+        socket.emit(SOCKET_EVENTS.REQUEST_GAME_STATE, { roomId });
+      }
+    };
+
+    const onConnect = () => { setIsConnected(true); joinRoom(); };
+    const onDisconnect = () => setIsConnected(false);
 
     const onUpdate = (s: GameState) => {
       // Мультитейблинг: на одном сокете приходят gameUpdate всех открытых столов —
@@ -84,25 +100,20 @@ export function useGameRoom(roomId: string | undefined, observe = false): GameRo
     };
     const onError = ({ message }: { message: string }) => toast.error(message);
 
+    socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
     socket.on(SOCKET_EVENTS.GAME_UPDATE, onUpdate);
     socket.on(SOCKET_EVENTS.GAME_WINNER, onWinner);
     socket.on(SOCKET_EVENTS.START_COUNTDOWN, onCountdown);
     socket.on(SOCKET_EVENTS.JOIN_DENIED, onJoinDenied);
     socket.on(SOCKET_EVENTS.ERROR, onError);
 
-    // Реджойн + запрос актуального состояния (страховка от reload и для входа после reload).
-    // Режим наблюдателя: НЕ садимся (joinRoom посадил бы/отклонил), а входим в комнату как
-    // зритель — карты соперников сервер не отдаёт (§0.1), у админа peek включается сам.
-    if (roomId) {
-      if (observe) {
-        socket.emit(SOCKET_EVENTS.OBSERVE_ROOM, { roomId });
-      } else {
-        socket.emit(SOCKET_EVENTS.JOIN_ROOM, { roomId });
-        socket.emit(SOCKET_EVENTS.REQUEST_GAME_STATE, { roomId });
-      }
-    }
+    // Реджойн: при уже подключённом сокете — сразу; иначе onConnect сделает это после connect.
+    if (socket.connected) joinRoom();
 
     return () => {
+      socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
       socket.off(SOCKET_EVENTS.GAME_UPDATE, onUpdate);
       socket.off(SOCKET_EVENTS.GAME_WINNER, onWinner);
       socket.off(SOCKET_EVENTS.START_COUNTDOWN, onCountdown);
@@ -153,5 +164,11 @@ export function useGameRoom(roomId: string | undefined, observe = false): GameRo
     getSocket().emit(SOCKET_EVENTS.SHOW_CARD, { roomId, index });
   };
 
-  return { state, winners, winningCards, winHandName, winAmounts, countdownEndsAt, sendAction, leave, sendEmoji, setAutoTopUp, setHandHint, showCard };
+  // Rabbit Hunting (§10.12, платная фича): заплатить и увидеть карты, которые пришли бы.
+  const requestRabbitHunt = () => {
+    if (!roomId) return;
+    getSocket().emit(SOCKET_EVENTS.RABBIT_HUNT, { roomId });
+  };
+
+  return { state, isConnected, winners, winningCards, winHandName, winAmounts, countdownEndsAt, sendAction, leave, sendEmoji, setAutoTopUp, setHandHint, showCard, requestRabbitHunt };
 }

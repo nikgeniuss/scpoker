@@ -106,13 +106,20 @@ const sharedSrc = read('shared/index.ts');
 const serverTypesSrc = read('server/src/game/GameManager.ts');
 
 // Известные намеренные расхождения (поле в одном, но не в другом — by design).
-const KNOWN_FIELD_DIFFS = {
-  // server НЕ отдаёт isBotTable в лобби — игроки не должны видеть авто-столы (см. getRoomList).
-  RoomInfo: new Set(['isBotTable']),
-};
+// RoomInfo больше не дублируется отдельным interface (re-export из shared, см. isReExportedFromShared) —
+// прежнее расхождение isBotTable снято вместе с самим полем (было мёртвым, 2026-06-18).
+const KNOWN_FIELD_DIFFS = {};
+
+// Тип re-export'ится из @poker-room/shared (а не дублируется отдельным `interface`) —
+// значит он буквально ОДНО определение, сверка полей не нужна (не может разойтись).
+function isReExportedFromShared(src, name) {
+  const re = new RegExp("(?:import|export)\\s+type\\s*\\{[^}]*\\b" + name + "\\b[^}]*\\}\\s*(?:,[^;]*)?from\\s*'@poker-room/shared'");
+  return re.test(src);
+}
 
 const TYPES_TO_SYNC = ['GameState', 'RoomInfo', 'CreateRoomOptions'];
 for (const t of TYPES_TO_SYNC) {
+  if (isReExportedFromShared(serverTypesSrc, t)) continue; // одно определение — синхронность гарантирована структурно
   const a = parseInterfaceFields(sharedSrc, t);
   const b = parseInterfaceFields(serverTypesSrc, t);
   if (!a) { errors.push('Тип ' + t + ' не найден в shared/index.ts'); continue; }

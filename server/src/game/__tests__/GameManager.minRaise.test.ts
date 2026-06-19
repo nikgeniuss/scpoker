@@ -104,7 +104,7 @@ describe('GameManager — min-raise (POKER_RULES §5.1, bug A1)', () => {
 
   // --- A1 bug tests (it.fails — должны пройти по спеке, но падают на коде) ---
 
-  it.fails('A1: 3-bet to 50 после A raises to 30 — валидно по спеке (lastRaiseSize=20, min=50)', async () => {
+  it('A1: 3-bet to 50 после A raises to 30 — валидно по спеке (lastRaiseSize=20, min=50)', async () => {
     const { gm, roomId } = await setupTable(3);
     gm.startGame(roomId, makeDeck(3));
     // B (UTG) raise to 30. lastRaiseSize=30-10=20.
@@ -116,7 +116,7 @@ describe('GameManager — min-raise (POKER_RULES §5.1, bug A1)', () => {
     expect(s.currentBet).toBe(50);
   });
 
-  it.fails('A1: 4-bet to 70 после A→30, B→50 — валидно по спеке (lastRaiseSize=20, min=70)', async () => {
+  it('A1: 4-bet to 70 после A→30, B→50 — валидно по спеке (lastRaiseSize=20, min=70)', async () => {
     const { gm, roomId } = await setupTable(3);
     gm.startGame(roomId, makeDeck(3));
     // B (UTG) raise to 30. lastRaiseSize=20.
@@ -136,7 +136,7 @@ describe('GameManager — min-raise (POKER_RULES §5.1, bug A1)', () => {
     expect(s.currentBet).toBe(70);
   });
 
-  it.fails('A1 postflop: A bets 30, B raises to 60, C re-raises to 90 — валидно по спеке (lastRaiseSize=30, min=90)', async () => {
+  it('A1 postflop: A bets 30, B raises to 60, C re-raises to 90 — валидно по спеке (lastRaiseSize=30, min=90)', async () => {
     const { gm, roomId } = await setupTable(3);
     gm.startGame(roomId, makeDeck(3));
     // Префлоп: все call, BB check → флоп

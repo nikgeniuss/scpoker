@@ -5,16 +5,17 @@ import { minRaiseTo, isLegalRaise } from '../bettingRules.js';
 // Фиксируют ТЕКУЩЕЕ поведение min-raise + исключения all-in.
 
 describe('minRaiseTo', () => {
-  it('preflop: currentBet=BB → 2×BB', () => {
-    // currentBet=20 (BB), bb=20 → max(40, 40) = 40
+  it('preflop: currentBet=BB=20, lastRaiseSize=BB=20 → min=40', () => {
+    // BB=20, UTG raise to 40: currentBet+lastRaiseSize = 20+20 = 40
     expect(minRaiseTo(20, 20)).toBe(40);
   });
 
-  it('после рейза: currentBet=50, bb=20 → max(100, 70) = 100', () => {
-    expect(minRaiseTo(50, 20)).toBe(100);
+  it('3-bet: currentBet=50 после рейза от 30 (lastRaiseSize=20) → min=70', () => {
+    // A raise to 30 (lastRaiseSize=20), B 3-bets: min = 50+20 = 70
+    expect(minRaiseTo(50, 20)).toBe(70);
   });
 
-  it('малый currentBet относительно BB: currentBet=5, bb=20 → max(10, 25) = 25', () => {
+  it('малый currentBet относительно BB: currentBet=5, lastRaiseSize=BB=20 → min=25', () => {
     expect(minRaiseTo(5, 20)).toBe(25);
   });
 });

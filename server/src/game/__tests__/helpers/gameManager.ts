@@ -103,6 +103,11 @@ export interface GameManagerLike {
   handlePlayerAction(roomId: string, userId: string, action: string, amount?: number): void;
   getGameState(roomId: string, viewerId?: string, withPeek?: boolean): unknown;
   getCountdownEndsAt(roomId: string): number | null;
+  setAutoTopUp(
+    roomId: string,
+    userId: string,
+    cfg: { enabled: boolean; thresholdBb: number; targetBb: number },
+  ): void;
 }
 
 // Посадить игрока за стол. Записывает банкролл в mock-users.json, создаёт сокет в io,

@@ -1,21 +1,27 @@
 import { motion } from 'framer-motion';
-import { Lock, Clock, Coins } from 'lucide-react';
-import { avatarColor } from '../game/seatColors';
+import ReactNiceAvatar from 'react-nice-avatar';
+import { Lock, Clock, Coins, Eye } from 'lucide-react';
+import { formatMoney } from '../../config/chipFormat';
+import { avatarConfig } from '../../utils/avatar';
 import type { RoomInfo } from '@poker-room/shared';
 
 // Карточка стола в лобби. Вынесено из Lobby (ROADMAP §9.3-E).
 interface RoomCardProps {
   room: RoomInfo;
   imIn: boolean;
+  myQueuePos: number; // 0 — не в очереди; иначе 1-based позиция в очереди этого стола
   onJoin: () => void;
+  onQueue: () => void;
+  onLeaveQueue: () => void;
+  onObserve: () => void;
 }
 
-export const RoomCard = ({ room, imIn, onJoin }: RoomCardProps) => {
-  const isFull = room.currentPlayers >= room.maxPlayers;
+export const RoomCard = ({ room, imIn, myQueuePos, onJoin, onQueue, onLeaveQueue, onObserve }: RoomCardProps) => {
+  const queueCount = room.waitlistIds.length;
+  // «Полный» = мест нет ИЛИ есть очередь: пока кто-то ждёт, освободившееся место
+  // зарезервировано за очередью (сервер вернёт 'full' прямому входу) — показываем «Занять очередь».
+  const isFull = room.currentPlayers >= room.maxPlayers || queueCount > 0;
   const isPlaying = room.status === 'playing';
-  // Late entry разрешён: в playing-комнату можно сесть с обычным buy-in,
-  // карты придут со следующей раздачи. Блокируем только если стол заполнен.
-  const disabled = !imIn && isFull;
 
   return (
     <motion.div
@@ -25,17 +31,22 @@ export const RoomCard = ({ room, imIn, onJoin }: RoomCardProps) => {
       className={
         'relative rounded-2xl pl-7 pr-5 py-4 border transition-colors overflow-hidden ' +
         (imIn
-          ? 'bg-emerald-900/30 border-emerald-500/50 hover:border-emerald-400'
-          : 'bg-gray-800 border-white/10 hover:border-emerald-500/50')
+          ? 'bg-emerald-900/40 backdrop-blur-md border-emerald-500/50 hover:border-emerald-400'
+          : 'bg-gray-900/55 backdrop-blur-md border-white/10 hover:border-emerald-500/50')
       }
     >
-      {/* Вертикальная плашка формата слева (NLH — зелёный; Шорт-дэк позже будет другого цвета) */}
-      <div className="absolute left-0 top-0 bottom-0 w-5 bg-gradient-to-b from-emerald-500 to-emerald-700 flex items-center justify-center">
+      {/* Вертикальная плашка формата слева: NLH — зелёная, Шорт-дэк — янтарная. */}
+      <div
+        className={
+          'absolute left-0 top-0 bottom-0 w-5 bg-gradient-to-b flex items-center justify-center ' +
+          (room.format === 'shortdeck' ? 'from-amber-500 to-amber-700' : 'from-emerald-500 to-emerald-700')
+        }
+      >
         <span
           className="text-white text-[10px] font-black tracking-widest"
           style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
         >
-          NLH
+          {room.format === 'shortdeck' ? 'ШОРТ-ДЭК' : 'NLH'}
         </span>
       </div>
 
@@ -73,7 +84,7 @@ export const RoomCard = ({ room, imIn, onJoin }: RoomCardProps) => {
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-400 mb-2">
         <span className="inline-flex items-center gap-1">
-          Блайнды <span className="text-white font-bold">{room.smallBlind}/{room.bigBlind}</span>
+          Блайнды <span className="text-white font-bold">{formatMoney(room.smallBlind)}/{formatMoney(room.bigBlind)}</span>
         </span>
         <span className="inline-flex items-center gap-1">
           <Clock size={11} /> <span className="text-emerald-400 font-bold">{room.turnDurationSec}с</span>
@@ -81,6 +92,11 @@ export const RoomCard = ({ room, imIn, onJoin }: RoomCardProps) => {
         <span className="inline-flex items-center gap-1">
           <Coins size={11} /> <span className="text-emerald-400 font-bold">{room.buyInMinBb}-{room.buyInMaxBb}BB</span>
         </span>
+        {room.rake.percent > 0 && (
+          <span className="inline-flex items-center gap-1" title={'Рейк ' + room.rake.percent + '%, потолок ' + room.rake.capBb + ' BB'}>
+            <span className="text-gray-500">Рейк</span> <span className="text-amber-400 font-bold">{room.rake.percent}%</span>
+          </span>
+        )}
       </div>
 
       {/* Превью игроков — мини-аватары + пустые слоты */}
@@ -96,37 +112,65 @@ export const RoomCard = ({ room, imIn, onJoin }: RoomCardProps) => {
               />
             );
           }
-          const initial = p.username.charAt(0).toUpperCase();
           return (
             <div
               key={p.id}
               title={p.username}
-              className={
-                'w-6 h-6 rounded-full bg-gradient-to-br ' +
-                avatarColor(p.username) +
-                ' flex items-center justify-center text-white text-[10px] font-bold shadow ring-1 ring-black/30'
-              }
+              className="w-6 h-6 rounded-full overflow-hidden shadow ring-1 ring-black/30"
             >
-              {initial}
+              <ReactNiceAvatar className="w-full h-full" shape="circle" {...avatarConfig(p.avatar || p.id)} />
             </div>
           );
         })}
       </div>
 
-      <button
-        disabled={disabled}
-        onClick={onJoin}
-        className={
-          'w-full py-2 rounded-xl font-bold transition-all ' +
-          (disabled
-            ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
-            : imIn
-            ? 'bg-gradient-to-r from-emerald-400 to-emerald-600 text-white hover:shadow-lg hover:shadow-emerald-500/30'
-            : 'bg-gradient-to-r from-emerald-500 to-green-600 text-white hover:shadow-lg hover:shadow-emerald-500/30')
-        }
-      >
-        {imIn ? 'Вернуться' : 'Войти'}
-      </button>
+      {imIn ? (
+        <button
+          onClick={onJoin}
+          className="w-full py-2 rounded-xl font-bold transition-all bg-gradient-to-r from-emerald-400 to-emerald-600 text-white hover:shadow-lg hover:shadow-emerald-500/30"
+        >
+          Вернуться
+        </button>
+      ) : !isFull ? (
+        <button
+          onClick={onJoin}
+          className="w-full py-2 rounded-xl font-bold transition-all bg-gradient-to-r from-emerald-500 to-green-600 text-white hover:shadow-lg hover:shadow-emerald-500/30"
+        >
+          Войти
+        </button>
+      ) : myQueuePos > 0 ? (
+        // Я в очереди на этот полный стол — позиция + выход
+        <div className="flex items-center gap-2">
+          <span className="flex-1 py-2 rounded-xl font-bold text-center bg-amber-500/15 text-amber-300 border border-amber-500/40 text-sm">
+            В очереди: {myQueuePos}-й{queueCount > 1 ? ' из ' + queueCount : ''}
+          </span>
+          <button
+            onClick={onLeaveQueue}
+            className="px-3 py-2 rounded-xl font-bold text-sm bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
+          >
+            Выйти
+          </button>
+        </div>
+      ) : (
+        // Полный стол — встать в очередь на авто-посадку
+        <button
+          onClick={onQueue}
+          className="w-full py-2 rounded-xl font-bold transition-all bg-gradient-to-r from-amber-500 to-orange-600 text-white hover:shadow-lg hover:shadow-amber-500/30"
+        >
+          Занять очередь{queueCount > 0 ? ' (' + queueCount + ' ждут)' : ''}
+        </button>
+      )}
+
+      {/* Наблюдать — зрителем за любой стол (мест нет / просто посмотреть). Карты соперников
+          скрыты; админ видит открытые. Не показываем тем, кто уже за этим столом. */}
+      {!imIn && (
+        <button
+          onClick={onObserve}
+          className="mt-2 w-full py-1.5 rounded-xl text-xs font-bold text-gray-300 bg-white/5 hover:bg-white/10 border border-white/10 transition-colors flex items-center justify-center gap-1.5"
+        >
+          <Eye size={13} /> Наблюдать
+        </button>
+      )}
     </motion.div>
   );
 };

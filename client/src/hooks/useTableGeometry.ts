@@ -11,7 +11,7 @@ export function useTableGeometry(
   state: GameState | null,
   me: PlayerView | null,
 ): { seatPositions: PlacedSeat[]; mobileSeatPositions: PlacedSeat[] } {
-  // Desktop: эллипс rx=40 ry=34 (seat), chip rx=22 ry=20, dealer-бейдж rx=37 ry=31.
+  // Desktop: эллипс rx=40 ry=39 (seat, +15%), chip rx=22 ry=23, dealer-бейдж rx=30 ry=29.
   const seatPositions = useMemo<PlacedSeat[]>(() => {
     if (!state) return [];
     const count = state.players.length;
@@ -31,11 +31,11 @@ export function useTableGeometry(
       return {
         player,
         left: 50 + 40 * cos,
-        top: 50 + 34 * sin,
+        top: 50 + 39 * sin,
         chipLeft: 50 + 22 * cos,
-        chipTop: 50 + 20 * sin,
-        dealerLeft: 50 + 37 * cos,
-        dealerTop: 50 + 31 * sin,
+        chipTop: 50 + 23 * sin,
+        dealerLeft: 50 + 30 * cos,
+        dealerTop: 50 + 29 * sin,
       };
     });
   }, [state, me]);

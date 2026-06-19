@@ -46,6 +46,8 @@ export class BankrollService {
         this.deps.notify(userId, chips);
         console.log(`💼 [bankroll] ${name}: ${before} → ${chips} (Δ${chips - before >= 0 ? '+' : ''}${chips - before})`);
       }
-    } catch {}
+    } catch {
+      // users.json временно недоступен — банкролл синхронизируется при следующем вызове
+    }
   }
 }

@@ -7,6 +7,7 @@ export const DebugOverlay = () => {
   const [ping, setPing] = useState<number | null>(null);
   const [downlink, setDownlink] = useState<number | null>(null);
   const frameCount = useRef(0);
+  // eslint-disable-next-line react-hooks/purity
   const lastTime = useRef(performance.now());
   const lastActionMs = useDebugStore((s) => s.lastActionMs);
   const lastActionLabel = useDebugStore((s) => s.lastActionLabel);

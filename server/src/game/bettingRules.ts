@@ -1,10 +1,11 @@
 // Правила ставок NLH — чистые функции. Вынесены из handlePlayerAction (ROADMAP §9.3-B).
-// Здесь зафиксировано ТЕКУЩЕЕ поведение (рефактор без смены логики). Сверка с POKER_RULES.md
-// и закрытие известных расхождений A1/A3 — отдельная задача, НЕ этот рефактор (§0.5).
+// A1 (§5.1) и A3 (§5.2) POKER_RULES.md закрыты: minRaiseTo использует lastRaiseSize,
+// incomplete all-in не открывает action для уже сходивших (lockedCallers в GameManager).
 
-// Минимальный размер рейза «to»: ≥ max(2×currentBet, currentBet + bigBlind).
-export function minRaiseTo(currentBet: number, bigBlind: number): number {
-  return Math.max(currentBet * 2, currentBet + bigBlind);
+// Минимальный размер рейза «to»: currentBet + lastRaiseSize (POKER_RULES §5.1).
+// lastRaiseSize = размер последнего полного raise в этом круге (инициализируется BB).
+export function minRaiseTo(currentBet: number, lastRaiseSize: number): number {
+  return currentBet + lastRaiseSize;
 }
 
 // Легален ли raise «to amount».
@@ -12,11 +13,11 @@ export function minRaiseTo(currentBet: number, bigBlind: number): number {
 export function isLegalRaise(
   amount: number | undefined,
   currentBet: number,
-  bigBlind: number,
+  lastRaiseSize: number,
   playerChips: number,
   playerCurrentBet: number,
 ): boolean {
   if (!amount || amount <= currentBet) return false;
   const wouldBeAllIn = amount >= playerChips + playerCurrentBet;
-  return amount >= minRaiseTo(currentBet, bigBlind) || wouldBeAllIn;
+  return amount >= minRaiseTo(currentBet, lastRaiseSize) || wouldBeAllIn;
 }

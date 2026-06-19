@@ -10,10 +10,22 @@ export interface AdminUser {
   banned: boolean;
   publicId?: string;
   country?: string;
+  lastLogin?: string;
+  alias?: string;
+  note?: string;
+  pnl?: number;   // PnL за всё время (из hands-лога; для сортировки/деталей)
+  hands?: number; // сыграно рук за всё время
+}
+
+// Агрегат статистики игрока за период (эндпоинт GET /admin/users/:id/stats)
+export interface PlayerStats {
+  hands: number;
+  pnl: number;
+  rake: number;
 }
 
 export type RoleFilter = 'all' | 'admin' | 'player' | 'banned';
-export type SortBy = 'username' | 'chips' | 'created';
+export type SortBy = 'username' | 'chips' | 'created' | 'pnl';
 
 export interface AdminRoom {
   id: string;
@@ -55,12 +67,22 @@ export interface BotModeSettings {
   refillIntervalMs: number;
 }
 
+export interface PaidFeaturesSettings {
+  rabbitHunt: {
+    enabled: boolean;
+    mode: 'fixed' | 'percent';
+    fixedAmount: number;
+    percent: number;
+  };
+}
+
 export interface GameSettings {
   turnDurationMs: number;
   autostartDelayMs: number;
   defaultPlayerChips: number;
   timebank: TimebankSettings;
   botMode: BotModeSettings;
+  paidFeatures: PaidFeaturesSettings;
 }
 
 export interface BotMetaView {
@@ -74,6 +96,7 @@ export interface BotMetaView {
     vpip: number;
   };
   roomId: string | null;
+  totalPnL: number;
   realizedPnL: number;
   handsPlayed: number;
   bluffCountLast50: number;

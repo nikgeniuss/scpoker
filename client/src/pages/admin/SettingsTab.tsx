@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
 import { useAdminApi } from '../../hooks/useAdminApi';
+import { parseMoney } from '../../config/chipFormat';
 import type { GameSettings, TimebankSettings, BotModeSettings } from './types';
 
 export const SettingsTab = () => {
@@ -11,6 +12,9 @@ export const SettingsTab = () => {
   const [settings, setSettings] = useState<GameSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // Черновик-строки для числовых полей: пока поле в фокусе, храним сырой текст,
+  // чтобы его можно было полностью очистить (иначе value залипает на 0).
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
 
   const load = useCallback(() => {
     api
@@ -75,8 +79,8 @@ export const SettingsTab = () => {
     {
       key: 'defaultPlayerChips',
       label: 'Стартовый банкролл при регистрации',
-      hint: 'Сколько фишек получает новый юзер при регистрации. За стол игрок садится со своим текущим банкроллом из профиля.',
-      min: 1,
+      hint: 'Сколько фишек получает новый юзер при регистрации (можно 0). За стол игрок садится со своим текущим банкроллом из профиля.',
+      min: 0,
       max: 1000000,
       step: 1,
       unit: '💰',
@@ -90,7 +94,8 @@ export const SettingsTab = () => {
       {fields.map((f) => {
         const raw = settings[f.key];
         if (typeof raw !== 'number') return null;
-        const display = f.fromMs ? raw / 1000 : raw;
+        const isMoney = f.key === 'defaultPlayerChips';
+        const display = f.fromMs ? raw / 1000 : isMoney ? raw / 100 : raw;
         return (
           <div key={String(f.key)} className="bg-gray-800 rounded-2xl p-4 border border-white/10">
             <label className="block text-white font-bold mb-1">{f.label}</label>
@@ -101,13 +106,37 @@ export const SettingsTab = () => {
                 min={f.min}
                 max={f.max}
                 step={f.step}
-                value={display}
+                value={drafts[f.key] ?? String(display)}
                 onChange={(e) => {
-                  const v = Number(e.target.value);
+                  const str = e.target.value;
+                  setDrafts((d) => ({ ...d, [f.key]: str }));
+                  if (str === '') return; // пустое поле во время ввода — не трогаем state
+                  if (isMoney) {
+                    setSettings((prev) => (prev ? { ...prev, [f.key]: parseMoney(str) } : prev));
+                    return;
+                  }
+                  const v = Number(str);
                   if (!Number.isFinite(v)) return;
                   setSettings((prev) =>
                     prev ? { ...prev, [f.key]: f.fromMs ? Math.round(v * 1000) : Math.round(v) } : prev
                   );
+                }}
+                onBlur={() => {
+                  // Нормализация при потере фокуса: clamp в [min..max], чистим черновик.
+                  setSettings((prev) => {
+                    if (!prev) return prev;
+                    const cur = prev[f.key];
+                    if (typeof cur !== 'number') return prev;
+                    const disp = f.fromMs ? cur / 1000 : isMoney ? cur / 100 : cur;
+                    const clamped = Math.min(f.max, Math.max(f.min, disp));
+                    const stored = f.fromMs ? Math.round(clamped * 1000) : isMoney ? Math.round(clamped * 100) : Math.round(clamped);
+                    return stored === cur ? prev : { ...prev, [f.key]: stored };
+                  });
+                  setDrafts((d) => {
+                    const n = { ...d };
+                    delete n[f.key];
+                    return n;
+                  });
                 }}
                 className="w-32 px-3 py-2 rounded-lg bg-gray-900 border border-white/10 text-white outline-none focus:border-poker-gold"
               />
@@ -144,6 +173,60 @@ export const SettingsTab = () => {
       <p className="text-xs text-gray-500">
         Изменения применяются к новым действиям. Активные таймеры хода и автостарта доиграют по старым значениям.
       </p>
+
+      <BroadcastSection api={api} />
+    </div>
+  );
+};
+
+// Рассылка broadcast-уведомления всем игрокам (ROADMAP §10.7).
+interface BroadcastSectionProps {
+  api: ReturnType<typeof useAdminApi>;
+}
+
+const BroadcastSection = ({ api }: BroadcastSectionProps) => {
+  const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
+
+  const send = async () => {
+    if (!text.trim()) return;
+    setSending(true);
+    try {
+      const res = await api.post<{ count: number }>('/admin/inbox/broadcast', { text: text.trim() });
+      toast.success(`Отправлено ${res.count} игрок${res.count === 1 ? 'у' : res.count < 5 ? 'ам' : 'ам'}`);
+      setText('');
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="bg-gray-800 rounded-2xl p-4 border border-white/10 space-y-3">
+      <div>
+        <h3 className="text-white font-bold text-lg mb-1">Рассылка уведомлений</h3>
+        <p className="text-sm text-gray-500">Сообщение придёт во «Входящие» всем зарегистрированным игрокам.</p>
+      </div>
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value.slice(0, 500))}
+        placeholder="Текст сообщения (до 500 символов)…"
+        rows={3}
+        className="w-full px-3 py-2 rounded-lg bg-gray-900 border border-white/10 text-white outline-none focus:border-poker-gold resize-none text-sm"
+      />
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-gray-500">{text.length}/500</span>
+        <motion.button
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          disabled={sending || !text.trim()}
+          onClick={send}
+          className="px-5 py-2 rounded-lg font-bold text-white bg-gradient-to-r from-blue-500 to-indigo-600 shadow-lg shadow-blue-500/20 disabled:opacity-40 text-sm"
+        >
+          {sending ? 'Отправляем…' : 'Отправить всем'}
+        </motion.button>
+      </div>
     </div>
   );
 };
@@ -280,15 +363,15 @@ const BotModeSection = ({ bm, onChange }: BotModeSectionProps) => {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label className="block text-white text-sm font-bold mb-1">Ботов за стол</label>
-          <p className="text-xs text-gray-500 mb-2">2–8. По умолчанию 3.</p>
+          <label className="block text-white text-sm font-bold mb-1">Макс. ботов за стол</label>
+          <p className="text-xs text-gray-500 mb-2">2–8. Реальное число варьируется (от 2 до этого) и «дышит». По умолчанию 6.</p>
           <input
             type="number"
             min={2}
             max={8}
             value={bm.botsPerTable}
             disabled={!bm.enabled}
-            onChange={(e) => update('botsPerTable', Math.max(2, Math.min(8, Math.round(Number(e.target.value) || 3))))}
+            onChange={(e) => update('botsPerTable', Math.max(2, Math.min(8, Math.round(Number(e.target.value) || 6))))}
             className="w-28 px-3 py-2 rounded-lg bg-gray-900 border border-white/10 text-white outline-none focus:border-poker-gold disabled:opacity-40"
           />
         </div>

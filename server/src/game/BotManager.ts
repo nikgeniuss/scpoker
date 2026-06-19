@@ -1,37 +1,16 @@
-// BotManager: оркестрация ботов — загрузка из bots.json, создание автостолов,
-// планирование решений ботов, persist chips после раздачи, periodic refill.
-// Работает в связке с GameManager (вызывает его методы для seat/leave/action).
-
-import { readJSON, writeJSON } from '../auth/storage.js';
+// BotManager: оркестрация ботов — создание автостолов, ротация, lifecycle.
+// Хранилище (bots.json, runtimes) → BotRepository. Планирование решений → BotDecisionScheduler.
 import { isBot as isBotId } from './botIdentity.js';
-import { DEFAULT_BOT_PERSONAS } from './defaultBotPersonas.js';
-import {
-  decideAction,
-  createBotRuntime,
-  recordHandResult,
-  makeSeededRng,
-  hashStr,
-  type BotPersona,
-  type BotRuntime,
-  type BotDecisionContext,
-  type BotDecision,
-} from './botBrain.js';
+import { makeSeededRng, hashStr, type BotDecisionContext, type BotDecision } from './botBrain.js';
+import { BotRepository } from './botRepository.js';
+import { BotDecisionScheduler } from './botDecisionScheduler.js';
 
-type BotPnLTarget = 'zero' | 'plus' | 'minus';
-type BotPeekMode = 'river' | 'turn' | 'full';
-
-export interface BotInfo {
-  id: string;
-  username: string;
-  chips: number;
-  targetPnL: BotPnLTarget;
-  persona: BotPersona;
-  createdAt: string;
-}
+// Re-export для обратной совместимости (GameManager и admin-роуты импортируют отсюда).
+export type { BotInfo, BotPnLTarget } from './botRepository.js';
 
 export interface BotModeSettings {
   enabled: boolean;
-  peekMode: BotPeekMode;
+  peekMode: 'river' | 'turn' | 'full';
   tablesPerLevel: number;
   botsPerTable: number;
   defaultBuyInBb: number;
@@ -39,7 +18,6 @@ export interface BotModeSettings {
 }
 
 // Профили автостолов: микро/низкие/средние блайнды.
-// Каждый уровень → отдельный стол.
 const AUTO_TABLE_PROFILES = [
   { level: 'micro', name: 'Уютный стол', smallBlind: 1, bigBlind: 2 },
   { level: 'low', name: 'Кэш-комната', smallBlind: 5, bigBlind: 10 },
@@ -49,7 +27,6 @@ const AUTO_TABLE_PROFILES = [
 type TableLevel = (typeof AUTO_TABLE_PROFILES)[number]['level'];
 
 // Контракт с GameManager — не импортируем класс напрямую, чтобы избежать циклов.
-// Передаётся в конструктор через интерфейс.
 export interface GameManagerForBots {
   hasOpenAutoBotTable(level: TableLevel): boolean;
   createBotTable(opts: {
@@ -59,120 +36,80 @@ export interface GameManagerForBots {
     bigBlind: number;
     maxPlayers: number;
   }): string | null;
-  seatBot(roomId: string, bot: BotInfo, buyIn: number): boolean;
+  seatBot(roomId: string, bot: import('./botRepository.js').BotInfo, buyIn: number): boolean;
   isRoomActive(roomId: string): boolean;
   forceCloseRoom(roomId: string): boolean;
-  // Вызывается из emitCurrentTurn когда ход бота. botBrain принимает решение, отвечает actions.
   buildBotContext(roomId: string, botId: string): BotDecisionContext | null;
   applyBotAction(roomId: string, botId: string, decision: BotDecision): void;
+  removeBotFromTable(roomId: string, botId: string): boolean;
+}
+
+// Диапазон длины сессии бота за столом: 8–25 минут
+const SESSION_MIN_MS = 8 * 60_000;
+const SESSION_MAX_MS = 25 * 60_000;
+
+// Задержка перед заменой ушедшего бота: 1–4 минуты
+const REPLACE_DELAY_MIN_MS = 60_000;
+const REPLACE_DELAY_MAX_MS = 4 * 60_000;
+
+// Минимум ботов за столом (низ диапазона). Верх = settings.botsPerTable.
+const BOT_TABLE_MIN = 2;
+
+// Случайное целевое число ботов для стола в диапазоне [BOT_TABLE_MIN .. maxPerTable].
+// Вынесено чистой функцией — стол «дышит», число варьируется между столами и во времени.
+export function rollBotTableTarget(maxPerTable: number, rnd: () => number = Math.random): number {
+  const max = Math.max(BOT_TABLE_MIN, maxPerTable);
+  return BOT_TABLE_MIN + Math.floor(rnd() * (max - BOT_TABLE_MIN + 1));
 }
 
 export class BotManager {
   private gm: GameManagerForBots;
-  private bots: Map<string, BotInfo>;
-  private runtimes: Map<string, BotRuntime>;
+  private repo: BotRepository;
+  private scheduler: BotDecisionScheduler;
   private settings: BotModeSettings;
-  private pendingDecisions: Map<string, NodeJS.Timeout>; // botId → timer
   private refillTimer: NodeJS.Timeout | null = null;
-  // Привязка стола к уровню — для refill и логирования.
+  private rotationTimer: NodeJS.Timeout | null = null;
   private botTableLevels: Map<string, TableLevel>;
-  // Какие боты на каком столе — для контроля переподсадки.
   private botTable: Map<string, string>; // botId → roomId
+  private botSessions: Map<string, number>; // botId → sessionEndMs
+  private frozenSlots: Map<string, number>; // roomId → count
+  private botTableTargets: Map<string, number>; // roomId → целевое число ботов (дышит, 2..botsPerTable)
 
   constructor(gm: GameManagerForBots, settings: BotModeSettings) {
     this.gm = gm;
     this.settings = settings;
-    this.bots = new Map();
-    this.runtimes = new Map();
-    this.pendingDecisions = new Map();
+    this.repo = new BotRepository();
+    this.scheduler = new BotDecisionScheduler();
     this.botTableLevels = new Map();
     this.botTable = new Map();
-    this.loadBots();
+    this.botSessions = new Map();
+    this.frozenSlots = new Map();
+    this.botTableTargets = new Map();
   }
 
-  // ===== Загрузка/persist =====
-
-  private loadBots(): void {
-    try {
-      const data = readJSON('bots.json') as BotInfo[];
-      if (!Array.isArray(data)) throw new Error('not-array');
-      data.forEach((b) => {
-        this.bots.set(b.id, b);
-        this.runtimes.set(b.id, createBotRuntime(b.chips));
-      });
-      console.log(`🤖 Loaded ${this.bots.size} bot personas`);
-    } catch {
-      console.log('🤖 No bots.json found / corrupted — seeding default pool');
+  // Целевое число ботов стола; если ещё не задано — раскидываем и запоминаем.
+  private getTableTarget(roomId: string): number {
+    let t = this.botTableTargets.get(roomId);
+    if (t === undefined) {
+      t = rollBotTableTarget(this.settings.botsPerTable);
+      this.botTableTargets.set(roomId, t);
     }
-    // Если по любой причине пул пуст (нет файла / битый JSON / пустой массив) — пересеять.
-    if (this.bots.size === 0) {
-      this.seedDefaultPool();
-      this.saveBots();
-    }
-  }
-
-  // Дефолтный пул из 12 ботов — seed-данные в defaultBotPersonas.ts (ROADMAP §9.3-D).
-  // Срабатывает только при пустом пуле — не перезаписывает существующих.
-  private seedDefaultPool(): void {
-    const now = new Date().toISOString();
-    for (const d of DEFAULT_BOT_PERSONAS) {
-      const id = 'bot:' + d.name.toLowerCase();
-      const bot: BotInfo = {
-        id,
-        username: d.name,
-        chips: d.chips,
-        targetPnL: d.target,
-        persona: d.persona,
-        createdAt: now,
-      };
-      this.bots.set(id, bot);
-      this.runtimes.set(id, createBotRuntime(bot.chips));
-    }
-    console.log(`🤖 Seeded ${this.bots.size} default bot personas`);
-  }
-
-  private saveBots(): void {
-    try {
-      writeJSON('bots.json', Array.from(this.bots.values()));
-    } catch {}
-  }
-
-  // Persist chips одного бота
-  persistBotChips(botId: string, chips: number): void {
-    const bot = this.bots.get(botId);
-    if (!bot || bot.chips === chips) return;
-    bot.chips = chips;
-    this.saveBots();
+    return t;
   }
 
   // ===== Public API =====
 
-  isBot(playerId: string): boolean {
-    return isBotId(playerId);
+  isBot(playerId: string): boolean { return isBotId(playerId); }
+
+  getBot(botId: string) { return this.repo.get(botId); }
+  getBotRuntime(botId: string) { return this.repo.getRuntime(botId); }
+  getAllBots() { return this.repo.getAll(); }
+
+  getBotMeta(botId: string) {
+    return this.repo.getMeta(botId, this.botTable.get(botId));
   }
 
-  getBot(botId: string): BotInfo | undefined {
-    return this.bots.get(botId);
-  }
-
-  getBotRuntime(botId: string): BotRuntime | undefined {
-    return this.runtimes.get(botId);
-  }
-
-  getAllBots(): BotInfo[] {
-    return Array.from(this.bots.values());
-  }
-
-  getBotMeta(botId: string): { bot: BotInfo; runtime: BotRuntime; roomId?: string } | null {
-    const bot = this.bots.get(botId);
-    const runtime = this.runtimes.get(botId);
-    if (!bot || !runtime) return null;
-    return { bot, runtime, roomId: this.botTable.get(botId) };
-  }
-
-  getSettings(): BotModeSettings {
-    return { ...this.settings };
-  }
+  getSettings(): BotModeSettings { return { ...this.settings }; }
 
   updateSettings(partial: Partial<BotModeSettings>): BotModeSettings {
     const wasEnabled = this.settings.enabled;
@@ -185,80 +122,54 @@ export class BotManager {
     return { ...this.settings };
   }
 
-  // Обновить target одного бота (admin endpoint)
-  updateBotTarget(botId: string, target: BotPnLTarget): boolean {
-    const bot = this.bots.get(botId);
-    if (!bot) return false;
-    bot.targetPnL = target;
-    this.saveBots();
-    return true;
+  updateBotTarget(botId: string, target: import('./botRepository.js').BotPnLTarget): boolean {
+    return this.repo.updateTarget(botId, target);
   }
 
-  // Установить chips одному боту (admin endpoint). Сбрасывает runtime.PnL.
   setBotChips(botId: string, chips: number): boolean {
-    const bot = this.bots.get(botId);
+    const bot = this.repo.get(botId);
     if (!bot) return false;
-    bot.chips = chips;
-    const rt = this.runtimes.get(botId);
-    if (rt) {
-      rt.realizedPnL = 0;
-      rt.handsPlayed = 0;
-      rt.handStartChips = chips;
-    }
-    this.saveBots();
+    this.repo.setChips(botId, chips);
     return true;
   }
 
-  // Массовое пополнение банкроллов всех ботов до указанной суммы.
-  // Сбрасывает runtime.PnL — это «новый старт».
-  refillAllBankrolls(chips: number): number {
-    let updated = 0;
-    for (const bot of this.bots.values()) {
-      if (bot.chips !== chips) {
-        bot.chips = chips;
-        updated++;
-      }
-      const rt = this.runtimes.get(bot.id);
-      if (rt) {
-        rt.realizedPnL = 0;
-        rt.handsPlayed = 0;
-        rt.handStartChips = chips;
-      }
-    }
-    this.saveBots();
-    console.log(`🤖 Refilled ${updated} bots to ${chips} chips each, PnL reset`);
-    return updated;
+  persistBotChips(botId: string, chips: number): void {
+    this.repo.persistChips(botId, chips);
   }
+
+  resetAllTotalPnL(): number { return this.repo.resetAllTotalPnL(); }
+  refillAllBankrolls(chips: number): number { return this.repo.refillAllBankrolls(chips); }
 
   // ===== Включить / выключить режим =====
 
   enableMode(): void {
-    console.log('🤖 Bot mode ENABLED — ensuring 3 auto-tables');
+    console.log('🤖 Bot mode ENABLED — ensuring auto-tables');
     this.ensureTables();
     if (this.refillTimer) clearInterval(this.refillTimer);
     this.refillTimer = setInterval(() => this.ensureTables(), this.settings.refillIntervalMs);
+    if (this.rotationTimer) clearInterval(this.rotationTimer);
+    this.rotationTimer = setInterval(() => this.rotateExpiredSessions(), 60_000);
   }
 
   disableMode(): void {
     console.log('🤖 Bot mode DISABLED — closing auto-tables');
     if (this.refillTimer) clearInterval(this.refillTimer);
     this.refillTimer = null;
-    // Закрыть все авто-столы; стеки ботов возвращаются в bots.json через persistBotChips
+    if (this.rotationTimer) clearInterval(this.rotationTimer);
+    this.rotationTimer = null;
     for (const roomId of new Set(this.botTable.values())) {
       this.gm.forceCloseRoom(roomId);
     }
     this.botTable.clear();
     this.botTableLevels.clear();
-    // Отменить все pending decisions
-    for (const t of this.pendingDecisions.values()) clearTimeout(t);
-    this.pendingDecisions.clear();
+    this.botSessions.clear();
+    this.frozenSlots.clear();
+    this.botTableTargets.clear();
+    this.scheduler.cancelAll();
   }
 
-  // Проверить, что для каждого уровня есть стол с ботами; если нет — создать.
-  // Если стол есть, но ботов меньше нужного — доращиваем (fill).
-  // Раньше hasOpenAutoBotTable пропускал любой существующий стол, поэтому стол с 1 ботом
-  // оставался полупустым 2+ минут. Особенно болезненно для «Средних» (BB=50), где боты
-  // часто разоряются и стол постепенно опустевал (см. CLAUDE.md §11.30 шероховатости).
+  // ===== Оркестрация столов =====
+
   private ensureTables(): void {
     if (!this.settings.enabled) return;
     for (const profile of AUTO_TABLE_PROFILES) {
@@ -266,7 +177,6 @@ export class BotManager {
         this.createTableWithBots(profile.level, profile.name, profile.smallBlind, profile.bigBlind);
         continue;
       }
-      // Стол этого уровня уже есть — найти его roomId и доращивать если ботов меньше нужного
       const existingRoomId = Array.from(this.botTableLevels.entries())
         .find(([, lvl]) => lvl === profile.level)?.[0];
       if (existingRoomId) {
@@ -275,12 +185,68 @@ export class BotManager {
     }
   }
 
-  // Дополнить существующий бот-стол до botsPerTable, если ботов меньше нужного.
-  // Реальные игроки могут сидеть рядом — мы добавляем только до целевого count ботов,
-  // не игроков. Auto-refill банкроллов вызывается перед pickBotsForTable.
+  private rotateExpiredSessions(): void {
+    if (!this.settings.enabled) return;
+    const now = Date.now();
+    for (const [botId, sessionEnd] of this.botSessions) {
+      if (now < sessionEnd) continue;
+      const roomId = this.botTable.get(botId);
+      if (!roomId || !this.gm.isRoomActive(roomId)) {
+        this.botSessions.delete(botId);
+        continue;
+      }
+      const removed = this.gm.removeBotFromTable(roomId, botId);
+      if (!removed) continue;
+      this.botSessions.delete(botId);
+      // Стол «дышит»: при каждом уходе пере-раскидываем целевое число.
+      const target = rollBotTableTarget(this.settings.botsPerTable);
+      this.botTableTargets.set(roomId, target);
+      const currentBots = Array.from(this.botTable.values()).filter((r) => r === roomId).length;
+      const frozenNow = this.frozenSlots.get(roomId) ?? 0;
+      // Стол на целевом/выше — замены нет, стол сжимается (живой уход).
+      if (currentBots + frozenNow >= target) {
+        console.log(`🤖 [rotation] ${botId} покинул стол ${roomId}, стол сжимается → ${currentBots}/${target}`);
+        continue;
+      }
+      this.frozenSlots.set(roomId, frozenNow + 1);
+      const delayMs = REPLACE_DELAY_MIN_MS + Math.random() * (REPLACE_DELAY_MAX_MS - REPLACE_DELAY_MIN_MS);
+      const bigBlind = this.getBigBlindForRoom(roomId);
+      console.log(`🤖 [rotation] ${botId} покинул стол ${roomId}, замена через ${Math.round(delayMs / 60000)} мин (target=${target})`);
+      setTimeout(() => {
+        this.frozenSlots.set(roomId, Math.max(0, (this.frozenSlots.get(roomId) ?? 0) - 1));
+        if (this.gm.isRoomActive(roomId)) {
+          const cur = Array.from(this.botTable.values()).filter((r) => r === roomId).length;
+          if (cur < this.getTableTarget(roomId)) this.seatOneBot(roomId, bigBlind);
+        }
+      }, delayMs);
+    }
+  }
+
+  private getBigBlindForRoom(roomId: string): number {
+    const level = this.botTableLevels.get(roomId);
+    return AUTO_TABLE_PROFILES.find((p) => p.level === level)?.bigBlind ?? 2;
+  }
+
+  private seatOneBot(roomId: string, bigBlind: number): void {
+    const buyIn = bigBlind * this.settings.defaultBuyInBb;
+    this.autoRefillForBuyIn(buyIn, 1);
+    const more = this.pickBotsForTable(1, buyIn);
+    for (const bot of more) {
+      const ok = this.gm.seatBot(roomId, bot, buyIn);
+      if (ok) {
+        this.botTable.set(bot.id, roomId);
+        this.assignSession(bot.id);
+        this.repo.initRuntime(bot.id, bot.chips);
+        console.log(`🤖 [join] ${bot.username} сел за стол ${roomId}`);
+      }
+    }
+  }
+
   private fillExistingTable(roomId: string, bigBlind: number): void {
-    const currentBots = Array.from(this.botTable.entries()).filter(([, rid]) => rid === roomId).length;
-    const needed = this.settings.botsPerTable - currentBots;
+    const currentBots = Array.from(this.botTable.values()).filter((r) => r === roomId).length;
+    const frozen = this.frozenSlots.get(roomId) ?? 0;
+    const target = this.getTableTarget(roomId);
+    const needed = target - currentBots - frozen;
     if (needed <= 0) return;
     const buyIn = bigBlind * this.settings.defaultBuyInBb;
     this.autoRefillForBuyIn(buyIn, needed);
@@ -290,62 +256,75 @@ export class BotManager {
       const ok = this.gm.seatBot(roomId, bot, buyIn);
       if (ok) {
         this.botTable.set(bot.id, roomId);
-        const rt = this.runtimes.get(bot.id);
-        if (rt) rt.handStartChips = bot.chips;
+        this.assignSession(bot.id);
+        this.repo.initRuntime(bot.id, bot.chips);
         added++;
       }
     }
     if (added > 0) {
-      console.log(`🤖 [fill-table] roomId=${roomId} +${added} bot(s) (now ${currentBots + added}/${this.settings.botsPerTable})`);
+      console.log(`🤖 [fill] ${roomId} +${added} (теперь ${currentBots + added}/${target})`);
     }
   }
 
-  private createTableWithBots(
-    level: TableLevel,
-    name: string,
-    smallBlind: number,
-    bigBlind: number,
-  ): void {
+  private createTableWithBots(level: TableLevel, name: string, smallBlind: number, bigBlind: number): void {
     const maxPlayers = Math.max(this.settings.botsPerTable + 3, 6);
     const roomId = this.gm.createBotTable({ level, name, smallBlind, bigBlind, maxPlayers });
     if (!roomId) return;
     this.botTableLevels.set(roomId, level);
-    // Выбрать N свободных ботов с достаточным банкроллом
+
+    // Целевое число для стола — своё, в диапазоне [2 .. botsPerTable]. Стол наполняется не мгновенно.
+    const target = rollBotTableTarget(this.settings.botsPerTable);
+    this.botTableTargets.set(roomId, target);
+
     const buyIn = bigBlind * this.settings.defaultBuyInBb;
-    // Auto-refill: если кандидатов для buy-in недостаточно, рефиллим всех свободных ботов
-    // с низким балансом до 2*buyIn (запас на пару раздач). Это self-healing — без него
-    // бот-столы постепенно пустеют по мере разорения ботов.
-    this.autoRefillForBuyIn(buyIn, this.settings.botsPerTable);
-    const candidates = this.pickBotsForTable(this.settings.botsPerTable, buyIn);
+    const initialCount = BOT_TABLE_MIN + Math.floor(Math.random() * (target - BOT_TABLE_MIN + 1));
+
+    this.autoRefillForBuyIn(buyIn, initialCount);
+    const candidates = this.pickBotsForTable(initialCount, buyIn);
     let seated = 0;
     for (const bot of candidates) {
       const ok = this.gm.seatBot(roomId, bot, buyIn);
       if (ok) {
         this.botTable.set(bot.id, roomId);
-        const rt = this.runtimes.get(bot.id);
-        if (rt) rt.handStartChips = bot.chips;
+        this.assignSession(bot.id);
+        this.repo.initRuntime(bot.id, bot.chips);
         seated++;
       }
     }
-    console.log(`🤖 Auto-table created: ${name} (${smallBlind}/${bigBlind}), seated ${seated} bots`);
+
+    const remaining = target - seated;
+    let cumulativeMs = 0;
+    for (let i = 0; i < remaining; i++) {
+      cumulativeMs += REPLACE_DELAY_MIN_MS + Math.random() * (REPLACE_DELAY_MAX_MS - REPLACE_DELAY_MIN_MS);
+      const delay = cumulativeMs;
+      setTimeout(() => {
+        if (!this.gm.isRoomActive(roomId)) return;
+        const cur = Array.from(this.botTable.values()).filter((r) => r === roomId).length;
+        if (cur >= this.getTableTarget(roomId)) return;
+        this.seatOneBot(roomId, bigBlind);
+      }, delay);
+    }
+
+    console.log(`🤖 Создан стол: ${name} (${smallBlind}/${bigBlind}), target=${target}, сразу=${seated}, придут позже=${remaining}`);
   }
 
-  // Выбрать N свободных ботов с банкроллом >= buyIn
-  private pickBotsForTable(n: number, buyIn: number): BotInfo[] {
-    const free = Array.from(this.bots.values()).filter(
-      (b) => !this.botTable.has(b.id) && b.chips >= buyIn,
-    );
-    // Гарантируем разнообразие target: если есть minus-бот — посадим хотя бы 1.
-    // Иначе игроки никогда не выиграют у бот-столов.
+  private assignSession(botId: string): void {
+    const sessionMs = SESSION_MIN_MS + Math.random() * (SESSION_MAX_MS - SESSION_MIN_MS);
+    this.botSessions.set(botId, Date.now() + sessionMs);
+  }
+
+  private pickBotsForTable(n: number, buyIn: number): import('./botRepository.js').BotInfo[] {
+    const free = this.repo.getAll().filter((b) => !this.botTable.has(b.id) && b.chips >= buyIn);
     const minus = free.filter((b) => b.targetPnL === 'minus');
     const others = free.filter((b) => b.targetPnL !== 'minus');
-    const chosen: BotInfo[] = [];
+    this.shuffleArray(minus);
+    this.shuffleArray(others);
+    const chosen: import('./botRepository.js').BotInfo[] = [];
     if (minus.length > 0) chosen.push(minus[0]);
     for (const b of others) {
       if (chosen.length >= n) break;
       chosen.push(b);
     }
-    // Если minus был и осталось место — добавить ещё
     for (const b of minus.slice(1)) {
       if (chosen.length >= n) break;
       chosen.push(b);
@@ -353,115 +332,60 @@ export class BotManager {
     return chosen.slice(0, n);
   }
 
-  // Self-healing: если для текущего buyIn недостаточно ботов с chips ≥ buyIn,
-  // пополняем банкролл всем свободным (не на других столах) с низким балансом до 2*buyIn.
-  // Сбрасывает runtime.PnL — это «новый старт» для подкаченного бота.
-  // Без этого бот-столы постепенно пустеют по мере разорения ботов.
+  private shuffleArray<T>(arr: T[]): void {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+  }
+
   private autoRefillForBuyIn(buyIn: number, needed: number): void {
-    const free = Array.from(this.bots.values()).filter((b) => !this.botTable.has(b.id));
+    const free = this.repo.getAll().filter((b) => !this.botTable.has(b.id));
     const eligible = free.filter((b) => b.chips >= buyIn);
     if (eligible.length >= needed) return;
     const refillTarget = buyIn * 2;
     let refilled = 0;
     for (const bot of free) {
-      if (bot.chips >= buyIn) continue; // уже подходит
-      bot.chips = refillTarget;
-      const rt = this.runtimes.get(bot.id);
-      if (rt) {
-        rt.realizedPnL = 0;
-        rt.handsPlayed = 0;
-        rt.handStartChips = refillTarget;
-      }
+      if (bot.chips >= buyIn) continue;
+      this.repo.setChips(bot.id, refillTarget);
       refilled++;
     }
     if (refilled > 0) {
-      this.saveBots();
-      console.log(`🤖 [auto-refill] ${refilled} bot(s) → ${refillTarget} chips each (для buyIn=${buyIn})`);
+      console.log(`🤖 [auto-refill] ${refilled} бот(а) → ${refillTarget} chips (buyIn=${buyIn})`);
     }
   }
 
   // ===== Принятие решения =====
 
   scheduleBotDecision(roomId: string, botId: string): void {
-    const bot = this.bots.get(botId);
-    const runtime = this.runtimes.get(botId);
-    if (!bot || !runtime) return;
-    // Отменяем старый тимер если был
-    const old = this.pendingDecisions.get(botId);
-    if (old) clearTimeout(old);
-    // Считаем delay через persona, делаем initial decision для расчёта delay
-    const ctx = this.gm.buildBotContext(roomId, botId);
-    if (!ctx) return;
-    let decision: BotDecision;
-    try {
-      decision = decideAction(ctx);
-    } catch (e) {
-      console.error('🤖 Bot decide error:', e);
-      decision = { action: 'fold', delayMs: 1500, tag: 'error-fold' };
-    }
-    // Запись bluff-событий в runtime: decideAction теперь чистая, мутацию делаем здесь (§9.3-D).
-    if (decision.recordBluff) runtime.bluffEventHands.push(runtime.handsPlayed);
-    if (decision.recordBluffCall) runtime.bluffCallEventHands.push(runtime.handsPlayed);
-    const timer = setTimeout(() => {
-      this.pendingDecisions.delete(botId);
-      // Лог особых tag'ов (peek/bluff/all-in/slowplay) — для аналитики PnL-driven веток.
-      // Нормальные normal-fold/check/call не логируем (шум).
-      if (decision.tag && (
-        decision.tag.startsWith('peek-') ||
-        decision.tag.includes('bluff') ||
-        decision.tag.includes('all-in') ||
-        decision.tag.includes('slowplay') ||
-        decision.tag.includes('hero-fold') ||
-        decision.tag.includes('mistake')
-      )) {
-        const bot = this.bots.get(botId);
-        console.log(`🎯 [${bot?.username ?? botId}] ${decision.action} tag=${decision.tag}`);
-      }
-      // Пересчитываем решение в момент тика — state мог измениться (другой игрок ушёл / рейзнул).
-      // Используем уже посчитанное decision — упрощение, race-condition в GameManager отрежется
-      // через playerIds[currentPlayerIndex] !== botId.
-      this.gm.applyBotAction(roomId, botId, decision);
-    }, decision.delayMs);
-    this.pendingDecisions.set(botId, timer);
+    this.scheduler.schedule(roomId, botId, this.repo, this.gm);
   }
 
-  // Отменить pending decision (например, при removePlayer/handleDisconnect)
   cancelBotDecision(botId: string): void {
-    const t = this.pendingDecisions.get(botId);
-    if (t) {
-      clearTimeout(t);
-      this.pendingDecisions.delete(botId);
-    }
+    this.scheduler.cancel(botId);
   }
 
   // ===== Hand lifecycle =====
 
-  // Вызывается из GameManager.cleanupHand — фиксируем PnL бота
   onHandEnd(botId: string, finalChips: number, bigBlind: number): void {
-    const bot = this.bots.get(botId);
-    const runtime = this.runtimes.get(botId);
-    if (!bot || !runtime) return;
-    recordHandResult(runtime, finalChips, bigBlind);
-    // Persist обновлённые chips
-    this.persistBotChips(botId, finalChips);
+    this.repo.onHandEnd(botId, finalChips, bigBlind);
   }
 
-  // Удалить бота из привязки к столу (например, разорился и autoLeaveBrokePlayers выбросил)
   onBotLeaveRoom(botId: string): void {
     this.botTable.delete(botId);
-    this.cancelBotDecision(botId);
+    this.botSessions.delete(botId);
+    this.scheduler.cancel(botId);
   }
 
-  // Удалить связь стол-уровень (когда стол закрылся)
   onTableClosed(roomId: string): void {
     this.botTableLevels.delete(roomId);
-    // Очистить ботов, привязанных к этому столу
+    this.frozenSlots.delete(roomId);
+    this.botTableTargets.delete(roomId);
     for (const [botId, rid] of this.botTable) {
       if (rid === roomId) this.botTable.delete(botId);
     }
   }
 
-  // Создать seeded RNG для (botId + handIndex) — детерминируемо
   makeRngForHand(botId: string, handIndex: number): () => number {
     return makeSeededRng(hashStr(botId) ^ handIndex);
   }

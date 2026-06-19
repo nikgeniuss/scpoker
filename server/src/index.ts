@@ -5,11 +5,19 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
 import { GameManager } from './game/GameManager.js';
+import { recordHandStat } from './game/statsService.js';
+import { recordRoomCreated } from './game/roomEvents.js';
 import { migratePublicIds } from './auth/auth.js';
 import { IMAGES_DIR } from './decks/decks.js';
 import { createAuthRouter } from './routes/auth.routes.js';
 import { createAdminRouter } from './routes/admin.routes.js';
 import { createPublicRouter } from './routes/public.routes.js';
+import { createTemplatesRouter } from './routes/templates.routes.js';
+import { createNotesRouter } from './routes/notes.routes.js';
+import { createHandsRouter } from './routes/hands.routes.js';
+import { createInboxRouter } from './routes/inbox.routes.js';
+import { createClubRouter } from './routes/club.routes.js';
+import { recordHand } from './game/handHistory.js';
 import { registerSocketHandlers } from './socket/registerSocketHandlers.js';
 
 // CORS:
@@ -48,11 +56,22 @@ app.use(
 );
 
 const gameManager = new GameManager(io);
+// Трекинг статистики раздач (ROADMAP §10.10 «Фаза 3») — пишем результаты людей в hands.json.
+gameManager.statsRecorder = recordHandStat;
+// Лог открытия столов (метрика «столов открыто» в админ-вкладке «Данные»).
+gameManager.roomEventRecorder = recordRoomCreated;
+// История раздач (ROADMAP §10.10) — снимок каждой раздачи в hands-detailed.json.
+gameManager.handRecorder = recordHand;
 
 // Роуты по доменам (ROADMAP §9.3-C). Публичные пути — на '/', auth/admin — под своими префиксами.
 app.use('/', createPublicRouter(gameManager));
 app.use('/api/auth', createAuthRouter());
 app.use('/api/admin', createAdminRouter(gameManager));
+app.use('/api/templates', createTemplatesRouter());
+app.use('/api/notes', createNotesRouter());
+app.use('/api/hands', createHandsRouter());
+app.use('/api/inbox', createInboxRouter());
+app.use('/api/clubs', createClubRouter());
 
 // Весь socket-слой (handshake JWT + single-session + обработчики событий).
 registerSocketHandlers(io, gameManager);

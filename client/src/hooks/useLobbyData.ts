@@ -30,8 +30,8 @@ export function useLobbyData(onJoinDenied: () => void) {
     const onRoomList = (list: RoomInfo[]) => setRooms(list);
     const onRoomCreated = ({ roomId }: { roomId: string }) => navigate('/game/' + roomId);
     const onRoomJoined = ({ roomId }: { roomId: string }) => navigate('/game/' + roomId);
-    const onJoinDeniedEvt = ({ reason }: { reason: string }) => {
-      toast.error(denyMessage(reason, 'Не удалось войти'));
+    const onJoinDeniedEvt = ({ reason, retryAfterSec }: { reason: string; retryAfterSec?: number }) => {
+      toast.error(denyMessage(reason, 'Не удалось войти', retryAfterSec));
       onJoinDenied();
     };
     const onError = ({ message }: { message: string }) => toast.error(message);

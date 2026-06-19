@@ -2,6 +2,8 @@ import { memo } from 'react';
 import { motion } from 'framer-motion';
 import { suitColorClass, DEFAULT_CARD_COLOR_SCHEME } from '../../config/cardColors';
 import type { CardColorScheme } from '../../config/cardColors';
+import { DEFAULT_CARD_DECK, suitSolidBgClass } from '../../config/cardDeck';
+import type { CardDeck } from '../../config/cardDeck';
 import { useDecksStore, cardKey } from '../../store/decksStore';
 import { BASE_URL } from '../../config/api';
 import type { Card as CardData, Suit, Rank } from '@poker-room/shared';
@@ -14,10 +16,11 @@ interface CardProps {
   faceStyle: string;
   backStyle: string;
   colorScheme?: CardColorScheme; // Дефолт — стандарт (set1). Используется в text-fallback варианте.
+  deck?: CardDeck;               // Колода игрока: 'classic' (по faceStyle) или 'colored' (заливка по масти)
   size?: 'sm' | 'md' | 'lg';
   delay?: number;
-  highlight?: boolean; // Карта входит в выигрышную пятёрку — поднимается вверх + золотое свечение
-  dim?: boolean; // Шоудаун: карта НЕ в выигрышной пятёрке — приглушаем opacity и насыщенность
+  highlight?: boolean; // Карта входит в выигрышную пятёрку — лифт вверх + золотое свечение (без увеличения)
+  dim?: boolean; // Шоудаун: карта НЕ в выигрышной пятёрке — уводим в тень (приглушение + затемнение)
 }
 
 const SUIT_SYMBOL: Record<Suit, string> = {
@@ -52,17 +55,17 @@ const BACK_PATTERN: Record<string, string> = {
   gold: '♔',
 };
 
-const CardImpl = ({ card, faceStyle, backStyle, colorScheme = DEFAULT_CARD_COLOR_SCHEME, size = 'md', delay = 0, highlight = false, dim = false }: CardProps) => {
+const CardImpl = ({ card, faceStyle, backStyle, colorScheme = DEFAULT_CARD_COLOR_SCHEME, deck = DEFAULT_CARD_DECK, size = 'md', delay = 0, highlight = false, dim = false }: CardProps) => {
   const sizeCls = SIZE_CLASS[size];
-  // Шоудаун: highlight поднимает winning-карту вверх (без свечения/рамки — только лифт).
-  // dim — отстраняет проигравшую/нерабочую карту (приглушение).
-  const highlightCls = highlight ? ' relative z-20' : (dim ? ' relative' : '');
-  // Лифт winning-карт вверх + слегка крупнее. Без glow/pulse.
+  // Шоудаун (как в GGPoker): highlight — лифт winning-карты вверх + z поверх соседей (БЕЗ свечения).
+  // dim — уводит проигравшую/нерабочую карту в тень (.card-dim: затемнение/десатурация).
+  const highlightCls = highlight ? ' relative z-20' : (dim ? ' relative card-dim' : '');
+  // Лифт вверх + лёгкое увеличение (пара процентов). Без glow.
   const motionTarget = {
     rotateY: 0,
-    opacity: dim ? 0.45 : 1,
-    y: highlight ? -18 : 0,
-    scale: highlight ? 1.06 : 1,
+    opacity: dim ? 0.5 : 1,
+    y: highlight ? -16 : 0,
+    scale: highlight ? 1.04 : 1,
   };
 
   // Если faceStyle совпадает с id одной из колод из images/ — рендерим картинку.
@@ -92,6 +95,38 @@ const CardImpl = ({ card, faceStyle, backStyle, colorScheme = DEFAULT_CARD_COLOR
     );
   }
 
+  // Колода «Цветные»: вся карта залита цветом масти, ранг/масть белым. Раскладка по эталону:
+  // ↖ номинал + масть под ним (мелкий индекс), ↘ крупный номинал. Приоритет над картиночной
+  // колодой — это осознанный выбор лица карты игроком в карусели настроек.
+  if (deck === 'colored') {
+    const bg = suitSolidBgClass(card.suit);
+    const sym = SUIT_SYMBOL[card.suit];
+    return (
+      <motion.div
+        initial={{ rotateY: 180, opacity: 0, y: -30 }}
+        animate={motionTarget}
+        transition={{ delay, duration: 0.35, ease: 'easeOut' }}
+        className={
+          sizeCls +
+          ' rounded-lg ' +
+          bg +
+          ' poker-card-shadow ring-1 ring-black/25 text-white relative select-none' +
+          highlightCls
+        }
+      >
+        {/* ↖ номинал, под ним масть */}
+        <div className="absolute top-1 left-1.5 flex flex-col items-center leading-none">
+          <span className="font-black">{card.rank}</span>
+          <span className="-mt-0.5 text-[0.72em]">{sym}</span>
+        </div>
+        {/* ↘ крупный номинал */}
+        <span className="absolute bottom-0.5 right-1.5 font-black leading-none text-[2.24em]">
+          {card.rank}
+        </span>
+      </motion.div>
+    );
+  }
+
   if (matchedDeck) {
     const key = cardKey(card.rank, card.suit);
     const file = matchedDeck.finalMap[key];
@@ -99,7 +134,7 @@ const CardImpl = ({ card, faceStyle, backStyle, colorScheme = DEFAULT_CARD_COLOR
       return (
         <motion.div
           initial={{ rotateY: 180, opacity: 0, y: -30 }}
-          animate={{ rotateY: 0, opacity: 1, y: 0 }}
+          animate={motionTarget}
           transition={{ delay, duration: 0.35, ease: 'easeOut' }}
           className={sizeCls + ' relative select-none' + highlightCls}
         >
@@ -121,7 +156,7 @@ const CardImpl = ({ card, faceStyle, backStyle, colorScheme = DEFAULT_CARD_COLOR
   return (
     <motion.div
       initial={{ rotateY: 180, opacity: 0, y: -30 }}
-      animate={{ rotateY: 0, opacity: 1, y: 0 }}
+      animate={motionTarget}
       transition={{ delay, duration: 0.35, ease: 'easeOut' }}
       className={
         sizeCls +

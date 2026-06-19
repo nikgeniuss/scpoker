@@ -1,10 +1,10 @@
-import { type Card, SUITS, RANKS } from './types.js';
+import { type Card, type GameFormat, SUITS, ranksForFormat } from './types.js';
 
-// Создать новую колоду (52 карты)
-export function createDeck(): Card[] {
+// Создать новую колоду: NLH — 52 карты, Шорт-дэк — 36 (без 2–5).
+export function createDeck(format: GameFormat = 'nlh'): Card[] {
   const deck: Card[] = [];
   for (const suit of SUITS) {
-    for (const rank of RANKS) {
+    for (const rank of ranksForFormat(format)) {
       deck.push({ suit, rank });
     }
   }
@@ -68,17 +68,17 @@ export function getFutureBoardCards(deck: Card[], alreadyOnBoard: number): Card[
     if (pos >= 0) pos--; // burn перед turn
     if (pos >= 0) result.push(deck[pos--]); // turn
     if (pos >= 0) pos--; // burn перед river
-    if (pos >= 0) result.push(deck[pos--]); // river
+    if (pos >= 0) result.push(deck[pos]); // river
   } else if (alreadyOnBoard === 3) {
     // Флоп открыт → нужны turn + river. На deck'е лежат burn(turn) → turn → burn(river) → river.
     if (pos >= 0) pos--; // burn перед turn
     if (pos >= 0) result.push(deck[pos--]); // turn
     if (pos >= 0) pos--; // burn перед river
-    if (pos >= 0) result.push(deck[pos--]); // river
+    if (pos >= 0) result.push(deck[pos]); // river
   } else if (alreadyOnBoard === 4) {
     // Тёрн открыт → нужен river. На deck'е: burn(river) → river.
     if (pos >= 0) pos--; // burn перед river
-    if (pos >= 0) result.push(deck[pos--]); // river
+    if (pos >= 0) result.push(deck[pos]); // river
   }
   // alreadyOnBoard === 5 — всё открыто, future = []
   return result;

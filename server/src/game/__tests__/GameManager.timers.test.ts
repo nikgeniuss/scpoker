@@ -4,7 +4,6 @@ vi.mock('../../auth/storage.js', () => import('./helpers/storage.js'));
 
 import { resetStorage, createTestGameManager, seatPlayer, type GameManagerLike } from './helpers/gameManager.js';
 import { card, buildDeck } from './helpers/cards.js';
-import type { MockIo } from './helpers/ioMock.js';
 
 // Characterization-тесты таймеров ПЕРЕД распилом TimerService (ROADMAP §9.3-B).
 // Дополняют lifecycle.test.ts (auto-fold/check, timebank Phase1-2, disconnect 30с, autostart):

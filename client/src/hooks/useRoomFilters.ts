@@ -2,6 +2,15 @@ import { useMemo, useState } from 'react';
 import type { RoomInfo } from '@poker-room/shared';
 
 export type FormatTab = 'all' | 'nlh' | 'shortdeck';
+export type BlindPreset = 'all' | 'micro' | 'low' | 'medium' | 'high';
+
+// BB-диапазоны (центы): Микро ≤0.10, Низкие 0.25–1.00, Средние 1.25–10.00, Высокие >10.00
+const BLIND_RANGES: Record<Exclude<BlindPreset, 'all'>, (bb: number) => boolean> = {
+  micro:  (bb) => bb <= 10,
+  low:    (bb) => bb > 10  && bb <= 100,
+  medium: (bb) => bb > 100 && bb <= 1000,
+  high:   (bb) => bb > 1000,
+};
 
 // Фильтры лобби (поиск/мои/ожидающие/скрыть недоступные/формат) + производные счётчики.
 // Вынесено из Lobby (ROADMAP §9.3-E).
@@ -12,6 +21,7 @@ export function useRoomFilters(rooms: RoomInfo[], myId: string | null) {
   const [waitingOnly, setWaitingOnly] = useState(false);
   // Таб формата игры. Активен NLH; Шорт-дэк — disabled «скоро».
   const [formatTab, setFormatTab] = useState<FormatTab>('all');
+  const [blindPreset, setBlindPreset] = useState<BlindPreset>('all');
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -28,12 +38,13 @@ export function useRoomFilters(rooms: RoomInfo[], myId: string | null) {
         const imIn = myId && r.playerIds.includes(myId);
         if ((isFull || isPlaying) && !imIn) return false;
       }
-      // formatTab: 'all' и 'nlh' пропускают всё (у нас только NLH-столы).
-      // 'shortdeck' пока не имеет столов — фильтр отсечёт всё, но кнопка disabled.
-      if (formatTab !== 'all' && formatTab !== 'nlh') return false;
+      // Фильтр по формату стола. 'all' — все; иначе сверяем r.format ('nlh' по умолчанию
+      // для legacy-комнат без поля).
+      if (formatTab !== 'all' && (r.format ?? 'nlh') !== formatTab) return false;
+      if (blindPreset !== 'all' && !BLIND_RANGES[blindPreset](r.bigBlind)) return false;
       return true;
     });
-  }, [rooms, search, myOnly, hideUnavailable, waitingOnly, formatTab, myId]);
+  }, [rooms, search, myOnly, hideUnavailable, waitingOnly, formatTab, blindPreset, myId]);
 
   const myRoomsCount = useMemo(
     () => (myId ? rooms.filter((r) => r.playerIds.includes(myId)).length : 0),
@@ -54,6 +65,7 @@ export function useRoomFilters(rooms: RoomInfo[], myId: string | null) {
     hideUnavailable, setHideUnavailable,
     waitingOnly, setWaitingOnly,
     formatTab, setFormatTab,
+    blindPreset, setBlindPreset,
     filtered, myRoomsCount, onlineCount, tableCount,
   };
 }

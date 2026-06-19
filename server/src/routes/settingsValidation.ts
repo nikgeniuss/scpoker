@@ -10,7 +10,7 @@ const isNonNegInt = (v: unknown): v is number =>
 export function validateSettingsPatch(
   body: Record<string, unknown>,
 ): { patch: Record<string, unknown> } | { error: string } {
-  const { turnDurationMs, autostartDelayMs, defaultPlayerChips, timebank, botMode } = body;
+  const { turnDurationMs, autostartDelayMs, defaultPlayerChips, timebank, botMode, paidFeatures } = body;
   const patch: Record<string, unknown> = {};
 
   if (turnDurationMs !== undefined) {
@@ -26,8 +26,8 @@ export function validateSettingsPatch(
     patch.autostartDelayMs = autostartDelayMs;
   }
   if (defaultPlayerChips !== undefined) {
-    if (!isPositiveInt(defaultPlayerChips) || defaultPlayerChips < 1 || defaultPlayerChips > 1000000) {
-      return { error: 'defaultPlayerChips: 1–1000000' };
+    if (!isNonNegInt(defaultPlayerChips) || defaultPlayerChips > 1000000) {
+      return { error: 'defaultPlayerChips: 0–1000000' };
     }
     patch.defaultPlayerChips = defaultPlayerChips;
   }
@@ -118,6 +118,44 @@ export function validateSettingsPatch(
       bmPatch.refillIntervalMs = b.refillIntervalMs;
     }
     patch.botMode = bmPatch;
+  }
+  if (paidFeatures !== undefined) {
+    if (!paidFeatures || typeof paidFeatures !== 'object') {
+      return { error: 'paidFeatures: object' };
+    }
+    const pf = paidFeatures as Record<string, unknown>;
+    if (pf.rabbitHunt !== undefined) {
+      if (!pf.rabbitHunt || typeof pf.rabbitHunt !== 'object') {
+        return { error: 'paidFeatures.rabbitHunt: object' };
+      }
+      const rh = pf.rabbitHunt as Record<string, unknown>;
+      const rhPatch: Record<string, unknown> = {};
+      if (rh.enabled !== undefined) {
+        if (typeof rh.enabled !== 'boolean') {
+          return { error: 'paidFeatures.rabbitHunt.enabled: boolean' };
+        }
+        rhPatch.enabled = rh.enabled;
+      }
+      if (rh.mode !== undefined) {
+        if (rh.mode !== 'fixed' && rh.mode !== 'percent') {
+          return { error: 'paidFeatures.rabbitHunt.mode: "fixed" | "percent"' };
+        }
+        rhPatch.mode = rh.mode;
+      }
+      if (rh.fixedAmount !== undefined) {
+        if (!isNonNegInt(rh.fixedAmount) || rh.fixedAmount > 1000000) {
+          return { error: 'paidFeatures.rabbitHunt.fixedAmount: 0..1000000' };
+        }
+        rhPatch.fixedAmount = rh.fixedAmount;
+      }
+      if (rh.percent !== undefined) {
+        if (typeof rh.percent !== 'number' || !Number.isFinite(rh.percent) || rh.percent < 0 || rh.percent > 100) {
+          return { error: 'paidFeatures.rabbitHunt.percent: 0..100' };
+        }
+        rhPatch.percent = rh.percent;
+      }
+      patch.paidFeatures = { rabbitHunt: rhPatch };
+    }
   }
 
   return { patch };

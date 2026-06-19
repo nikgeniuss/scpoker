@@ -29,6 +29,10 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
     const user = socket.data.user as SocketUser;
     console.log('User connected:', socket.id, user.username);
 
+    // Мультитейблинг: восстановить столы, где игрок ещё сидит (sit-out), на (ре)коннекте/reload.
+    // Сервер сам вернёт сокет в комнаты + разошлёт состояние → пилюли восстановятся. Не пере-сажает.
+    gameManager.reconnectUserTables(user.id, socket);
+
     socket.on('lobby:subscribe', () => {
       socket.join('lobby');
       socket.emit('roomList', gameManager.getRoomList());
@@ -38,7 +42,7 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
       socket.leave('lobby');
     });
 
-    socket.on('createRoom', (data: { name: string; description?: string; smallBlind: number; bigBlind: number; maxPlayers: number; password?: string; turnDurationSec?: number; buyInMinBb?: number; buyInMaxBb?: number; timebank?: { enabled: boolean; startSec: number; bonusSec: number; bonusEveryHands: number; capSec: number } }) => {
+    socket.on('createRoom', (data: { name: string; description?: string; smallBlind: number; bigBlind: number; maxPlayers: number; password?: string; turnDurationSec?: number; buyInMinBb?: number; buyInMaxBb?: number; timebank?: { enabled: boolean; startSec: number; bonusSec: number; bonusEveryHands: number; capSec: number }; sitOutTimeoutMin?: number; waitlistDelayMin?: number; format?: 'nlh' | 'shortdeck'; rake?: { percent: number; capBb: number }; ante?: number; sessionDurationHours?: number; autoStartPlayers?: number }) => {
       // Если клиент не прислал turnDurationSec — берём глобальный settings (legacy-клиенты)
       const defaultTurnSec = Math.round(gameManager.getSettings().turnDurationMs / 1000);
       const result = gameManager.createRoom(
@@ -56,6 +60,14 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
           // timebank — необязательное поле. GameManager.createRoom проверит allowPerTableOverride
           // и либо применит его, либо проигнорирует, скопировав глобал.
           timebank: data.timebank,
+          sitOutTimeoutMin: data.sitOutTimeoutMin,
+          waitlistDelayMin: data.waitlistDelayMin,
+          format: data.format,
+          // per-table опции из модалки (§10.6) — раньше терялись в этом обработчике (фикс 2026-06-13)
+          rake: data.rake,
+          ante: data.ante,
+          sessionDurationHours: data.sessionDurationHours,
+          autoStartPlayers: data.autoStartPlayers,
         },
         user.username,
       );
@@ -103,6 +115,28 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
       socket.emit('startCountdown', { endsAt });
     });
 
+    // Наблюдатель: войти в комнату БЕЗ посадки (можно даже на полный стол). Сокет
+    // присоединяется к socket.io-комнате, в room.players не добавляется → broadcastGameState
+    // шлёт ему base-state без карт соперников (§0.1). Админ-наблюдатель видит открытые карты —
+    // peek включается автоматически (решение пользователя 2026-06-12). Реального места не занимает,
+    // на счётчики/автостарт/раздачу не влияет (он не игрок).
+    socket.on('observeRoom', (data: { roomId: string }) => {
+      const baseState = gameManager.getGameState(data.roomId);
+      if (!baseState) {
+        socket.emit('joinDenied', { reason: 'not-found' });
+        return;
+      }
+      socket.join(data.roomId);
+      gameManager.addObserver(data.roomId, socket.id, user.id, user.username);
+      if (user.role === 'admin') gameManager.setAdminPeek(socket.id, true);
+      const withPeek = gameManager.isAdminPeekSocket(socket.id);
+      // viewer=user.id: наблюдатель не среди игроков → своих карт нет; админ-peek отдаёт все.
+      const personalState = gameManager.getGameState(data.roomId, user.id, withPeek);
+      if (personalState) socket.emit('gameUpdate', personalState);
+      const endsAt = gameManager.getCountdownEndsAt(data.roomId);
+      socket.emit('startCountdown', { endsAt });
+    });
+
     // Admin-peek: «глаз админа» — карты всех игроков + следующие 5 карт колоды.
     // Серверная проверка роли — обязательна (нельзя доверять клиенту).
     socket.on('adminPeekToggle', (data: { enabled: boolean; roomId?: string }) => {
@@ -122,7 +156,11 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
     socket.on('joinRoom', (data: { roomId: string; password?: string; buyInAmount?: number }) => {
       const denyReason = gameManager.canJoinRoom(data.roomId, user.id, data.password, data.buyInAmount);
       if (denyReason) {
-        socket.emit('joinDenied', { reason: denyReason });
+        // Для временного кика добавляем остаток в секундах — клиент покажет «через N мин».
+        const retryAfterSec = denyReason === 'on-cooldown'
+          ? Math.ceil(gameManager.kickCooldownRemainingMs(data.roomId, user.id) / 1000)
+          : undefined;
+        socket.emit('joinDenied', { reason: denyReason, retryAfterSec });
         return;
       }
       socket.join(data.roomId);
@@ -134,8 +172,56 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
       socket.emit('roomJoined', { roomId: data.roomId });
     });
 
+    // Встать в очередь на полный стол (авто-посадка при освобождении места через задержку стола).
+    socket.on('joinWaitlist', (data: { roomId: string; password?: string; buyInAmount?: number }) => {
+      const result = gameManager.joinWaitlist(data.roomId, user.id, user.username, socket, data.password, data.buyInAmount);
+      if ('error' in result) {
+        socket.emit('joinDenied', { reason: result.error });
+        return;
+      }
+      if ('seated' in result) {
+        // Место освободилось к моменту запроса — сели сразу
+        socket.emit('roomJoined', { roomId: data.roomId });
+      }
+      // queued — обратная связь через обновлённый roomList (карточка покажет позицию)
+    });
+
+    socket.on('leaveWaitlist', (data: { roomId: string }) => {
+      gameManager.leaveWaitlist(data.roomId, user.id);
+    });
+
     socket.on('playerAction', (data: { roomId: string; action: string; amount?: number }) => {
       gameManager.handlePlayerAction(data.roomId, user.id, data.action, data.amount);
+    });
+
+    // Авто-докупка стека: клиент присылает свою преференцию (живёт в localStorage), сервер
+    // применяет её между раздачами в cleanupHand. Санитизация диапазона — в setAutoTopUp.
+    socket.on('setAutoTopUp', (data: { roomId: string; enabled: boolean; thresholdBb: number; targetBb: number }) => {
+      if (!data || typeof data.roomId !== 'string') return;
+      gameManager.setAutoTopUp(data.roomId, user.id, {
+        enabled: !!data.enabled,
+        thresholdBb: Number(data.thresholdBb),
+        targetBb: Number(data.targetBb),
+      });
+    });
+
+    // Тумблер «Подсказка комбинации/шансов» (настройки игры). Сервер считает equity только
+    // для включивших → шлёт персонально (своё место, без утечки чужих карт, §0.1).
+    socket.on('setHandHint', (data: { roomId: string; enabled: boolean }) => {
+      if (!data || typeof data.roomId !== 'string') return;
+      gameManager.setHandHint(data.roomId, user.id, !!data.enabled);
+    });
+
+    // Добровольный показ своей карты после раздачи (тап по карте в окне showdown). Видно всем.
+    socket.on('showCard', (data: { roomId: string; index: number }) => {
+      if (!data || typeof data.roomId !== 'string') return;
+      gameManager.showCard(data.roomId, user.id, Number(data.index));
+    });
+
+    // Rabbit Hunting (§10.12, платная фича): заплатить и увидеть карты, которые пришли бы.
+    socket.on('rabbitHunt', (data: { roomId: string }) => {
+      if (!data || typeof data.roomId !== 'string') return;
+      gameManager.requestRabbitHunt(data.roomId, user.id);
     });
 
     socket.on('startGame', (data: { roomId: string }) => {
@@ -160,6 +246,7 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
       // Admin-peek привязан к socketId — на disconnect снимаем сразу,
       // иначе Set растёт навсегда (старые мёртвые socketId'ы остаются).
       gameManager.clearAdminPeek(socket.id);
+      gameManager.removeObserverSocket(socket.id);
       // Защита от гонки с single-session middleware: при refresh старый сокет получает
       // disconnect, но новый сокет того же юзера уже подключился (или вот-вот подключится).
       // Откладываем handleDisconnect и пропускаем его, если в io есть другой активный сокет
