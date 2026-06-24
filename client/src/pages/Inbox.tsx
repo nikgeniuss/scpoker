@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Inbox as InboxIcon, Coins, ShieldX, ShieldCheck, Megaphone } from 'lucide-react';
+import { ArrowLeft, Inbox as InboxIcon, Coins, ShieldX, ShieldCheck, Megaphone, ArrowDownToLine, ArrowUpFromLine } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { useInboxStore } from '../store/inboxStore';
 import type { InboxNotification } from '@poker-room/shared';
@@ -10,6 +10,8 @@ const TYPE_META: Record<InboxNotification['type'], { icon: React.ReactNode; colo
   ban:       { icon: <ShieldX size={18} />,    color: 'text-red-400',     label: 'Бан' },
   unban:     { icon: <ShieldCheck size={18} />, color: 'text-blue-400',   label: 'Разбан' },
   broadcast: { icon: <Megaphone size={18} />,  color: 'text-amber-400',   label: 'Сообщение' },
+  deposit:   { icon: <ArrowDownToLine size={18} />, color: 'text-emerald-400', label: 'Депозит' },
+  withdrawal: { icon: <ArrowUpFromLine size={18} />, color: 'text-blue-400',   label: 'Вывод' },
 };
 
 function timeAgo(t: number): string {

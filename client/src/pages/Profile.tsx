@@ -1,29 +1,42 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import ReactNiceAvatar from 'react-nice-avatar';
 import { AnimatePresence } from 'framer-motion';
-import { ChevronRight, History, Settings2, Inbox, Globe, HelpCircle } from 'lucide-react';
+import { ChevronRight, History, Settings2, Inbox, Globe, HelpCircle, Wallet as WalletIcon } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { countryFlag } from '../utils/country';
 import { formatMoney } from '../config/chipFormat';
 import { avatarConfig } from '../utils/avatar';
 import { AvatarPickerModal } from '../components/profile/AvatarPickerModal';
 import { API_URL } from '../config/api';
-
-const MENU_ITEMS = [
-  { icon: <History size={20} />, label: 'PokerCraft', sub: 'История раздач · Банкролл', to: '/pokercraft' },
-  { icon: <Settings2 size={20} />, label: 'Настройки игры', sub: null, to: null },
-  { icon: <Inbox size={20} />, label: 'Входящие', sub: null, to: '/inbox' },
-  { icon: <Globe size={20} />, label: 'Язык', sub: null, to: null },
-  { icon: <HelpCircle size={20} />, label: 'Помощь', sub: null, to: null },
-];
+import { GameSettingsModal } from '../components/game/GameSettingsModal';
+import { loadBetPresets, saveBetPresets } from '../config/betPresets';
+import { loadChipDisplay, saveChipDisplay } from '../config/chipFormat';
+import { loadCardDeck, saveCardDeck } from '../config/cardDeck';
+import { loadGameSettings, saveGameSettings } from '../config/gameSettings';
 
 export function Profile() {
+  const { t } = useTranslation();
   const user = useAuthStore(s => s.user);
   const token = useAuthStore(s => s.token);
   const setAvatarSeed = useAuthStore(s => s.setAvatarSeed);
   const navigate = useNavigate();
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [betPresets, setBetPresets] = useState(() => loadBetPresets());
+  const [chipDisplay, setChipDisplay] = useState(() => loadChipDisplay());
+  const [cardDeck, setCardDeck] = useState(() => loadCardDeck());
+  const [gameSettings, setGameSettings] = useState(() => loadGameSettings());
+
+  const MENU_ITEMS = [
+    { icon: <WalletIcon size={20} />, label: t('profile.wallet'), sub: null, to: '/wallet' },
+    { icon: <History size={20} />, label: t('profile.pokerCraft'), sub: t('profile.pokerCraftSub'), to: '/pokercraft' },
+    { icon: <Settings2 size={20} />, label: t('profile.gameSettings'), sub: null, to: null, onClick: () => setSettingsOpen(true) },
+    { icon: <Inbox size={20} />, label: t('profile.inbox'), sub: null, to: '/inbox' },
+    { icon: <Globe size={20} />, label: t('profile.language'), sub: null, to: '/language' },
+    { icon: <HelpCircle size={20} />, label: t('profile.help'), sub: null, to: '/help' },
+  ];
 
   if (!user) return null;
 
@@ -48,7 +61,7 @@ export function Profile() {
         <button onClick={() => navigate(-1)} className="text-white/40 hover:text-white/80 mr-1">
           <ChevronRight size={22} className="rotate-180" />
         </button>
-        <span className="text-lg font-bold">Профиль</span>
+        <span className="text-lg font-bold">{t('profile.title')}</span>
       </div>
 
       {/* Avatar + info */}
@@ -56,7 +69,7 @@ export function Profile() {
         <button
           className="w-20 h-20 rounded-full shadow-lg overflow-hidden"
           onClick={() => setPickerOpen(true)}
-          title="Сменить аватар"
+          title={t('profile.changeAvatar')}
         >
           <ReactNiceAvatar className="w-full h-full" shape="circle" {...avatarConfig(user.avatarSeed || user.id)} />
         </button>
@@ -75,9 +88,9 @@ export function Profile() {
 
         <button
           className="mt-2 px-6 py-2 rounded-full border border-white/15 text-white/60 text-sm hover:bg-white/5 transition-colors"
-          onClick={() => {}}
+          onClick={() => navigate('/account')}
         >
-          Данные Аккаунта
+          {t('profile.accountData')}
         </button>
       </div>
 
@@ -88,7 +101,7 @@ export function Profile() {
             <button
               key={item.label}
               className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-white/5 transition-colors"
-              onClick={() => item.to && navigate(item.to)}
+              onClick={() => (item.onClick ? item.onClick() : item.to && navigate(item.to))}
             >
               <span className="text-white/40">{item.icon}</span>
               <div className="flex-1 min-w-0">
@@ -112,6 +125,25 @@ export function Profile() {
           />
         )}
       </AnimatePresence>
+
+      <GameSettingsModal
+        open={settingsOpen}
+        initialPresets={betPresets}
+        initialChipDisplay={chipDisplay}
+        initialDeck={cardDeck}
+        initialSettings={gameSettings}
+        onClose={() => setSettingsOpen(false)}
+        onSave={({ presets, chipDisplay: nextDisplay, deck: nextDeck, settings: nextSettings }) => {
+          setBetPresets(presets);
+          saveBetPresets(presets);
+          setChipDisplay(nextDisplay);
+          saveChipDisplay(nextDisplay);
+          setCardDeck(nextDeck);
+          saveCardDeck(nextDeck);
+          setGameSettings(nextSettings);
+          saveGameSettings(nextSettings);
+        }}
+      />
     </div>
   );
 }

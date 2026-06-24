@@ -9,6 +9,8 @@ import { aggregateUserStats, aggregateAllUsers, overviewStats, tableStats, forma
 import { getHandsForUser } from '../game/handHistory.js';
 import { getBadBeatState, updateBadBeat, topUpBadBeat, sumBadBeatHits } from '../game/badBeatService.js';
 import { countTablesOpened, roomNameMap, readRoomEvents } from '../game/roomEvents.js';
+import { readFrozenTableEvents } from '../game/frozenTableLog.js';
+import { recordChipOp, getChipOpsLog } from '../game/chipOpsLog.js';
 
 // Админ-роуты (/api/admin/*). Все требуют adminMiddleware (применён на уровне роутера).
 // Вынесено из index.ts (ROADMAP §9.3-C).
@@ -39,6 +41,20 @@ export function createAdminRouter(gameManager: GameManager): Router {
   router.put('/design', (req, res) => {
     writeJSON('design.json', req.body);
     res.json({ success: true });
+  });
+
+  router.get('/lobby-design', (req, res) => {
+    res.json(readJSON('lobbyDesign.json'));
+  });
+
+  router.put('/lobby-design', (req, res) => {
+    const { design } = req.body as { design?: string };
+    if (design !== 'classic' && design !== 'redesign') {
+      res.status(400).json({ error: 'design: "classic" | "redesign"' });
+      return;
+    }
+    writeJSON('lobbyDesign.json', { design });
+    res.json({ design });
   });
 
   // Список юзеров — без passwordHash, со статистикой за всё время (PnL/руки — для сортировки/деталей)
@@ -212,7 +228,7 @@ export function createAdminRouter(gameManager: GameManager): Router {
       return;
     }
     const delta = Math.floor(amount);
-    const users = readJSON('users.json') as Array<{ id: string; chips: number }>;
+    const users = readJSON('users.json') as Array<{ id: string; username: string; chips: number }>;
     let updated = 0;
     for (const uid of userIds) {
       const idx = users.findIndex((u) => u.id === uid);
@@ -223,9 +239,11 @@ export function createAdminRouter(gameManager: GameManager): Router {
       updated++;
     }
     writeJSON('users.json', users);
+    const affectedUsernames: string[] = [];
     for (const uid of userIds) {
       const u = users.find((x) => x.id === uid);
       if (u) {
+        affectedUsernames.push(u.username);
         gameManager.notifyBankroll(uid, u.chips);
         const text = mode === 'add'
           ? `Начислено ${(delta / 100).toFixed(2)}`
@@ -233,7 +251,14 @@ export function createAdminRouter(gameManager: GameManager): Router {
         gameManager.sendInboxNotification(uid, 'chips', text);
       }
     }
+    const adminUsername = (req as unknown as { user: { username: string } }).user.username;
+    recordChipOp({ by: adminUsername, mode, amount: delta, usernames: affectedUsernames });
     res.json({ updated });
+  });
+
+  // История массовых выдач/возвратов фишек (ROADMAP §10.9)
+  router.get('/chip-ops', (req, res) => {
+    res.json(getChipOpsLog());
   });
 
   // Удаление юзера (необратимо). Нельзя удалить самого себя.
@@ -258,6 +283,15 @@ export function createAdminRouter(gameManager: GameManager): Router {
   // Список комнат
   router.get('/rooms', (req, res) => {
     res.json(gameManager.getAdminRoomList());
+  });
+
+  // Журнал восстановлений зависших столов (table watchdog, см. tableWatchdog.ts/frozenTableLog.ts).
+  // Последние limit записей (по умолчанию 50), новые первыми.
+  router.get('/frozen-tables', (req, res) => {
+    const raw = Number((req.query.limit as string) ?? 50);
+    const limit = Math.min(200, Math.max(1, Number.isFinite(raw) ? raw : 50));
+    const events = readFrozenTableEvents();
+    res.json(events.slice(-limit).reverse());
   });
 
   // Kick игрока из комнаты. body.cooldownMin (0..1440) — на сколько минут закрыть повторный

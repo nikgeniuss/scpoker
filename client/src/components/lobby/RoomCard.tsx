@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import ReactNiceAvatar from 'react-nice-avatar';
+import { useTranslation } from 'react-i18next';
 import { Lock, Clock, Coins, Eye } from 'lucide-react';
 import { formatMoney } from '../../config/chipFormat';
 import { avatarConfig } from '../../utils/avatar';
@@ -17,6 +18,7 @@ interface RoomCardProps {
 }
 
 export const RoomCard = ({ room, imIn, myQueuePos, onJoin, onQueue, onLeaveQueue, onObserve }: RoomCardProps) => {
+  const { t } = useTranslation();
   const queueCount = room.waitlistIds.length;
   // «Полный» = мест нет ИЛИ есть очередь: пока кто-то ждёт, освободившееся место
   // зарезервировано за очередью (сервер вернёт 'full' прямому входу) — показываем «Занять очередь».
@@ -46,7 +48,7 @@ export const RoomCard = ({ room, imIn, myQueuePos, onJoin, onQueue, onLeaveQueue
           className="text-white text-[10px] font-black tracking-widest"
           style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
         >
-          {room.format === 'shortdeck' ? 'ШОРТ-ДЭК' : 'NLH'}
+          {room.format === 'shortdeck' ? t('lobby.formatShortdeck').toUpperCase() : 'NLH'}
         </span>
       </div>
 
@@ -54,14 +56,14 @@ export const RoomCard = ({ room, imIn, myQueuePos, onJoin, onQueue, onLeaveQueue
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <h3 className="text-lg font-bold text-white truncate">{room.name}</h3>
-            {room.hasPassword && <span title="Приватный стол" className="shrink-0 inline-flex"><Lock size={14} className="text-yellow-400" /></span>}
+            {room.hasPassword && <span title={t('lobby.privateTable')} className="shrink-0 inline-flex"><Lock size={14} className="text-yellow-400" /></span>}
             {imIn && (
               <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-500 text-white uppercase tracking-wider shrink-0">
-                Вы здесь
+                {t('lobby.youAreHere')}
               </span>
             )}
           </div>
-          <p className="text-xs text-gray-500 truncate">от {room.createdBy}</p>
+          <p className="text-xs text-gray-500 truncate">{t('lobby.createdBy')} {room.createdBy}</p>
         </div>
         <div className="flex flex-col items-end gap-1 shrink-0">
           <FillCircle current={room.currentPlayers} max={room.maxPlayers} />
@@ -71,7 +73,7 @@ export const RoomCard = ({ room, imIn, myQueuePos, onJoin, onQueue, onLeaveQueue
               (isPlaying ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400')
             }
           >
-            {isPlaying ? 'В игре' : 'Ожидание'}
+            {isPlaying ? t('lobby.playing') : t('lobby.waiting')}
           </span>
         </div>
       </div>
@@ -84,7 +86,7 @@ export const RoomCard = ({ room, imIn, myQueuePos, onJoin, onQueue, onLeaveQueue
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-400 mb-2">
         <span className="inline-flex items-center gap-1">
-          Блайнды <span className="text-white font-bold">{formatMoney(room.smallBlind)}/{formatMoney(room.bigBlind)}</span>
+          {t('lobby.blinds')} <span className="text-white font-bold">{formatMoney(room.smallBlind)}/{formatMoney(room.bigBlind)}</span>
         </span>
         <span className="inline-flex items-center gap-1">
           <Clock size={11} /> <span className="text-emerald-400 font-bold">{room.turnDurationSec}с</span>
@@ -93,8 +95,8 @@ export const RoomCard = ({ room, imIn, myQueuePos, onJoin, onQueue, onLeaveQueue
           <Coins size={11} /> <span className="text-emerald-400 font-bold">{room.buyInMinBb}-{room.buyInMaxBb}BB</span>
         </span>
         {room.rake.percent > 0 && (
-          <span className="inline-flex items-center gap-1" title={'Рейк ' + room.rake.percent + '%, потолок ' + room.rake.capBb + ' BB'}>
-            <span className="text-gray-500">Рейк</span> <span className="text-amber-400 font-bold">{room.rake.percent}%</span>
+          <span className="inline-flex items-center gap-1" title={t('lobby.rakeTooltip', { percent: room.rake.percent, cap: room.rake.capBb })}>
+            <span className="text-gray-500">{t('lobby.rake')}</span> <span className="text-amber-400 font-bold">{room.rake.percent}%</span>
           </span>
         )}
       </div>
@@ -108,7 +110,7 @@ export const RoomCard = ({ room, imIn, myQueuePos, onJoin, onQueue, onLeaveQueue
               <div
                 key={'empty-' + i}
                 className="w-6 h-6 rounded-full border border-dashed border-white/15"
-                title="Свободное место"
+                title={t('lobby.emptySeat')}
               />
             );
           }
@@ -129,26 +131,26 @@ export const RoomCard = ({ room, imIn, myQueuePos, onJoin, onQueue, onLeaveQueue
           onClick={onJoin}
           className="w-full py-2 rounded-xl font-bold transition-all bg-gradient-to-r from-emerald-400 to-emerald-600 text-white hover:shadow-lg hover:shadow-emerald-500/30"
         >
-          Вернуться
+          {t('lobby.return')}
         </button>
       ) : !isFull ? (
         <button
           onClick={onJoin}
           className="w-full py-2 rounded-xl font-bold transition-all bg-gradient-to-r from-emerald-500 to-green-600 text-white hover:shadow-lg hover:shadow-emerald-500/30"
         >
-          Войти
+          {t('lobby.join')}
         </button>
       ) : myQueuePos > 0 ? (
         // Я в очереди на этот полный стол — позиция + выход
         <div className="flex items-center gap-2">
           <span className="flex-1 py-2 rounded-xl font-bold text-center bg-amber-500/15 text-amber-300 border border-amber-500/40 text-sm">
-            В очереди: {myQueuePos}-й{queueCount > 1 ? ' из ' + queueCount : ''}
+            {queueCount > 1 ? t('lobby.inQueueOf', { pos: myQueuePos, count: queueCount }) : t('lobby.inQueue', { pos: myQueuePos })}
           </span>
           <button
             onClick={onLeaveQueue}
             className="px-3 py-2 rounded-xl font-bold text-sm bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
           >
-            Выйти
+            {t('lobby.leaveQueue')}
           </button>
         </div>
       ) : (
@@ -157,7 +159,7 @@ export const RoomCard = ({ room, imIn, myQueuePos, onJoin, onQueue, onLeaveQueue
           onClick={onQueue}
           className="w-full py-2 rounded-xl font-bold transition-all bg-gradient-to-r from-amber-500 to-orange-600 text-white hover:shadow-lg hover:shadow-amber-500/30"
         >
-          Занять очередь{queueCount > 0 ? ' (' + queueCount + ' ждут)' : ''}
+          {queueCount > 0 ? t('lobby.joinQueueWaiting', { count: queueCount }) : t('lobby.joinQueue')}
         </button>
       )}
 
@@ -168,7 +170,7 @@ export const RoomCard = ({ room, imIn, myQueuePos, onJoin, onQueue, onLeaveQueue
           onClick={onObserve}
           className="mt-2 w-full py-1.5 rounded-xl text-xs font-bold text-gray-300 bg-white/5 hover:bg-white/10 border border-white/10 transition-colors flex items-center justify-center gap-1.5"
         >
-          <Eye size={13} /> Наблюдать
+          <Eye size={13} /> {t('lobby.observe')}
         </button>
       )}
     </motion.div>
@@ -177,6 +179,7 @@ export const RoomCard = ({ room, imIn, myQueuePos, onJoin, onQueue, onLeaveQueue
 
 // SVG-кольцо заполнения: зелёное на полную, серое на пустую, число в центре
 const FillCircle = ({ current, max }: { current: number; max: number }) => {
+  const { t } = useTranslation();
   const ratio = max > 0 ? current / max : 0;
   const size = 36;
   const stroke = 3;
@@ -186,7 +189,7 @@ const FillCircle = ({ current, max }: { current: number; max: number }) => {
   const colorClass =
     ratio >= 1 ? 'text-red-400' : ratio >= 0.5 ? 'text-emerald-400' : 'text-gray-500';
   return (
-    <div className="relative" title={current + ' из ' + max + ' игроков'}>
+    <div className="relative" title={t('lobby.playersOf', { current, max })}>
       <svg width={size} height={size} className={colorClass}>
         <circle
           cx={size / 2}

@@ -78,8 +78,11 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
 
   const { tbLocal, setTbLocal, showTimebank } = useTimebankConfig();
   const token = useAuthStore((s) => s.token);
+  const isAdmin = useAuthStore((s) => s.isAdmin);
   const myClub = useClubStore((s) => s.myClub);
   const [clubOnly, setClubOnly] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const [autoExtendSession, setAutoExtendSession] = useState(false);
 
   // Загрузка сохранённых шаблонов с сервера
   useEffect(() => {
@@ -110,6 +113,8 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
     waitlistDelayMin,
     format: variant,
     clubId: myClub && clubOnly ? myClub.id : undefined,
+    pinned: isAdmin ? pinned : undefined,
+    autoExtendSession: sessionHours > 0 && autoExtendSession ? true : undefined,
   });
 
   // Применить шаблон ко всем полям формы.
@@ -132,6 +137,8 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
     setSitOutTimeoutMin(o.sitOutTimeoutMin ?? 30);
     setWaitlistDelayMin(o.waitlistDelayMin ?? 2);
     setVariant(o.format ?? 'nlh');
+    setPinned(!!o.pinned);
+    setAutoExtendSession(!!o.autoExtendSession);
     if (o.timebank && tbLocal) setTbLocal(o.timebank);
   };
 
@@ -374,9 +381,11 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
                 className="w-full bg-gray-800 border border-white/10 rounded-lg px-4 py-2.5 text-white text-sm outline-none focus:border-emerald-500 mt-2"
               />
             )}
-            <SettingRow label="Закрепить сверху" soon disabled>
-              <Toggle checked={false} onChange={noop} disabled />
-            </SettingRow>
+            {isAdmin && (
+              <SettingRow label="Закрепить сверху">
+                <Toggle checked={pinned} onChange={setPinned} />
+              </SettingRow>
+            )}
             <SettingRow label="Бэд-бит Джекпот" soon disabled onInfo={openInfo('badbeat')}>
               <Toggle checked={false} onChange={noop} disabled />
             </SettingRow>
@@ -590,9 +599,6 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
                 onInc={() => setAutoStartPlayers((v) => Math.min(maxPlayers, v + 1))}
               />
             </SettingRow>
-            <SettingRow label="Автопродление" soon disabled>
-              <Stepper display="Выкл" onDec={noop} onInc={noop} disabled />
-            </SettingRow>
             <SettingRow label="Обязательный VPIP" soon disabled>
               <Toggle checked={false} onChange={noop} disabled />
             </SettingRow>
@@ -621,6 +627,13 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
             <div className="pb-3 border-b border-white/5">
               <RangeSlider min={0} max={12} step={1} value={sessionHours} onChange={setSessionHours} />
             </div>
+            <SettingRow label="Автопродление" disabled={sessionHours === 0}>
+              <Toggle
+                checked={autoExtendSession}
+                onChange={setAutoExtendSession}
+                disabled={sessionHours === 0}
+              />
+            </SettingRow>
             <SettingRow label="Сит-аут при потере связи">
               <span className="text-sm text-white">{sitOutTimeoutMin} мин</span>
             </SettingRow>

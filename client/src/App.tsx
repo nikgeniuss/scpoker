@@ -11,15 +11,21 @@ import { TelegramAutoLogin } from './components/auth/TelegramAutoLogin';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { MainMenu } from './pages/MainMenu';
 import { GameRoom } from './pages/GameRoom';
-import { Lobby } from './pages/Lobby';
+import { LobbyGate } from './pages/LobbyGate';
 import { Register } from './pages/Register';
 import { Login } from './pages/Login';
 import { Profile } from './pages/Profile';
+import { Wallet } from './pages/Wallet';
+import { AccountData } from './pages/AccountData';
+import { Language } from './pages/Language';
+import { Help } from './pages/Help';
 import { PokerCraft } from './pages/PokerCraft';
 import { Inbox } from './pages/Inbox';
 import { Leaderboard } from './pages/Leaderboard';
 import { DeckPreview } from './pages/DeckPreview';
 import { SeatingPreview } from './pages/SeatingPreview';
+import { RedesignPreview } from './pages/RedesignPreview';
+import { Tournaments } from './pages/Tournaments';
 
 // Админка — отдельный lazy-чанк: код админ-панели (управление юзерами/комнатами/ботами/настройками)
 // НЕ попадает в основной бандл игрока. Загружается только когда админ заходит на /admin (за RequireAdmin).
@@ -41,14 +47,20 @@ function App() {
       <Layout>
         <Routes>
           <Route path="/" element={<ErrorBoundary><MainMenu /></ErrorBoundary>} />
-          <Route path="/lobby" element={<ErrorBoundary><RequireAuth><Lobby /></RequireAuth></ErrorBoundary>} />
+          <Route path="/lobby" element={<ErrorBoundary><RequireAuth><LobbyGate /></RequireAuth></ErrorBoundary>} />
+          <Route path="/tournaments" element={<ErrorBoundary><RequireAuth><Tournaments /></RequireAuth></ErrorBoundary>} />
           <Route path="/game/:roomId" element={<ErrorBoundary><RequireAuth><GameRoom /></RequireAuth></ErrorBoundary>} />
           <Route path="/profile" element={<ErrorBoundary><RequireAuth><Profile /></RequireAuth></ErrorBoundary>} />
+          <Route path="/account" element={<ErrorBoundary><RequireAuth><AccountData /></RequireAuth></ErrorBoundary>} />
+          <Route path="/wallet" element={<ErrorBoundary><RequireAuth><Wallet /></RequireAuth></ErrorBoundary>} />
+          <Route path="/language" element={<ErrorBoundary><RequireAuth><Language /></RequireAuth></ErrorBoundary>} />
+          <Route path="/help" element={<ErrorBoundary><RequireAuth><Help /></RequireAuth></ErrorBoundary>} />
           <Route path="/pokercraft" element={<ErrorBoundary><RequireAuth><PokerCraft /></RequireAuth></ErrorBoundary>} />
           <Route path="/inbox" element={<ErrorBoundary><RequireAuth><Inbox /></RequireAuth></ErrorBoundary>} />
           <Route path="/leaderboard" element={<ErrorBoundary><RequireAuth><Leaderboard /></RequireAuth></ErrorBoundary>} />
           <Route path="/deck-preview" element={<ErrorBoundary><DeckPreview /></ErrorBoundary>} />
           <Route path="/seating-preview" element={<ErrorBoundary><SeatingPreview /></ErrorBoundary>} />
+          <Route path="/redesign-preview" element={<ErrorBoundary><RedesignPreview /></ErrorBoundary>} />
           <Route
             path="/bad-beat"
             element={

@@ -212,6 +212,42 @@ export function setAvatarSeed(userId: string, seed: string): boolean {
   return true;
 }
 
+// Смена имени пользователя из профиля. Уникальность — как при регистрации.
+export function updateUsername(
+  userId: string,
+  newUsername: string,
+): { user: User } | { error: 'invalid' | 'taken' } {
+  const username = newUsername.trim();
+  if (username.length < 3 || username.length > 32) return { error: 'invalid' };
+
+  const users = readJSON('users.json') as User[];
+  const target = users.find((u) => u.id === userId);
+  if (!target) return { error: 'invalid' };
+  if (users.find((u) => u.username === username && u.id !== userId)) return { error: 'taken' };
+
+  target.username = username;
+  writeJSON('users.json', users);
+  return { user: target };
+}
+
+// Смена email из профиля. Уникальность — как при регистрации.
+export function updateEmail(
+  userId: string,
+  newEmail: string,
+): { user: User } | { error: 'invalid' | 'taken' } {
+  const email = newEmail.trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: 'invalid' };
+
+  const users = readJSON('users.json') as User[];
+  const target = users.find((u) => u.id === userId);
+  if (!target) return { error: 'invalid' };
+  if (users.find((u) => u.email === email && u.id !== userId)) return { error: 'taken' };
+
+  target.email = email;
+  writeJSON('users.json', users);
+  return { user: target };
+}
+
 export function getUserByToken(token: string): User | null {
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as { id: string };

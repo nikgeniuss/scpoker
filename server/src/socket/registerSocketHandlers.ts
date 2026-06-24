@@ -42,7 +42,7 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
       socket.leave('lobby');
     });
 
-    socket.on('createRoom', (data: { name: string; description?: string; smallBlind: number; bigBlind: number; maxPlayers: number; password?: string; turnDurationSec?: number; buyInMinBb?: number; buyInMaxBb?: number; timebank?: { enabled: boolean; startSec: number; bonusSec: number; bonusEveryHands: number; capSec: number }; sitOutTimeoutMin?: number; waitlistDelayMin?: number; format?: 'nlh' | 'shortdeck'; rake?: { percent: number; capBb: number }; ante?: number; sessionDurationHours?: number; autoStartPlayers?: number }) => {
+    socket.on('createRoom', (data: { name: string; description?: string; smallBlind: number; bigBlind: number; maxPlayers: number; password?: string; turnDurationSec?: number; buyInMinBb?: number; buyInMaxBb?: number; timebank?: { enabled: boolean; startSec: number; bonusSec: number; bonusEveryHands: number; capSec: number }; sitOutTimeoutMin?: number; waitlistDelayMin?: number; format?: 'nlh' | 'shortdeck'; rake?: { percent: number; capBb: number }; ante?: number; sessionDurationHours?: number; autoStartPlayers?: number; pinned?: boolean; autoExtendSession?: boolean; clubId?: string }) => {
       // Если клиент не прислал turnDurationSec — берём глобальный settings (legacy-клиенты)
       const defaultTurnSec = Math.round(gameManager.getSettings().turnDurationMs / 1000);
       const result = gameManager.createRoom(
@@ -68,6 +68,10 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
           ante: data.ante,
           sessionDurationHours: data.sessionDurationHours,
           autoStartPlayers: data.autoStartPlayers,
+          autoExtendSession: data.autoExtendSession,
+          // «Закрепить сверху» — только админ; роль проверяем здесь, не доверяем клиенту (§0.13)
+          pinned: user.role === 'admin' ? data.pinned : false,
+          clubId: data.clubId,
         },
         user.username,
       );

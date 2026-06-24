@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
 import { useAdminApi } from '../../hooks/useAdminApi';
 import { parseMoney } from '../../config/chipFormat';
+import { useLobbyDesignStore } from '../../store/lobbyDesignStore';
 import type { GameSettings, TimebankSettings, BotModeSettings } from './types';
 
 export const SettingsTab = () => {
@@ -160,6 +161,8 @@ export const SettingsTab = () => {
         }
       />
 
+      <LobbyDesignSection />
+
       <motion.button
         whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.98 }}
@@ -175,6 +178,48 @@ export const SettingsTab = () => {
       </p>
 
       <BroadcastSection api={api} />
+    </div>
+  );
+};
+
+// Переключатель «какую версию /lobby видят все игроки» — классика или редизайн.
+// Своя независимая персистентность (server/data/lobbyDesign.json), сохраняется сразу по клику.
+const LobbyDesignSection = () => {
+  const { token } = useAuthStore();
+  const design = useLobbyDesignStore((s) => s.design);
+  const loadAdmin = useLobbyDesignStore((s) => s.loadAdmin);
+  const setDesign = useLobbyDesignStore((s) => s.setDesign);
+
+  useEffect(() => {
+    loadAdmin(token);
+  }, [loadAdmin, token]);
+
+  return (
+    <div className="bg-gray-800 rounded-2xl p-4 border border-white/10 space-y-3">
+      <div>
+        <h3 className="text-white font-bold text-lg mb-1">Дизайн лобби</h3>
+        <p className="text-sm text-gray-500">Какую версию страницы /lobby видят все игроки.</p>
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={() => setDesign(token, 'classic')}
+          className={
+            'px-4 py-2 rounded-lg font-bold text-sm transition-all ' +
+            (design === 'classic' ? 'bg-poker-gold text-black' : 'bg-gray-900 text-gray-300 border border-white/10 hover:bg-gray-700')
+          }
+        >
+          Классика
+        </button>
+        <button
+          onClick={() => setDesign(token, 'redesign')}
+          className={
+            'px-4 py-2 rounded-lg font-bold text-sm transition-all ' +
+            (design === 'redesign' ? 'bg-poker-gold text-black' : 'bg-gray-900 text-gray-300 border border-white/10 hover:bg-gray-700')
+          }
+        >
+          Редизайн
+        </button>
+      </div>
     </div>
   );
 };

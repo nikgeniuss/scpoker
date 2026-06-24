@@ -10,6 +10,7 @@ import { RoomsTab } from './admin/RoomsTab';
 import { BotsTab } from './admin/BotsTab';
 import { SettingsTab } from './admin/SettingsTab';
 import { PaidFeaturesTab } from './admin/PaidFeaturesTab';
+import { PaymentsTab } from './admin/PaymentsTab';
 
 const tabs = [
   { id: 'data', label: '📊 Данные' },
@@ -20,6 +21,7 @@ const tabs = [
   { id: 'bots', label: '🧠 Боты' },
   { id: 'settings', label: '⚙️ Настройки' },
   { id: 'paidFeatures', label: '💎 Платные фичи' },
+  { id: 'payments', label: '🏦 Платежи' },
 ];
 
 export const Admin = () => {
@@ -149,6 +151,7 @@ export const Admin = () => {
         {activeTab === 'bots' && <BotsTab />}
         {activeTab === 'settings' && <SettingsTab />}
         {activeTab === 'paidFeatures' && <PaidFeaturesTab />}
+        {activeTab === 'payments' && <PaymentsTab />}
       </motion.div>
     </div>
   );

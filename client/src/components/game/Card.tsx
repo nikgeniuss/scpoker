@@ -119,8 +119,16 @@ const CardImpl = ({ card, faceStyle, backStyle, colorScheme = DEFAULT_CARD_COLOR
           <span className="font-black">{card.rank}</span>
           <span className="-mt-0.5 text-[0.72em]">{sym}</span>
         </div>
-        {/* ↘ крупный номинал */}
-        <span className="absolute bottom-0.5 right-1.5 font-black leading-none text-[2.24em]">
+        {/* ↘ крупный номинал. У «10» (единственный двузначный ранг) — горизонтальное сжатие
+            (scale-x), а не уменьшение font-size: так высота/насыщенность цифры остаётся той же,
+            что у остальных номиналов, только уже по ширине — иначе либо вылезает за края карты
+            на size='sm'/'md', либо (при уменьшении em) визуально мельче соседних рангов. */}
+        <span
+          className={
+            'absolute bottom-0.5 right-1.5 font-black leading-none text-[2.24em] inline-block origin-right' +
+            (card.rank.length > 1 ? ' scale-x-75' : '')
+          }
+        >
           {card.rank}
         </span>
       </motion.div>

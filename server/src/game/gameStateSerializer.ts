@@ -101,5 +101,6 @@ export function serializeGameState(room: Room, viewerId?: string, withPeek = fal
     // сжигает по 1 перед каждым флопом/тёрном/ривером) — иначе peek показывал бы карты
     // с дна колоды, которые никогда не выйдут.
     futureBoard: withPeek ? getFutureBoardCards(room.deck, room.communityCards.length) : undefined,
+    tournamentId: room.tournamentId,
   };
 }

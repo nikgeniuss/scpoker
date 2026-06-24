@@ -58,6 +58,19 @@ export function clearStartTimer(room: Room): void {
   room.startCountdownEndsAt = null;
 }
 
+// ─── Showdown timer ──────────────────────────────────────────────────────────
+
+export function clearShowdownTimer(room: Room): void {
+  if (room.showdownTimer) { clearTimeout(room.showdownTimer); room.showdownTimer = null; }
+  room.showdownEndsAt = null;
+}
+
+export function scheduleShowdownTimer(room: Room, ms: number, onExpire: () => void): void {
+  clearShowdownTimer(room);
+  room.showdownEndsAt = Date.now() + ms;
+  room.showdownTimer = setTimeout(onExpire, ms);
+}
+
 // ─── Session timer ───────────────────────────────────────────────────────────
 
 export function clearSessionTimer(room: Room): void {

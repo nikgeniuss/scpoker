@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Shield, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import { useTelegram } from '../hooks/useTelegram';
 import { useMyClub } from '../hooks/useMyClub';
@@ -14,6 +15,7 @@ import { tgLinkDeepLink, tgAppDeepLink } from '../lib/telegram';
 import { TelegramButton } from '../components/auth/TelegramButton';
 
 export const MainMenu = () => {
+  const { t } = useTranslation();
   const { isTelegram } = useTelegram();
   const navigate = useNavigate();
   const token = useAuthStore((s) => s.token);
@@ -89,8 +91,8 @@ export const MainMenu = () => {
                     <Shield size={22} className="text-gray-500 group-hover:text-emerald-400 transition-colors duration-200" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-gray-300 font-bold text-sm group-hover:text-white transition-colors duration-200">Создать клуб</div>
-                    <div className="text-gray-600 text-xs mt-0.5">Управляй своим покер-клубом</div>
+                    <div className="text-gray-300 font-bold text-sm group-hover:text-white transition-colors duration-200">{t('mainMenu.createClub')}</div>
+                    <div className="text-gray-600 text-xs mt-0.5">{t('mainMenu.createClubSub')}</div>
                   </div>
                   <ChevronRight size={18} className="shrink-0 text-gray-600 group-hover:text-gray-400 transition-colors duration-200" />
                 </button>
@@ -98,7 +100,7 @@ export const MainMenu = () => {
                   onClick={() => setShowJoinClub(true)}
                   className="w-full text-center text-xs text-gray-500 hover:text-emerald-400 py-1.5 transition-colors duration-200"
                 >
-                  Вступить по коду или найти клуб
+                  {t('mainMenu.joinClub')}
                 </button>
               </div>
             )}
@@ -108,7 +110,7 @@ export const MainMenu = () => {
         {/* Telegram-кнопка */}
         {!isTelegram && (
           <TelegramButton
-            label={user ? 'Привязать к Telegram' : 'Играть в Telegram'}
+            label={user ? t('mainMenu.linkTelegram') : t('mainMenu.playInTelegram')}
             onClick={user ? handleLinkTelegram : handleOpenTelegram}
             delay={0.6}
             className="fixed left-1/2 -translate-x-1/2 bottom-[calc(7.5rem+env(safe-area-inset-bottom))] z-20"
@@ -125,14 +127,14 @@ export const MainMenu = () => {
             style={{ textShadow: '0 1px 4px rgba(0,0,0,0.7)' }}
           >
             <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-            <span>Online</span>
+            <span>{t('mainMenu.online')}</span>
             <span className="opacity-60">|</span>
             <span>v1.0.0</span>
             <span className="opacity-60">|</span>
             {isTelegram ? (
-              <span className="text-blue-300">📱 Telegram Mini App</span>
+              <span className="text-blue-300">{t('mainMenu.telegramMiniApp')}</span>
             ) : (
-              <span>🌐 Browser</span>
+              <span>{t('mainMenu.browser')}</span>
             )}
           </div>
         </motion.div>

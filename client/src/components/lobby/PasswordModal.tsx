@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 import { Lock, X } from 'lucide-react';
 
 // Модалка ввода пароля приватной комнаты. Вынесено из Lobby (ROADMAP §9.3-E).
@@ -9,6 +10,7 @@ interface PasswordModalProps {
 }
 
 export const PasswordModal = ({ onClose, onSubmit }: PasswordModalProps) => {
+  const { t } = useTranslation();
   const [password, setPassword] = useState('');
 
   const submit = (e: React.FormEvent) => {
@@ -35,7 +37,7 @@ export const PasswordModal = ({ onClose, onSubmit }: PasswordModalProps) => {
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-xl font-bold text-white flex items-center gap-2">
             <Lock size={18} className="text-yellow-400" />
-            Пароль комнаты
+            {t('lobby.roomPassword')}
           </h3>
           <button onClick={onClose} className="text-gray-400 hover:text-white">
             <X size={20} />
@@ -48,14 +50,14 @@ export const PasswordModal = ({ onClose, onSubmit }: PasswordModalProps) => {
             autoFocus
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="Введи пароль"
+            placeholder={t('lobby.enterPassword')}
             className="w-full bg-gray-800 border border-white/10 rounded-xl px-4 py-2.5 text-white outline-none focus:border-yellow-500"
           />
           <button
             type="submit"
             className="w-full py-2.5 rounded-xl bg-gradient-to-r from-yellow-500 to-amber-600 font-bold text-white"
           >
-            Войти
+            {t('lobby.join')}
           </button>
         </form>
       </motion.div>

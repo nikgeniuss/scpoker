@@ -4,7 +4,16 @@ import { Search, CheckSquare, Square, Plus, Minus } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useAdminApi } from '../../hooks/useAdminApi';
 import { formatMoney, parseMoney } from '../../config/chipFormat';
-import type { AdminUser } from './types';
+import type { AdminUser, ChipOpEntry } from './types';
+
+const pad = (n: number) => String(n).padStart(2, '0');
+const fmtTs = (ts: number) => {
+  const d = new Date(ts);
+  return (
+    pad(d.getDate()) + '.' + pad(d.getMonth() + 1) + '.' + d.getFullYear() + ' ' +
+    pad(d.getHours()) + ':' + pad(d.getMinutes())
+  );
+};
 
 export const ChipsTab = () => {
   const { token } = useAuthStore();
@@ -15,6 +24,7 @@ export const ChipsTab = () => {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [amountStr, setAmountStr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [ops, setOps] = useState<ChipOpEntry[]>([]);
 
   const load = useCallback(() => {
     api
@@ -27,7 +37,14 @@ export const ChipsTab = () => {
       .finally(() => setLoading(false));
   }, [api]);
 
-  useEffect(() => { load(); }, [load]);
+  const loadOps = useCallback(() => {
+    api
+      .get<ChipOpEntry[]>('/admin/chip-ops', 'Не удалось загрузить историю операций')
+      .then(setOps)
+      .catch((e) => toast.error((e as Error).message));
+  }, [api]);
+
+  useEffect(() => { load(); loadOps(); }, [load, loadOps]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -81,6 +98,7 @@ export const ChipsTab = () => {
       const verb = mode === 'add' ? 'Выдано' : 'Возвращено';
       toast.success(`${verb} ${formatMoney(amount)} × ${result.updated} игрок(ов)`);
       load();
+      loadOps();
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -165,6 +183,35 @@ export const ChipsTab = () => {
           </button>
         );
       })}
+
+      {/* История операций */}
+      <div className="pt-2">
+        <h3 className="text-sm font-bold text-gray-400 px-1 mb-2">История операций</h3>
+        {ops.length === 0 ? (
+          <div className="text-center text-gray-600 py-6 text-sm">Операций пока не было.</div>
+        ) : (
+          <div className="rounded-2xl border border-white/10 overflow-hidden divide-y divide-white/5">
+            {ops.slice(0, 10).map((o, i) => (
+              <div key={o.ts + '-' + i} className="flex items-center gap-3 p-3 bg-gray-800/70">
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm text-gray-200">
+                    {o.mode === 'add' ? 'Выдано' : 'Возвращено'} {formatMoney(o.amount)} × {o.usernames.length} игрок(ов)
+                  </div>
+                  <div className="text-xs text-gray-500 truncate" title={o.usernames.join(', ')}>
+                    {o.usernames.join(', ')}
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className={'text-sm font-semibold tabular-nums ' + (o.mode === 'add' ? 'text-emerald-400' : 'text-rose-400')}>
+                    {o.mode === 'add' ? '+' : '−'}{formatMoney(o.amount)}
+                  </div>
+                  <div className="text-xs text-gray-500">{o.by} · {fmtTs(o.ts)}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Sticky панель действий */}
       <div className="fixed bottom-0 left-0 right-0 z-30 bg-gray-900/95 backdrop-blur border-t border-white/10 p-4 md:pl-72">

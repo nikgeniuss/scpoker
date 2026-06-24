@@ -1,6 +1,6 @@
 # Roadmap POKER HUB
 
-> Известные проблемы (раздел 9) и план улучшений UX (раздел 10). Источник вдохновения — топовые покер-приложения (GGPoker/ClubGG), но **без клубной модели**. Форматы — только NLH + Шорт-дэк. PLO/SNG/MTT не делаем.
+> Известные проблемы (раздел 9) и план улучшений UX (раздел 10). Источник вдохновения — топовые покер-приложения (GGPoker/ClubGG), но **без клубной модели**. Форматы карт — только NLH + Шорт-дэк, PLO не делаем. Турниры — разворот решения 2026-06-22: SNG реализован, MTT (урезанный v1) в работе — см. §10.19.
 >
 > Формат пункта: `[приоритет]` коротко что и где. Приоритет — 🔥 срочное / 📌 важное / 💤 потом / ⛔ overkill.
 >
@@ -25,6 +25,8 @@
 - ✅ ~~**При рестарте сервера активные раздачи теряются**~~ — закрыто 2026-06-18. Снапшот раздачи (deck/pot/ставки/карты/фаза/игроки/waitlist) пишется отдельно в `active-hands.json` ([activeHandPersistence.ts](../server/src/game/activeHandPersistence.ts), `serializeActiveHand`/`applyActiveHandSnapshot`) — хук записи в `GameManager.broadcastGameState`/`saveRoomsSnapshot`. При старте `gameManager.restoreActiveHands()` (вызывается явно из [index.ts](../server/src/index.ts), после `statsRecorder`/`roomEventRecorder`/`handRecorder`) применяет снимок на восстановленные из `rooms.json` комнаты и доигрывает раздачу существующими механизмами (`scheduleAutoStart`/`emitCurrentTurn`/`cleanupHand`/`scheduleWaitlistPromotion`) — таймеры не восстанавливаются абсолютно, планируются заново. Все восстановленные игроки помечаются `disconnected: true` (та же сит-аут защита, что при обычном дисконнекте); банкролл не трогается — чипсы продолжают жить в `player.chips`. Бот-столы и пустые комнаты не персистятся. Тесты: [activeHandPersistence.test.ts](../server/src/game/__tests__/activeHandPersistence.test.ts) (3, round-trip), [GameManager.restart.test.ts](../server/src/game/__tests__/GameManager.restart.test.ts) (3, мид-хенд/showdown/waiting). 492 серверных + 72 клиентских теста ✓.
 - ~~**Комната не прогружается с первого раза** — после navigate из Lobby → /game/:roomId страница чёрная, F5 чинит.~~ — закрыто 2026-05-21 (см. 11.40). Виноват `<AnimatePresence mode="wait">` в Layout, ломавший initial-анимации дочерних motion-компонентов GameRoom. Убрал обёртку.
 - ✅ **Боты: дисбаланс устранён (2026-06-15).** `allowedLossBB` в zone='under' поднят 1→3 BB (меньше массовых fold); `syncTargetsFromDefaults()` при старте синхронизирует `targetPnL` существующих ботов из `defaultBotPersonas` (часть получила 'plus'); эндпоинт `POST /admin/bots/reset-pnl` + кнопка «Сбросить totalPnL» в BotsTab для разового обнуления lifetimePnL.
+- ✅ **Watchdog зависших столов — сделано 2026-06-21.** Раздача идёт (`status='playing'`), но собственный дедлайн сервера (ход/таймбанк/шоудаун) просрочен >60с (`FREEZE_THRESHOLD_MS`) — значит callback, который должен был продвинуть раздачу, не сработал (исключение/баг). Чистая детекция — [tableWatchdog.ts](../server/src/game/tableWatchdog.ts) (`getFreezeInfo`): берёт самый ранний из `turnEndsAt`/`turnTimebankEndsAt`/`showdownEndsAt`, либо (если таймеров нет вовсе) `room.lastProgressAt` (обновляется в `GameManager.broadcastGameState` на каждом значимом изменении). Легитимно долгий ход с большим таймбанком НЕ триггерит (дедлайн ещё в будущем). Восстановление — мягкое (как при рестарте сервера): карты/банк/стеки не трогаются, `emitCurrentTurn` заново взводит ход текущему игроку, либо `cleanupHand` досрочно закрывает застрявший показ шоудауна. Periodic-проверка каждые 15с — `GameManager.startTableWatchdog()`, запускается явно из [index.ts](../server/src/index.ts) (не из конструктора — не плодит лишний `setInterval` в тестах). Заодно показ шоудауна (раньше «голый» `setTimeout`) стал трекаемым таймером (`room.showdownTimer`/`showdownEndsAt`, [timerService.ts](../server/src/game/timerService.ts)). Лог восстановлений — [frozenTableLog.ts](../server/src/game/frozenTableLog.ts) (`frozen-tables.json`) + вкладка админки «Комнаты» → секция «Зависшие столы» (`GET /admin/frozen-tables`). Тесты: 10 unit (детекция) + 2 интеграционных (GameManager). 578 серверных + 72 клиентских ✓.
+- ✅ ~~**`clubId` не пробрасывается в socket-обработчике `createRoom`**~~ — закрыто 2026-06-22. [registerSocketHandlers.ts](../server/src/socket/registerSocketHandlers.ts): `clubId` добавлен в тип данных события и в форвардинг в `gameManager.createRoom(...)`. ✅ **Найденная попутно дыра тоже закрыта 2026-06-22:** `GameManager.createRoom` теперь проверяет, что `createdBy` состоит в клубе `clubId` (любой участник, не только owner — как у тоггла «Только для клуба» в `CreateRoomModal`), иначе `{ error: 'club-membership-required' }`. Тесты: `GameManager.smoke.test.ts` (+1, плюс старый тест на `club-members-only` обновлён под реальную клубную фикстуру).
 
 ### 9.3. Модульность — аудит декомпозиции (2026-06-03)
 
@@ -49,7 +51,7 @@
 - ✅ ~~**BettingRules**~~ — сделано 2026-06-15. `minRaiseTo` исправлен на `currentBet + lastRaiseSize` (A1: §5.1 POKER_RULES.md); `lockedCallers: Set<string>` в Room блокирует re-raise после incomplete all-in (A3: §5.2). `lastRaiseSize` трекается в Room, инициализируется BB на каждой улице, обновляется при полном raise/bet. 424 серверных тестов ✓ (все `it.fails` сняты).
 - ✅ ~~**PhaseMachine**~~ — сделано 2026-06-15. `computePhaseTransition(phase, deck)` → `PhaseTransition` добавлен в [phaseRules.ts](../server/src/game/phaseRules.ts): чистый переход фазы (раздача карт, nextPhase, isShowdown) без мутаций и io. `advancePhase` в GameManager применяет результат. `dealCommunityCards` убран из прямых импортов GameManager. Тесты +4. 428 ✓.
 - ✅ ~~**ShowdownService**~~ — сделано 2026-06-15. `distributePot` вынесен в [showdownService.ts](../server/src/game/showdownService.ts) как чистая функция `resolveShowdown` (возвращает chip-дельты без мутаций). `showdown()` в GameManager применяет результат сам. Тесты: +6 ([showdownService.test.ts](../server/src/game/__tests__/showdownService.test.ts)). 424 сервер ✓.
-- ✅ ~~**RabbitHuntService**~~ — сделано 2026-06-18. Расчёт доступности/цены (`computeRabbitHuntEligibility`, вызывается из `endGame`) и гварды оплаты (`canPayRabbitHunt`, вызывается из `requestRabbitHunt`) — чистые функции в [rabbitHuntService.ts](../server/src/game/rabbitHuntService.ts). Мутация (списание фишек/statsRecorder/broadcast) осталась в GameManager. Тесты: +13 ([rabbitHuntService.test.ts](../server/src/game/__tests__/rabbitHuntService.test.ts)), старые 8 интеграционных ([GameManager.rabbitHunt.test.ts](../server/src/game/__tests__/GameManager.rabbitHunt.test.ts)) без изменений ✓. **Замечание по факту аудита:** GameManager.ts успел вырасти обратно до 2241 стр. (новые фичи — rabbit hunt/бэд-бит/наблюдатели/очередь — дописывались инлайн вместо сервисов); самый крупный оставшийся god-метод — `handlePlayerAction` (~620 стр., ядро беттинга/side-pots/all-in) — высокий риск, требует Opus + тестов-страховки вперёд, не трогаю без отдельной задачи.
+- ✅ ~~**RabbitHuntService**~~ — сделано 2026-06-18. Расчёт доступности/цены (`computeRabbitHuntEligibility`, вызывается из `endGame`) и гварды оплаты (`canPayRabbitHunt`, вызывается из `requestRabbitHunt`) — чистые функции в [rabbitHuntService.ts](../server/src/game/rabbitHuntService.ts). Мутация (списание фишек/statsRecorder/broadcast) осталась в GameManager. Тесты: +13 ([rabbitHuntService.test.ts](../server/src/game/__tests__/rabbitHuntService.test.ts)), старые 8 интеграционных ([GameManager.rabbitHunt.test.ts](../server/src/game/__tests__/GameManager.rabbitHunt.test.ts)) без изменений ✓. **Замечание по факту аудита (исправлено 2026-06-18):** GameManager.ts успел вырасти обратно до 2241 стр. (новые фичи — rabbit hunt/бэд-бит/наблюдатели/очередь — дописывались инлайн вместо сервисов), но прошлая заметка про «god-метод `handlePlayerAction` ~620 стр.» оказалась устаревшей — после рефакторинга BettingRules/PhaseMachine/ShowdownService (2026-06-15) метод уже ~100 строк, валидация делегирована `bettingRules.ts`; `placeBet`/`nextPlayer`/`advancePhase`/`endGame` тоже компактны и делегируют чистым сервисам. Беттинг-кластер не требует распила — рост файла идёт за счёт новых независимых фич (rabbit hunt/badbeat/observers/waitlist), не из-за god-метода.
 
 **C. Сервер: [index.ts](../server/src/index.ts) (god-файл 709 → ~60 стр.)** ✅ сделано 2026-06-04.
 - ✅ ~~Роуты 5 доменов + socket-слой + 140 строк валидации~~ — `index.ts` теперь slim bootstrap (app/io/gameManager + монтаж роутеров + socket + listen). Роутеры: [routes/auth.routes.ts](../server/src/routes/auth.routes.ts) (register/login/telegram/me), [routes/admin.routes.ts](../server/src/routes/admin.routes.ts) (design/users/rooms/settings/bots/decks — `adminMiddleware` на уровне роутера), [routes/public.routes.ts](../server/src/routes/public.routes.ts) (health/decks/rooms/design/timebank). Валидация settings → [routes/settingsValidation.ts](../server/src/routes/settingsValidation.ts). Socket-слой → [socket/registerSocketHandlers.ts](../server/src/socket/registerSocketHandlers.ts) (+ emoji-кулдаун инлайн).
@@ -83,12 +85,22 @@
 
 **Рекомендованный порядок:** ✅ 1) фундамент (`check` + typecheck + guard + клиентский type/lint-долг) — 2026-06-03. ✅ 2) серверный typecheck-долг — 2026-06-04 (`npm run check` полностью зелёный). ✅ 3) контракт на клиенте: события + типы из shared (Vite-alias `@poker-room/shared`) — 2026-06-04. `PlayerView` оставлен как клиентская render-вьюшка. ✅ 4) `server/src/game/types.ts` — 2026-06-04: `Suit`/`Rank`/`Card`/`GamePhase`/`RoomStatus` (+`SUITS`/`RANKS`) в одном модуле вместо 6 копий (deck/hands/GameManager/botBrain/decks/тест-хелпер). ✅ 5a) golden-тесты ботов ([botBrain.test.ts](../server/src/game/__tests__/botBrain.test.ts), 67 тестов) — 2026-06-04. ✅ 5b) распил `decideAction` в пайплайн правил-функций под golden-сетью — 2026-06-04. ✅ §E (клиентские god-страницы) + §F-🔥 (socket-слой) + §C (index.ts→routes + verifyToken + sessionManager) закрыты 2026-06-04. Осталось по §6: GameManager→сервисы (§B, самое крупное), хвосты §D (BotManager), §A (server-local GameState/rootDir), §F-💤 (useTelegram→lib/telegram.ts), тест sessionManager (§C-📌) — по одному, под тестами, вне стола.
 
+### 9.4. i18n — перевод оставшихся экранов
+
+> Инфраструктура поднята 2026-06-19: `react-i18next` + `i18next` (client/), [client/src/i18n/index.ts](../client/src/i18n/index.ts), словари [locales/ru.ts](../client/src/i18n/locales/ru.ts)/[locales/en.ts](../client/src/i18n/locales/en.ts), переключатель — [pages/Language.tsx](../client/src/pages/Language.tsx) (сохраняется в localStorage `sk:lang`). Переведено: навигация ([Layout.tsx](../client/src/components/layout/Layout.tsx) + `AdminNavButton`/`ClubAdminNavButton`/`MyClubNavButton`), [MainMenu.tsx](../client/src/pages/MainMenu.tsx) (клубные кнопки/Telegram/online-статус), [Profile.tsx](../client/src/pages/Profile.tsx), [AccountData.tsx](../client/src/pages/AccountData.tsx), [Help.tsx](../client/src/pages/Help.tsx) (включая тело FAQ — `help.faq` массив в словарях), [Lobby.tsx](../client/src/pages/Lobby.tsx) + [RoomCard.tsx](../client/src/components/lobby/RoomCard.tsx)/[PasswordModal.tsx](../client/src/components/lobby/PasswordModal.tsx)/[BuyInModal.tsx](../client/src/components/lobby/BuyInModal.tsx)/[BadBeatBanner.tsx](../client/src/components/lobby/BadBeatBanner.tsx), [GameRoom.tsx](../client/src/pages/GameRoom.tsx) (сама страница — фазы/бары/центр стола/Pot/показ карт/rabbit hunt; дочерние модалки и сиденья — см. ниже). Тестовый global setup ([client/src/test/setup.ts](../client/src/test/setup.ts)) теперь импортирует `i18n/index.ts` — без этого `useTranslation()` в тестах падал с `NO_I18NEXT_INSTANCE`.
+
+- 💤 **CreateRoomModal.tsx** (682 стр., лобби) — не тронут: ещё «временный дизайн, будет переработан» (§10.6), переводить вместе с финальным дизайном модалки.
+- 💤 **Компоненты GameRoom** (ActionPanel, PreSelectPanel, PlayerSeat/MobilePlayerSeat, TableInfoModal, GameSettingsModal, HandHistoryModal, PlayerInfoPopup, MobileTableMenu, EmojiPalette, CardsTurnTimer, TablePills) — текст внутри самой [GameRoom.tsx](../client/src/pages/GameRoom.tsx) переведён, но эти дочерние компоненты ещё хардкод на русском. Каждый — отдельный заход.
+- 💤 **Admin.tsx/admin/*, ClubAdmin.tsx, myClub/*, Inbox.tsx, PokerCraft.tsx, Leaderboard.tsx** и остальные 40+ файлов — всё ещё хардкод на русском. Переводить по экрану за заход, добавляя ключи в `locales/ru.ts`+`locales/en.ts` по той же схеме (namespace = имя страницы/компонента).
+- 💤 **Тосты/ошибки с сервера** (`toast.error(data.error)`) — остаются на русском, сервер не локализован; отдельное решение нужно, если потребуется английский UI «от и до».
+- 💤 **Плюрализация (склонения)** — в `MainMenu.tsx` количество участников клуба/заявок (`{count} участник/участника/участников`) оставлено как было (ручной ternary) — не переведено, i18next ru-плюрализация (`_one/_few/_many/_other`) не подключалась, чтобы не усложнять этот заход.
+
 ---
 
 ## 10. Roadmap: качество UX по образцу топ покер-приложений
 
 > Цель — подтянуть SK Poker по UX, дизайну, кнопкам, виду стола, фичам и навигации до уровня топовых покерных приложений. Источник вдохновения — скриншоты GGPoker/ClubGG, но **без клубной модели** (см. project memory `no-clubs`).
-> Форматы — только NLH + Шорт-дэк (см. `game-formats`). PLO/SNG/MTT не делаем.
+> Форматы карт — только NLH + Шорт-дэк (см. `game-formats`), PLO не делаем. Турниры (SNG/MTT) — см. §10.19 (разворот решения 2026-06-22).
 > Формат пункта: 📌 — делать в ближайшую очередь, 💤 — потом, ⛔ — overkill / нерелевантно. Удалять пункты по мере выполнения.
 
 > ✅ **Денежная модель — центы (2026-06-05):** все деньги — целые центы, показ дробный без `$` через `formatMoney`, ввод через `parseMoney` ([chipFormat.ts](../client/src/config/chipFormat.ts)). Микро-блайнды = 0.01/0.02. Серверная математика не менялась (уже целочисленная). Детали — [BRAND.md](BRAND.md) «Деньги (валюта)».
@@ -145,7 +157,7 @@
 
 ### 10.6. Создание стола — расширенные опции
 
-Текущий `CreateRoomModal` имеет базовые поля. Можно расширить опциями стола. Только кэш-игра (NLH / Шорт-дэк); SNG/MTT не делаем (см. memory `game-formats`).
+Текущий `CreateRoomModal` имеет базовые поля. Можно расширить опциями стола. Только кэш-игра (NLH / Шорт-дэк) — модалка создания кэш-стола, SNG/MTT-табы в ней остаются disabled-заглушкой («скоро»): турниры создаются ОТДЕЛЬНЫМ admin-only флоу (`/tournaments`, см. §10.19), не через эту модалку.
 
 > ✅ **Визуальный редизайн модалки по эталону (Screenshot_1..14)** — сделано 2026-06-05. Тёмная скролл-модалка GGPoker-типа + переиспользуемые виджеты ([createControls.tsx](../client/src/components/lobby/createControls.tsx)); см. [BRAND.md](BRAND.md) «Модалка создания стола». Функциональны: название/приватность/размер/время хода/таймбанк/блайнды/бай-ин/рейк/описание. SNG/Турнир — disabled «скоро» (game_formats). ~14 фич отрисованы как disabled «скоро» (нет бэкенда). ✅ **Серверные «быстрые поля» сделаны 2026-06-05:** Анте (`postAnte` в startGame, POKER_RULES §6.7, +тест), Длительность сессии (авто-закрытие через `scheduleSessionClose`), Автостарт N (per-table `autoStartPlayers` вместо хардкода) — все per-table через `CreateRoomOptions`, функциональны в модалке. ✅ **Двойной слайдер бай-ина** ([DualRangeSlider](../client/src/components/lobby/createControls.tsx)) + **«Сохранить Шаблон»** ([roomTemplates.ts](../client/src/config/roomTemplates.ts), серверное хранение per-user + чипсы apply/delete в модалке) — сделано 2026-06-05. Остальные пункты ниже (Страдл, Bomb Pot, EV Cashout и т.д.) имеют UI-заглушку «скоро» в модалке.
 
@@ -154,7 +166,7 @@
 - ✅ ~~**Таймбанк** (toggle): старт N сек + дополнительный после M рук на K сек.~~ — сделано 2026-05-17. Двухфазный turn-timer на сервере (`Room.timebankTimer`/`turnTimebankEndsAt`), глобал в [settings.json](server/data/settings.json) `timebank` + toggle `allowPerTableOverride`. Если override включён — секция таймбанка появляется в `CreateRoomModal` (через `GET /api/timebank-config`). На клиенте: оранжевый индикатор `⏳N` у активного игрока в Phase 2 + маленький бейдж у всех с `timebank>0`. Дефолты: enabled=true, start=30, bonus=10 каждые 10 рук, cap=60. См. 11.18.
 - ✅ ~~**Описание** (toggle + textarea — описание стола)~~ — сделано 2026-05-16. Поле `description` (≤200 симв.) в `RoomInfo`/`Room`, показ в `RoomCard` курсивом под названием. См. 11.11.
 - 📌 **Приватные игры** (toggle — с паролем; у нас уже есть).
-- 💤 «Закрепить сверху» (для админа — pin важных столов).
+- ✅ ~~«Закрепить сверху» (для админа — pin важных столов)~~ — сделано 2026-06-20. Тоггл в `CreateRoomModal` виден только админу (`isAdmin` из authStore); сервер не доверяет клиенту — роль проверяется в [registerSocketHandlers.ts](../server/src/socket/registerSocketHandlers.ts) (`user.role === 'admin'`). `Room.pinned` персистится в снапшоте; [getRoomList](../server/src/game/GameManager.ts) сортирует закреплённые столы первыми (стабильный sort, порядок остальных не меняется). Тест: `GameManager.pinAndAutoExtend.test.ts`.
 - 💤 «Следующий шаг (сателлит)» — связь с другим турниром.
 
 **Только кэш (Кольцевая игра)**:
@@ -175,30 +187,31 @@
 - 💤 **No Turn No Show** — анти-чит, обязан показать руку.
 - 💤 **Обязательный VPIP** — играть N% рук иначе fold.
 - 💤 **Ограничение игры**: IP / GPS / Устройство / Чат — anti-collusion фильтры.
-- 💤 **Автопродление**: продлить сессию автоматически.
+- ✅ ~~**Автопродление**: продлить сессию автоматически~~ — сделано 2026-06-20. Тоггл в модалке (виден/активен только при `sessionHours > 0`); по истечении `sessionEndsAt` [scheduleSessionClose](../server/src/game/GameManager.ts) сдвигает `sessionEndsAt` на ту же `sessionDurationHours` и планирует заново вместо закрытия стола — повторяется, пока тоггл включён. Тесты: `GameManager.pinAndAutoExtend.test.ts`.
 - 💤 **Бэд-бит Джекпот** (toggle — стол участвует).
 - ⛔ **Squid Game** — VIP-формат, не делаем.
 - ⛔ **All-In or Fold (AoF)** — отдельный формат, можно сделать как простой режим (только две кнопки).
 
-**Только SNG**:
-- 📌 **Общий бай-ин + (Приз + Рейк)** — например 100 = 90+10.
-- 📌 **Стартовые фишки** (1000 по умолчанию).
-- 📌 **Структура блайндов**: Медленно / Стандартная / Турбо / Гипер Турбо.
-- 📌 **Повышение уровня блайндов**: N минут.
-- 💤 **Структура выплат**: Тип 1-4 (winner-takes-all / 50-30-20 / etc).
-- 💤 **Количество столов** (multi-table SNG).
+**Только SNG** — ✅ реализовано 2026-06-22, см. §10.19:
+- ✅ Общий бай-ин (без рейка в v1 — выплата 100% призового фонда участникам).
+- ✅ Стартовые фишки (настраивается при создании).
+- ✅ Структура блайндов: Медленно / Стандартная / Турбо / Гипер.
+- ✅ Повышение уровня блайндов: N минут (общий таймер на стол).
+- ✅ Структура выплат: фикс. таблица по числу мест (100% heads-up / 65-35 / 50-30-20).
+- 💤 **Количество столов** (multi-table SNG) — не делаем, SNG = один стол по определению.
 - ⛔ **Spin & Gold** — отдельный jackpot формат.
 
-**Только Турнир (MTT)**:
-- 📌 Min/max игроков (двухсторонний slider).
-- 📌 **Ре-энтри** (toggle).
-- 📌 **Гарантированный приз** (toggle + сумма).
-- 💤 **Структура выплат**: 10% / 12% / 15% / 20% ITM.
-- 💤 **Late registration** (поздняя регистрация).
-- 💤 **Final Table Deal** — на финалке игроки могут договориться.
-- 💤 **Время перерыва** (5 мин каждые 55 мин).
-- 💤 **Многодневный турнир**.
-- 💤 **Баунти за выбитого** (PKO/bounty).
+**Только Турнир (MTT)** — ✅ реализовано 2026-06-23, см. §10.19 (Фаза 2, поверх фундамента SNG):
+- ✅ Мультистоловая рассадка при старте (случайно, несколько Room).
+- ✅ **Late registration** (поздняя регистрация + окно `lateRegMinutes`, настраивается при создании).
+- ✅ **Балансировка/консолидация столов** (перенос игрока при дисбалансе ≥2, закрытие стола при избытке).
+- ✅ **Структура выплат**: ITM-кривая (10/12/15/20%, выбор админа при создании).
+- 💤 **Ре-энтри** (toggle) — урезано из v1, отдельная задача.
+- 💤 **Гарантированный приз** (toggle + сумма) — урезано из v1.
+- 💤 **Баунти за выбитого** (PKO/bounty) — урезано из v1.
+- 💤 **Final Table Deal** — на финалке игроки могут договориться — урезано из v1.
+- 💤 **Время перерыва** (5 мин каждые 55 мин) — урезано из v1.
+- 💤 **Многодневный турнир** — урезано из v1.
 
 ✅ ~~**Кнопка «Сохранить Шаблон»**~~ — сделано 2026-06-05. Серверное хранение per-user (`User.roomTemplates` в users.json, `GET/PUT /api/templates` под `authMiddleware`, [templates.routes.ts](../server/src/routes/templates.routes.ts) / [roomTemplates.ts](../client/src/config/roomTemplates.ts)); в модалке — чипсы шаблонов (клик — применить, ✎ — переименовать inline, × — удалить).
 
@@ -269,7 +282,7 @@
 - ✅ **Массовая выдача**: список юзеров с чекбоксами → выбрать N юзеров → кнопки **«Выдать»** (зелёная) / **«Вернуть»** (красная) с указанием суммы. Применяется ко всем выбранным сразу.
 - ✅ **Сводка**: счётчик «всего фишек в обращении» (сумма chips по всем юзерам) — индикатор инфляции/дефляции в системе.
 - 💤 **«Запрос фишек»** — таб с запросами от игроков на пополнение (если появится в-app кошелёк).
-- 💤 **История операций** — лог всех админских выдач/возвратов.
+- ✅ ~~**История операций**~~ — сделано 2026-06-22. [chipOpsLog.ts](../server/src/game/chipOpsLog.ts) — лог массовых выдач/возвратов (атомарно, `chip-ops.json`, кап 200, как badBeatService). Запись на каждый вызов `POST /admin/users/bulk-chips` (ник админа + режим + сумма + список затронутых ников). Эндпоинт `GET /admin/chip-ops`. [ChipsTab.tsx](../client/src/pages/admin/ChipsTab.tsx) показывает последние 10 операций под списком игроков. Тесты: [chipOpsLog.test.ts](../server/src/game/__tests__/chipOpsLog.test.ts) (4). **Не покрыто:** изменения chips через одиночный `PATCH /admin/users/:id` (правка профиля игрока) в этот лог не попадают — это другая операция (установка абсолютного баланса, не «выдача/возврат»), не входила в формулировку пункта.
 
 ### 10.10. PokerCraft-lite (история и аналитика)
 
@@ -281,7 +294,7 @@
 
 ### 10.11. (зарезервировано)
 
-> Раздел «Турниры и зона членства» удалён 2026-05-16 — клубной модели нет, SNG/MTT/сателлиты тоже (см. project memory `no-clubs` и `game-formats`).
+> Раздел «Турниры и зона членства» удалён 2026-05-16 — клубной модели нет, SNG/MTT/сателлиты тоже не планировались (см. project memory `no-clubs`). **Разворот 2026-06-22**: SNG/MTT всё-таки заказаны и реализуются — см. §10.19. Зона членства (мульти-клуб) остаётся N/A.
 
 ### 10.12. Социальное и геймификация
 
@@ -340,6 +353,62 @@
 - `clubId` в `Room`/`CreateRoomOptions`; тоггл «Только для клуба» в `CreateRoomModal`; секция «Комнаты клуба» в Lobby; guard `club-members-only` в `canJoinRoom`
 - `JoinClubModal` — «По коду» (instant join) + «Найти клуб» (поиск open-клубов + заявка); кнопка на MainMenu
 - 415 серверных тестов, контракт ✅
+
+### 10.19. Турниры (SNG ✅ / MTT ✅) — разворот решения 2026-06-22
+
+> Разворот ранее зафиксированного «SNG/MTT не делаем» (memory `game-formats`) — пользователь явно запросил турниры «как в топ-румах» в этой сессии. Решения: создаёт турнир **только админ** (реальный призовой фонд), регистрация открыта всем; форматы карт NLH+Шорт-дэк (как в кэше); порядок — SNG, потом MTT урезанный v1 (без ребай/баунти/мультидней/финал-дил — отдельные задачи). Архитектура НЕ трогает игровое ядро (`hands.ts`/`deck.ts`/`bettingRules.ts`/`showdownService.ts`) — оркестрация поверх существующих Room/GameManager.
+
+**SNG — ✅ реализовано 2026-06-22:**
+- Сервер: [server/src/game/tournament/](../server/src/game/tournament/) — `tournamentSchedule.ts` (чистая генерация лестницы блайндов по скорости/стартовому стеку + `currentLevelForElapsed`/`msUntilNextLevel`), `tournamentPayout.ts` (чистые SNG-сплиты 100% / 65-35 / 50-30-20 по числу мест), `tournamentStorage.ts`+`tournamentBankroll.ts` (атомарная персистентность `tournaments.json` через `writeJSON`, §0.4 — отдельный `BankrollService`-инстанс как у платежей), `TournamentManager.ts` (оркестратор: create/register/unregister/cancel/forceStart/restoreTournaments, общий таймер уровней, элиминация через колбэк).
+- [GameManager.ts](../server/src/game/GameManager.ts): `Room.tournamentId` (+ round-trip в rooms.json снапшоте), `createTournamentTable`/`seatTournamentPlayer`/`setTableBlinds`/`closeTournamentTable` (минуют банкролл и валидацию кэш-стола), `onTournamentBust` инжектируемый колбэк. `autoLeaveBrokePlayers` и `removePlayer` ветвятся по `room.tournamentId`: банкрот/добровольный выход на турнирном столе — это форфейт (элиминация без возврата в банкролл), а НЕ кэш-аут — критичная защита от фритролла (турнирный стек не превращается в реальные деньги через `leaveRoom`), покрыта тестом.
+- Роуты: [tournaments.routes.ts](../server/src/routes/tournaments.routes.ts) (список/детали/регистрация/отмена, любой авторизованный) + [tournamentsAdmin.routes.ts](../server/src/routes/tournamentsAdmin.routes.ts) (create/cancel/force-start, `adminMiddleware`). Смонтированы в [index.ts](../server/src/index.ts) (`/api/tournaments`, `/api/admin/tournaments`), `restoreTournaments()` вызывается при старте.
+- Тесты: `tournamentSchedule.test.ts` (7), `tournamentPayout.test.ts` (10, SNG+MTT), `TournamentManager.sng.test.ts` (4: полный цикл регистрация→старт→элиминация→выплата с ригнутой колодой; отмена с возвратом бай-инов; недостаточный банкролл; форфейт через `leaveRoom` без утечки в банкролл).
+- Клиент: [store/tournamentStore.ts](../client/src/store/tournamentStore.ts) (REST-поллинг 5с, без отдельного socket-канала — минимально для v1), [components/lobby/TournamentCard.tsx](../client/src/components/lobby/TournamentCard.tsx), [components/lobby/CreateTournamentModal.tsx](../client/src/components/lobby/CreateTournamentModal.tsx) (admin-only форма: бай-ин/стартстек/мест/скорость/уровень), [pages/Tournaments.tsx](../client/src/pages/Tournaments.tsx) (роут `/tournaments`, существовавшая disabled-заглушка в навбаре/таббаре включена). Турнирный HUD в [GameRoom.tsx](../client/src/pages/GameRoom.tsx) — бейдж «Турнирный стол» (desktop+mobile) при `state.tournamentId`, тултип кнопки «Выйти» предупреждает о форфейте.
+- **Осталось 💤:** живой прогон в браузере (логика покрыта тестами); i18n (страница на русском хардкоде, как и `CreateRoomModal` — см. §9.4).
+
+**MTT — ✅ реализовано 2026-06-23 (Фаза 2, поверх фундамента SNG):**
+- `TournamentInfo.roomId` → `tableIds: string[]` (SNG = массив из 1 элемента, тот же код-путь). `TournamentEntry.tableId` — текущий стол игрока. `CreateTournamentOptions`/`TournamentInfo` получили `lateRegMinutes`/`itmPercent` (MTT-только).
+- [tournamentBalancing.ts](../server/src/game/tournament/tournamentBalancing.ts) — чистые функции `planRebalanceMove` (перенос 1 игрока при дисбалансе ≥2 между столами) и `pickTableToClose`/`idealTableCount` (консолидация, когда столов больше идеального `ceil(alive/tableSize)`).
+- [GameManager.ts](../server/src/game/GameManager.ts): `movePlayerToTable(fromRoomId,toRoomId,userId)` (переносит `Player` как есть, без банкролла) + `isTableSafeToRebalance(roomId)` (гард: трогать стол можно только между раздачами, `status==='waiting'` — иначе перенос мид-хэнд сломает раздачу на исходном столе).
+- `TournamentManager.ts`: `startMtt` (создаёт N столов = `ceil(entries/tableSize)`, случайная рассадка Fisher-Yates), общий блайнд-таймер теперь обходит все `tableIds`, `handleBust` ищет турнир по вхождению roomId в `tableIds` и при >1 столе зовёт `rebalanceTables` (баланс/консолидация между раздачами, пропускает тик если нужный стол сейчас играет — безопасно отложено, не теряет данные), `finish` считает выплату через `computeMttPayout` (ITM-кривая, гармонический ряд по местам) и закрывает ВСЕ столы турнира. Late-рег: `register()` после старта в окне `lateRegMinutes` сажает на наименее заполненный стол с полным стартовым стеком.
+- Роуты/админка: `tournamentsAdmin.routes.ts` принимает `type:'mtt'` + `lateRegMinutes`/`itmPercent`. Клиент: `CreateTournamentModal` — выбор типа SNG/MTT + поля позднего рега/ITM%; `TournamentCard` — бейдж типа, счётчик столов, кнопка «Зарегистрироваться (поздняя рег.)» в окне.
+- Тесты: `tournamentBalancing.test.ts` (7), `tournamentPayout.test.ts` MTT-часть (4: ITM-кривая/округление), `GameManager.tournamentMove.test.ts` (3: перенос между столами/блок мид-хэнд/блок при отсутствии мест), `TournamentManager.mtt.test.ts` (3: полный цикл 5+1 поздняя рег → элиминации форфейтом до финиша с ITM-выплатой; отмена; окно позднего рега закрыто вне `lateRegMinutes`). 617 серверных + 72 клиентских ✓.
+- Урезано из v1 сознательно (см. §10.6 «Только Турнир (MTT)»): ребай/аддон, баунти/PKO, многодневные турниры, Final Table Deal.
+- **Осталось 💤:** живой прогон в браузере 2+ столов (логика покрыта тестами, реальный мультитейблинг UI не проверялся вручную).
+
+---
+
+## 11. Готовность к реальному запуску (деньги, комплаенс, инфраструктура)
+
+> Зафиксировано 2026-06-19 по итогам разбора «чего не хватает в руме». В отличие от §10 (полировка UX) — это блокеры для запуска с реальными деньгами/реальными пользователями, а не фичи стола. Приоритет условный: 11.1 без 11.2 не имеет смысла запускать, 11.3 — когда вырастет нагрузка.
+
+### 11.1. Реальная экономика (деньги)
+
+- ✅ ~~**Депозит/вывод через платёжный шлюз.**~~ Сделано 2026-06-19. USDT на трёх сетях (TRC-20/Tron, ERC-20/Ethereum, BEP-20/BSC), без посредников — свой бот. HD-деривация отдельного депозитного адреса на игрока (`server/src/payments/walletService.ts`), опрос блокчейна на входящие переводы (`depositPollingService.ts`), заявка на вывод → ручное approve админом → бот сам подписывает и отправляет (`payoutService.ts`). Машина состояний `pending→approved→sending→paid` (откат на `rejected`/`failed`) в `withdrawalService.ts`. Клиент: `/wallet` (выбор сети, адрес, история, форма вывода), вкладка «Платежи» в админке (конфиг по сетям, очередь approve/reject, баланс хот-кошельков). Курс фишка↔USDT и мин/макс депозит/вывод — конфигурируемые (`PaymentsSettings`). 562+72 авто-теста (чистая логика/машина состояний/идемпотентность — без реальной сети).
+- ✅ ~~**Свип депозитов на хот-кошелёк.**~~ Сделано 2026-06-19 — найдено на testnet-прогоне: без этого реальные USDT оставались бы висеть на персональных адресах игроков, а хот-кошелёк для автовыплат никогда бы не наполнялся. `sweepService.ts` фондирует газ на депозитном адресе с хот-кошелька и переносит пришедшие USDT обратно; вызывается из `depositPollingService.ts` сразу после кредита чипов (с ретраем на следующих тиках при неудаче — поле `swept` в `deposits.json`). Не теряет кредит чипов при сбое свипа (раздельные try/catch).
+- 📌 **Testnet-прогон перед mainnet.** **Ethereum (Sepolia) полностью пройден** (2026-06-19) реальным циклом депозит→обнаружение→свип продовым кодом (тестовый токен «Test Tether USD» с публичной `_giveMeATokens()`). По пути нашли и исправили реальный баг: бесплатный RPC `publicnode.com` режет `eth_getLogs` диапазоном >100 блоков — `LOOKBACK_BLOCKS` в `evmAdapter.ts` уменьшен с 5000 до 90 (на mainnet с платным RPC лимита не будет, но если потребуется устойчивость к простою дольше ~15-20 мин на Ethereum/~4-5 мин на BSC — нужен cursor по последнему блоку на адрес, не сделано). **Tron и BSC testnet отложены** (2026-06-19): для BSC все опробованные faucet'ы (BNB Chain официальный, QuickNode, BitBond) требуют баланс на BSC mainnet как анти-бот фильтр; для Tron официальный тестовый USDT-контракт на Shasta без открытого минта, получить токены можно только через `TronFAQBot` в публичных Telegram-группах — там сплошные фишинг-боты, прогон не закончен из соображений безопасности. В меню пополнения (`/wallet`) обе сети помечены «скоро» и недоступны для выбора. Переключение на mainnet (для Ethereum) — отдельный явный gate.
+- 💤 **История платежей** игрока — есть базово (`/wallet` → депозиты+выводы), без расширенных фильтров/экспорта.
+- 📌 **Нет явного `feeLimit` в TRC20-переводе Tron.** `tronAdapter.ts` (`sendUsdt`) вызывает `contract.methods.transfer(...).send({})` без `feeLimit` — все официальные примеры TronWeb указывают его явно (100–150 TRX), `OUT_OF_ENERGY` в error-codes документации описан как типичная причина провала при недостаточном лимите. Риск: свип USDT на mainnet может зависать/проваливаться без явного значения. Найдено 2026-06-20 при сверке кода с документацией TronWeb через context7. Не правил — нужно решение пользователя (см. §0.14, платежи).
+
+### 11.2. Комплаенс и безопасность игрока
+
+- 📌 **Верификация возраста / KYC** — нет совсем (см. §10.15 «KYC статус» — текущий пункт там placeholder).
+- 📌 **Responsible gambling** — лимиты на депозит/время игры, самоисключение (self-exclusion). Обязательно по законодательству большинства юрисдикций при реальных деньгах.
+- 📌 **Страницы ToS / Privacy Policy** — отсутствуют.
+- 💤 **Anti-collusion за пределами single-session** — IP/device fingerprinting (см. §10.6 «Ограничение игры» — пока 💤-заглушка).
+
+### 11.3. Инфраструктура на масштаб
+
+- 💤 **JSON-файлы → БД.** `server/data/*.json` (атомарная запись через `writeJSON`, §0.4) держит текущий объём, но без конкурентного доступа из нескольких процессов и без транзакций — при росте трафика первое, что упрётся в потолок.
+- 💤 **Бэкапы вне сервера.** Сейчас бэкапа `server/data/` за пределами машины нет.
+- 💤 **Мониторинг/алерты.** Только консольные логи (`console.log` в GameManager и др.) — нет агрегации/алертинга при падении процесса или ошибках.
+- 💤 **Горизонтальное масштабирование** — однопроцессный Node + Socket.IO без adapter'а (Redis и т.п.) для нескольких инстансов.
+
+### 11.4. Прочее (помельче)
+
+- 💤 **Push-уведомления** (см. §10.16) — сервис-воркер + Push API не реализованы.
+- 💤 **2FA** (см. §10.15) — toggle TOTP не реализован.
+- 💤 **Мои устройства** (см. §10.15) — список активных сессий с revoke, сейчас только single-session forceDisconnect.
 
 ---
 

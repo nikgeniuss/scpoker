@@ -2,6 +2,7 @@
 import { useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import type { ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import { Coins, Home, LayoutGrid, UserCircle, LogOut, Trophy, Crown, Shield } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
@@ -26,6 +27,7 @@ interface LayoutProps {
 }
 
 export const Layout = ({ children }: LayoutProps) => {
+  const { t } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
   const { user, isAdmin, logout, token, setChips } = useAuthStore();
@@ -174,10 +176,10 @@ export const Layout = ({ children }: LayoutProps) => {
             {/* Desktop-ссылки: видны только на md+, повторяют bottom tab-bar */}
             {user && (
               <div className="hidden md:flex items-center gap-1">
-                <NavLink to="/" label="Главная" active={path === '/'} onClick={() => navigate('/')} />
-                <NavLink to="/lobby" label="Лобби" active={path === '/lobby'} onClick={() => navigate('/lobby')} />
-                <NavLink to="/tournaments" label="Турниры" active={false} disabled hint="скоро" />
-                <NavLink to="/profile" label="Профиль" active={path === '/profile'} onClick={() => navigate('/profile')} badge={inboxUnread || undefined} />
+                <NavLink to="/" label={t('nav.home')} active={path === '/'} onClick={() => navigate('/')} />
+                <NavLink to="/lobby" label={t('nav.lobby')} active={path === '/lobby'} onClick={() => navigate('/lobby')} />
+                <NavLink to="/tournaments" label={t('nav.tournaments')} active={path === '/tournaments'} onClick={() => navigate('/tournaments')} />
+                <NavLink to="/profile" label={t('nav.profile')} active={path === '/profile'} onClick={() => navigate('/profile')} badge={inboxUnread || undefined} />
               </div>
             )}
           </div>
@@ -215,23 +217,23 @@ export const Layout = ({ children }: LayoutProps) => {
                     «Выйти из стола» (это разные действия: logout vs leaveRoom). На desktop оба видны. */}
                 <button
                   onClick={() => { logout(); navigate('/'); }}
-                  title="Выйти"
+                  title={t('nav.logout')}
                   className={
                     'flex items-center justify-center w-9 h-9 md:h-auto md:w-auto md:px-3 md:py-1 rounded-lg bg-red-600 text-white text-sm ' +
                     (isGameRoom ? 'hidden md:flex' : '')
                   }
                 >
                   <LogOut size={16} className="md:hidden" />
-                  <span className="hidden md:inline">Выйти</span>
+                  <span className="hidden md:inline">{t('nav.logout')}</span>
                 </button>
               </>
             ) : (
               <>
                 <button onClick={() => navigate('/login')} className="px-3 md:px-4 py-1 border border-poker-gold text-poker-gold rounded-lg text-sm">
-                  Войти
+                  {t('nav.login')}
                 </button>
                 <button onClick={() => navigate('/register')} className="px-3 md:px-4 py-1 bg-poker-gold text-black rounded-lg text-sm font-bold whitespace-nowrap">
-                  Регистрация
+                  {t('nav.register')}
                 </button>
               </>
             )}
@@ -260,26 +262,25 @@ export const Layout = ({ children }: LayoutProps) => {
           <div className={'grid h-16 ' + (isAdmin ? 'grid-cols-6' : isClubOwner ? 'grid-cols-5' : 'grid-cols-4')}>
             <TabButton
               icon={<Home size={20} />}
-              label="Главная"
+              label={t('nav.home')}
               active={location.pathname === '/'}
               onClick={() => navigate('/')}
             />
             <TabButton
               icon={<LayoutGrid size={20} />}
-              label="Лобби"
+              label={t('nav.lobby')}
               active={location.pathname === '/lobby'}
               onClick={() => navigate('/lobby')}
             />
             <TabButton
               icon={<Trophy size={20} />}
-              label="Турниры"
-              active={false}
-              disabled
-              hint={isAdmin ? undefined : 'скоро'}
+              label={t('nav.tournaments')}
+              active={location.pathname === '/tournaments'}
+              onClick={() => navigate('/tournaments')}
             />
             <TabButton
               icon={<UserCircle size={20} />}
-              label="Профиль"
+              label={t('nav.profile')}
               active={path === '/profile'}
               onClick={() => navigate('/profile')}
               badge={inboxUnread || undefined}
@@ -288,7 +289,7 @@ export const Layout = ({ children }: LayoutProps) => {
             {!isAdmin && isClubOwner && (
               <TabButton
                 icon={<Crown size={20} />}
-                label="Мой клуб"
+                label={t('nav.myClub')}
                 active={location.pathname.startsWith('/my-club')}
                 onClick={() => navigate('/my-club')}
               />
@@ -298,13 +299,13 @@ export const Layout = ({ children }: LayoutProps) => {
               <>
                 <TabButton
                   icon={<Crown size={20} />}
-                  label="Клуб"
+                  label={t('nav.club')}
                   active={location.pathname.startsWith('/club-admin')}
                   onClick={() => navigate('/club-admin')}
                 />
                 <TabButton
                   icon={<Shield size={20} />}
-                  label="Админ"
+                  label={t('nav.admin')}
                   active={location.pathname === '/admin'}
                   onClick={() => navigate('/admin')}
                 />

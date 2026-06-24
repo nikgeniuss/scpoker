@@ -82,6 +82,9 @@ export interface GameState {
   // Admin-peek (см. roadmap admin-tools): отдаётся ТОЛЬКО админу с включённым peek.
   // Содержит следующие 5 карт из колоды (будущий флоп/тёрн/ривер). У обычного игрока undefined.
   futureBoard?: Card[];
+  // Турнирный стол (§10 «Турниры»): если задан — клиент рисует турнирный HUD вместо обычного
+  // стола (нельзя выйти с забором фишек, блайнды растут по уровням — см. GET /api/tournaments/:id).
+  tournamentId?: string;
 }
 
 export const SOCKET_EVENTS = {
@@ -118,16 +121,78 @@ export const SOCKET_EVENTS = {
   SET_AUTO_TOPUP: 'setAutoTopUp',                   // клиент → сервер: {roomId, enabled, thresholdBb, targetBb} — преференция авто-докупки стека
   INBOX_NOTIFICATION: 'inboxNotification',          // сервер → клиент: {notification} — новое уведомление во «Входящих»
   RABBIT_HUNT: 'rabbitHunt',                        // клиент → сервер: {roomId} — заплатить и увидеть карты, которые пришли бы (Rabbit Hunting)
+  TOURNAMENT_TABLE_ASSIGNED: 'tournamentTableAssigned', // сервер → клиент: {tournamentId, roomId} — турнир стартовал/пересадка, переход на стол
 } as const;
 
 // Уведомление во «Входящих» игрока (§10.13).
 export interface InboxNotification {
   id: string;
   userId: string;
-  type: 'chips' | 'ban' | 'unban' | 'broadcast';
+  type: 'chips' | 'ban' | 'unban' | 'broadcast' | 'deposit' | 'withdrawal';
   text: string;
   read: boolean;
   t: number; // epoch ms
+}
+
+// Платежи (§11.1 ROADMAP) — крипто-депозит/вывод USDT без посредника.
+// 'tron' = TRC-20, 'ethereum' = ERC-20, 'bsc' = BEP-20. EVM-адрес общий для ethereum/bsc.
+export type PaymentChain = 'tron' | 'ethereum' | 'bsc';
+export type ChainFamily = 'tron' | 'evm';
+
+export interface PaymentsChainSettings {
+  enabled: boolean;
+  minConfirmations: number;
+}
+
+// Курс и лимиты — в USDT-«сотых» (как и деньги в проекте — целые центы, см. chipFormat.ts);
+// exchangeRateCentsPerUsdt = сколько центов фишек равны 1 USDT.
+export interface PaymentsSettings {
+  enabled: boolean;
+  exchangeRateCentsPerUsdt: number;
+  minDepositUsdt: number;
+  maxDepositUsdt: number;
+  minWithdrawalUsdt: number;
+  maxWithdrawalUsdt: number;
+  chains: Record<PaymentChain, PaymentsChainSettings>;
+}
+
+export type WithdrawalStatus = 'pending' | 'approved' | 'sending' | 'paid' | 'rejected' | 'failed';
+
+export interface WithdrawalRequest {
+  id: string;
+  userId: string;
+  username: string;
+  chain: PaymentChain;
+  amountChips: number;
+  amountUsdtRaw: string; // bigint как строка (JSON не умеет bigint)
+  payoutAddress: string;
+  status: WithdrawalStatus;
+  createdAt: string;
+  resolvedAt?: string;
+  resolvedBy?: string;
+  txid?: string;
+  failReason?: string;
+}
+
+export interface DepositRecord {
+  txid: string;
+  chain: PaymentChain;
+  userId: string;
+  address: string;
+  amountUsdtRaw: string;
+  amountChipsCredited: number;
+  blockNumber: number;
+  creditedAt: string;
+  swept: boolean; // перенесены ли реальные USDT с депозитного адреса на хот-кошелёк (sweepService)
+  sweepTxid?: string;
+}
+
+export interface WalletMapping {
+  userId: string;
+  chainFamily: ChainFamily;
+  address: string;
+  derivationIndex: number;
+  createdAt: string;
 }
 
 export type RoomStatus = 'waiting' | 'playing';
@@ -241,6 +306,77 @@ export interface CreateRoomOptions {
   waitlistDelayMin?: number; // задержка авто-посадки из очереди после освобождения места (2..10, дефолт 2)
   format?: GameFormat; // формат стола ('nlh' по умолчанию)
   clubId?: string;     // если задан — стол привязан к клубу (виден только членам)
+  pinned?: boolean;    // закрепить стол сверху лобби (только админ; проверяется на сервере)
+  autoExtendSession?: boolean; // по истечении sessionDurationHours продлевать сессию повторно вместо закрытия
+}
+
+// Турниры (ROADMAP §10 «Турниры», SNG → MTT). 'mtt' зарезервирован под Фазу 2, сервер v1 принимает
+// только 'sng' при создании. Турнирные фишки — НЕ банкролл: бай-ин дебетуется один раз при
+// регистрации, выплата призовых кредитуется один раз при завершении (tournamentBankroll.ts).
+export type TournamentType = 'sng' | 'mtt';
+export type TournamentStatus = 'registering' | 'running' | 'finished' | 'cancelled';
+export type BlindSpeed = 'slow' | 'regular' | 'turbo' | 'hyper';
+
+export interface BlindLevel {
+  level: number;
+  smallBlind: number;
+  bigBlind: number;
+  ante: number;
+  durationMin: number;
+}
+
+export interface PayoutTier {
+  place: number;   // 1 = первое место
+  percent: number; // % от призового фонда (сумма по всем местам = 100)
+}
+
+export type TournamentEntryStatus = 'registered' | 'playing' | 'eliminated';
+
+// Преднастройка ITM% для MTT (доля призовых мест от общего числа участников) — выбор админа при создании.
+export type MttItmPercent = 10 | 12 | 15 | 20;
+
+export interface TournamentEntry {
+  userId: string;
+  username: string;
+  status: TournamentEntryStatus;
+  tableId?: string;     // id текущего стола (MTT, только пока status==='playing')
+  finishPlace?: number; // присваивается при элиминации/завершении (1 = победитель)
+  prize?: number;       // выплаченные фишки по результату (есть только у призовых мест после finished)
+}
+
+export interface TournamentInfo {
+  id: string;
+  name: string;
+  type: TournamentType;
+  format: GameFormat;
+  status: TournamentStatus;
+  buyIn: number;          // фишки за вход
+  startingStack: number;
+  tableSize: number;      // мест за ОДНИМ столом (SNG = общее число участников турнира, т.к. стол один)
+  blindSpeed: BlindSpeed;
+  levelUpMinutes: number;
+  prizePool: number;      // buyIn * entries.length (без рейка в v1)
+  entries: TournamentEntry[];
+  tableIds: string[];      // id игровых столов после старта (SNG — всегда 1 элемент, MTT — несколько)
+  lateRegMinutes: number; // MTT: окно поздней регистрации после старта, минут (0 = нет позднего рега)
+  itmPercent: MttItmPercent; // MTT: доля призовых мест от числа участников
+  createdBy: string;
+  createdAt: number;
+  startedAt?: number;
+  finishedAt?: number;
+}
+
+export interface CreateTournamentOptions {
+  name: string;
+  type: TournamentType;
+  format: GameFormat;
+  buyIn: number;         // целые фишки, >0
+  startingStack: number; // целые фишки, >0
+  tableSize: number;     // 2..9
+  blindSpeed: BlindSpeed;
+  levelUpMinutes: number; // 1..60
+  lateRegMinutes?: number;  // MTT, по умолчанию 0
+  itmPercent?: MttItmPercent; // MTT, по умолчанию 15
 }
 
 export type JoinDeniedReason =

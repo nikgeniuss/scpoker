@@ -62,6 +62,11 @@ export function createPublicRouter(gameManager: GameManager): Router {
     res.json(design);
   });
 
+  // Какую версию /lobby видят все игроки (классика/редизайн) — переключатель в админке.
+  router.get('/api/lobby-design', (req, res) => {
+    res.json(readJSON('lobbyDesign.json'));
+  });
+
   // Bad Beat Jackpot — публичная вьюшка для игрок-view/баннера: пул + флаг + таблица выплат.
   router.get('/api/badbeat', (req, res) => {
     res.json(getBadBeatPublic());

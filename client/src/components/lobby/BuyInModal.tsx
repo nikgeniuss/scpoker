@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 import { Coins, X } from 'lucide-react';
 import { useBankroll } from '../../hooks/useBankroll';
 import { formatMoney } from '../../config/chipFormat';
@@ -13,6 +14,7 @@ interface BuyInModalProps {
 }
 
 export const BuyInModal = ({ room, onClose, onSubmit }: BuyInModalProps) => {
+  const { t } = useTranslation();
   const minBuyIn = room.bigBlind * room.buyInMinBb;
   const maxBuyIn = room.bigBlind * room.buyInMaxBb;
   const [amount, setAmount] = useState<number>(maxBuyIn);
@@ -48,7 +50,7 @@ export const BuyInModal = ({ room, onClose, onSubmit }: BuyInModalProps) => {
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-xl font-bold text-white flex items-center gap-2">
             <Coins size={18} className="text-emerald-400" />
-            Бай-ин: {room.name}
+            {t('lobby.buyInTitle')}: {room.name}
           </h3>
           <button onClick={onClose} className="text-gray-400 hover:text-white">
             <X size={20} />
@@ -56,30 +58,30 @@ export const BuyInModal = ({ room, onClose, onSubmit }: BuyInModalProps) => {
         </div>
 
         <div className="text-sm text-gray-400 mb-3">
-          Блайнды <span className="text-white">{formatMoney(room.smallBlind)}/{formatMoney(room.bigBlind)}</span> · диапазон <span className="text-white">{room.buyInMinBb}-{room.buyInMaxBb} BB</span> ({formatMoney(minBuyIn)}-{formatMoney(maxBuyIn)})
+          {t('lobby.blinds')} <span className="text-white">{formatMoney(room.smallBlind)}/{formatMoney(room.bigBlind)}</span> · {t('lobby.range')} <span className="text-white">{room.buyInMinBb}-{room.buyInMaxBb} BB</span> ({formatMoney(minBuyIn)}-{formatMoney(maxBuyIn)})
         </div>
 
         {bankroll === null && !loadError && (
-          <div className="text-sm text-gray-400 py-6 text-center">Загрузка банкролла…</div>
+          <div className="text-sm text-gray-400 py-6 text-center">{t('lobby.loadingBankroll')}</div>
         )}
 
         {loadError && (
           <div className="text-sm text-red-400 py-4 text-center">
-            Не удалось загрузить банкролл. Попробуйте ещё раз.
+            {t('lobby.bankrollLoadError')}
           </div>
         )}
 
         {bankroll !== null && !canSit && (
           <div className="space-y-3">
             <div className="rounded-xl bg-red-500/10 border border-red-500/30 p-3 text-sm text-red-300">
-              Недостаточно фишек для минимального бай-ина: нужно <b>{formatMoney(minBuyIn)}</b>, у вас <b>{formatMoney(bankroll)}</b>.
+              {t('lobby.notEnoughChips')} <b>{formatMoney(minBuyIn)}</b>, {t('lobby.youHave')} <b>{formatMoney(bankroll)}</b>.
             </div>
             <button
               type="button"
               onClick={onClose}
               className="w-full py-2.5 rounded-xl bg-gray-700 text-white font-bold"
             >
-              Закрыть
+              {t('lobby.close')}
             </button>
           </div>
         )}
@@ -88,8 +90,8 @@ export const BuyInModal = ({ room, onClose, onSubmit }: BuyInModalProps) => {
           <form onSubmit={submit} className="space-y-4">
             <div>
               <label className="text-sm text-gray-400 mb-1 flex justify-between">
-                <span>Сумма бай-ина</span>
-                <span className="text-gray-500">банкролл: <span className="text-white">{formatMoney(bankroll)}</span></span>
+                <span>{t('lobby.buyInAmount')}</span>
+                <span className="text-gray-500">{t('lobby.bankroll')}: <span className="text-white">{formatMoney(bankroll)}</span></span>
               </label>
               <div className="text-2xl font-bold text-emerald-400 mb-2">{formatMoney(amount)}</div>
               <input
@@ -128,7 +130,7 @@ export const BuyInModal = ({ room, onClose, onSubmit }: BuyInModalProps) => {
               type="submit"
               className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 font-bold text-white shadow-lg shadow-emerald-500/30"
             >
-              Сесть с {formatMoney(amount)}
+              {t('lobby.sitWith', { amount: formatMoney(amount) })}
             </button>
           </form>
         )}

@@ -29,6 +29,9 @@ export function makeRoom(params: {
   isBotTable: boolean;
   botTableLevel?: 'micro' | 'low' | 'mid';
   clubId?: string;
+  pinned?: boolean;
+  autoExtendSession?: boolean;
+  tournamentId?: string;
 }): Room {
   return {
     id: params.id,
@@ -63,6 +66,9 @@ export function makeRoom(params: {
     turnTimebankEndsAt: null,
     turnTimebankStartedAt: null,
     turnTimebankPlayerId: null,
+    showdownTimer: null,
+    showdownEndsAt: null,
+    lastProgressAt: Date.now(),
     isBotTable: params.isBotTable,
     botTableLevel: params.botTableLevel,
     clubId: params.clubId,
@@ -75,6 +81,8 @@ export function makeRoom(params: {
     sessionDurationHours: params.sessionDurationHours,
     sessionEndsAt: params.sessionEndsAt ?? null,
     sessionTimer: null,
+    autoExtendSession: params.autoExtendSession ?? false,
+    pinned: params.pinned ?? false,
     sitOutTimeoutMin: params.sitOutTimeoutMin,
     kickCooldowns: new Map(),
     waitlistDelayMin: params.waitlistDelayMin,
@@ -83,5 +91,6 @@ export function makeRoom(params: {
     waitlistPromoteEndsAt: null,
     observers: new Map(),
     rabbitHuntPaidBy: new Set(),
+    tournamentId: params.tournamentId,
   };
 }

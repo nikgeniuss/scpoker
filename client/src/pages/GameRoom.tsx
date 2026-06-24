@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { LogOut, Settings, Smile, Info, Coins, History, Eye, Zap } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { LogOut, Settings, Smile, Info, Coins, History, Eye, Zap, Trophy } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { API_URL } from '../config/api';
 import type { GamePhase } from '@poker-room/shared';
@@ -54,16 +55,17 @@ const AdminTableControls = lazy(() => import('../components/admin/AdminTableCont
 // Фетр стола — фиксированный (тёмно-зелёный GG). Настройки темы/сукна из админки убраны.
 const TABLE_FELT_CLASS = 'bg-[radial-gradient(ellipse_at_center,_#0e5e2e_0%,_#0a3d1d_70%,_#06281a_100%)]';
 
-const PHASE_LABEL: Record<GamePhase, string> = {
-  waiting: 'Ожидание',
-  preflop: 'Префлоп',
-  flop: 'Флоп',
-  turn: 'Тёрн',
-  river: 'Ривер',
-  showdown: 'Шоудаун',
+const PHASE_LABEL_KEY: Record<GamePhase, string> = {
+  waiting: 'game.phaseWaiting',
+  preflop: 'game.phasePreflop',
+  flop: 'game.phaseFlop',
+  turn: 'game.phaseTurn',
+  river: 'game.phaseRiver',
+  showdown: 'game.phaseShowdown',
 };
 
 export const GameRoom = () => {
+  const { t } = useTranslation();
   const { roomId } = useParams();
   const [searchParams] = useSearchParams();
   // Режим наблюдателя (?observe=1): входим зрителем, без посадки за стол.
@@ -258,7 +260,7 @@ export const GameRoom = () => {
   if (!state) {
     return (
       <div className="h-[100dvh] md:h-[calc(100dvh-4rem)] flex items-center justify-center text-gray-400">
-        Подключение к комнате…
+        {t('game.connecting')}
       </div>
     );
   }
@@ -279,7 +281,7 @@ export const GameRoom = () => {
             exit={{ opacity: 0, y: -24 }}
             className="absolute top-0 inset-x-0 z-50 flex items-center justify-center gap-2 py-1.5 bg-orange-900/90 backdrop-blur text-orange-200 text-xs font-semibold pointer-events-none"
           >
-            <span className="animate-pulse">●</span> Переподключение…
+            <span className="animate-pulse">●</span> {t('game.reconnecting')}
           </motion.div>
         )}
       </AnimatePresence>
@@ -294,14 +296,14 @@ export const GameRoom = () => {
       {isObserver && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/70 backdrop-blur border border-white/15 text-white/90 text-xs font-bold pointer-events-none whitespace-nowrap">
           <Eye size={13} className="text-emerald-300" />
-          Вы наблюдаете{isAdmin ? ' · карты видны' : ''}
+          {t('game.observing')}{isAdmin ? t('game.observingCardsVisible') : ''}
         </div>
       )}
 
       {/* История раздач — иконка top-right (на mobile; на desktop она в верхнем баре). */}
       <button
         onClick={() => setHistoryModalOpen(true)}
-        title="История раздач"
+        title={t('game.handHistory')}
         className="md:hidden absolute top-3 right-3 z-30 flex items-center justify-center w-9 h-9 rounded-xl bg-black/40 text-white/80 border border-white/10"
       >
         <History size={18} />
@@ -315,7 +317,7 @@ export const GameRoom = () => {
               На desktop balance/admin остаются в Layout navbar. */}
           {typeof userChips === 'number' && (
             <span
-              title="Свободный банкролл"
+              title={t('game.freeBankroll')}
               className="md:hidden inline-flex items-center gap-1 px-2 py-1 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-bold whitespace-nowrap backdrop-blur"
             >
               <Coins size={12} /> {formatMoney(userChips)}
@@ -330,14 +332,14 @@ export const GameRoom = () => {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setHistoryModalOpen(true)}
-            title="История раздач"
+            title={t('game.handHistory')}
             className="flex items-center justify-center w-9 h-9 rounded-xl bg-black/40 hover:bg-black/60 text-white/80 hover:text-white border border-white/10"
           >
             <History size={16} />
           </button>
           <button
             onClick={() => setInfoModalOpen(true)}
-            title="Информация о столе"
+            title={t('game.tableInfo')}
             className="flex items-center justify-center w-9 h-9 rounded-xl bg-black/40 hover:bg-black/60 text-white/80 hover:text-white border border-white/10"
           >
             <Info size={16} />
@@ -349,25 +351,25 @@ export const GameRoom = () => {
           )}
           <button
             onClick={() => setEmojiPaletteOpen((v) => !v)}
-            title="Реакции"
+            title={t('game.reactions')}
             className="flex items-center justify-center w-9 h-9 rounded-xl bg-black/40 hover:bg-black/60 text-white/80 hover:text-white border border-white/10"
           >
             <Smile size={16} />
           </button>
           <button
             onClick={() => setSettingsModalOpen(true)}
-            title="Настройки игры"
+            title={t('game.gameSettings')}
             className="flex items-center justify-center w-9 h-9 rounded-xl bg-black/40 hover:bg-black/60 text-white/80 hover:text-white border border-white/10"
           >
             <Settings size={16} />
           </button>
           <button
             onClick={leave}
-            title="Выйти за стола (в лобби)"
+            title={state.tournamentId ? 'Покинуть турнир — фишки не возвращаются' : t('game.leaveTable')}
             className="flex items-center gap-1 md:px-3 md:py-1.5 justify-center w-9 h-9 md:w-auto md:h-auto rounded-xl bg-red-600/80 hover:bg-red-700 text-white text-sm font-bold"
           >
             <LogOut size={14} />
-            <span className="hidden md:inline">Выйти</span>
+            <span className="hidden md:inline">{t('game.leave')}</span>
           </button>
         </div>
       </div>
@@ -411,15 +413,21 @@ export const GameRoom = () => {
         <div className="absolute top-[65%] left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-2 z-10">
           {/* Фаза игры — переехала сюда из верхнего бара */}
           <div className="text-poker-gold text-xs font-bold uppercase tracking-widest">
-            {PHASE_LABEL[state.phase]}
+            {t(PHASE_LABEL_KEY[state.phase])}
           </div>
           {/* Метаданные стола — серым над банком */}
           <div className="text-white/40 text-xs font-semibold tracking-wide max-w-[280px] truncate -mt-1">
             {state.roomName}
           </div>
           <div className="text-white/30 text-[11px] font-bold uppercase tracking-widest -mt-1">
-            {state.format === 'shortdeck' ? 'Шорт-дэк' : 'NLH'}: {formatMoney(state.smallBlind)}/{formatMoney(state.bigBlind)}
+            {state.format === 'shortdeck' ? t('lobby.formatShortdeck') : 'NLH'}: {formatMoney(state.smallBlind)}/{formatMoney(state.bigBlind)}
           </div>
+          {state.tournamentId && (
+            <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 text-[10px] font-bold uppercase tracking-widest -mt-0.5">
+              <Trophy size={9} />
+              Турнирный стол
+            </div>
+          )}
           {state.badBeatEligible && (
             <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-500/15 border border-yellow-500/30 text-yellow-400 text-[10px] font-bold uppercase tracking-widest -mt-0.5">
               <Zap size={9} className="fill-yellow-400" />
@@ -433,7 +441,7 @@ export const GameRoom = () => {
             transition={{ opacity: { duration: 0.6 } }}
             className="text-2xl font-black text-white bg-black/50 px-4 py-1 rounded-full backdrop-blur ring-1 ring-white/10"
           >
-            Pot: {formatChips(state.pot, state.bigBlind, chipDisplay)}
+            {t('game.pot')}: {formatChips(state.pot, state.bigBlind, chipDisplay)}
           </motion.div>
           <div className="flex gap-1.5 mt-2">
             {state.communityCards.map((c, i) => (
@@ -465,7 +473,7 @@ export const GameRoom = () => {
                 </div>
               ))}
             {state.communityCards.length === 0 && state.phase !== 'waiting' && !peekOn && (
-              <div className="text-white/30 text-sm italic">карты ещё не открыты</div>
+              <div className="text-white/30 text-sm italic">{t('game.cardsNotRevealed')}</div>
             )}
           </div>
           {peekOn && (
@@ -678,8 +686,14 @@ export const GameRoom = () => {
           <div className="absolute inset-0 flex flex-col items-center justify-start pt-[54%] gap-2 pointer-events-none z-10 px-4">
             <div className="poker-watermark poker-watermark--center select-none mt-2">POKER HUB</div>
             <div className="text-emerald-300 text-[13px] font-bold uppercase tracking-widest [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]">
-              {state.format === 'shortdeck' ? 'Шорт-дэк' : 'NLH'} {formatMoney(state.smallBlind)}/{formatMoney(state.bigBlind)}
+              {state.format === 'shortdeck' ? t('lobby.formatShortdeck') : 'NLH'} {formatMoney(state.smallBlind)}/{formatMoney(state.bigBlind)}
             </div>
+            {state.tournamentId && (
+              <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 text-[9px] font-bold uppercase tracking-widest">
+                <Trophy size={8} />
+                Турнирный стол
+              </div>
+            )}
             {state.badBeatEligible && (
               <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-500/15 border border-yellow-500/30 text-yellow-400 text-[9px] font-bold uppercase tracking-widest">
                 <Zap size={8} className="fill-yellow-400" />
@@ -688,7 +702,7 @@ export const GameRoom = () => {
             )}
             {state.pot > 0 && state.phase !== 'showdown' && (
               <div className="pot-plate-mobile">
-                <div className="pot-label">Банк</div>
+                <div className="pot-label">{t('game.potMobile')}</div>
                 <div className="pot-value">{formatChips(state.pot, state.bigBlind, chipDisplay)}</div>
               </div>
             )}
@@ -723,7 +737,7 @@ export const GameRoom = () => {
                   ))}
               </div>
             ) : state.phase !== 'waiting' ? (
-              <div className="text-white/30 text-[10px] italic mt-1">карты ещё не открыты</div>
+              <div className="text-white/30 text-[10px] italic mt-1">{t('game.cardsNotRevealed')}</div>
             ) : null}
             {state.observers && state.observers.length > 0 && (
               <div className="flex items-center gap-1 mt-1">
@@ -863,7 +877,7 @@ export const GameRoom = () => {
             exit={{ opacity: 0 }}
             className="absolute top-20 left-1/2 -translate-x-1/2 z-20 bg-black/60 px-4 py-2 rounded-xl text-gray-300 text-sm"
           >
-            Ждём второго игрока…
+            {t('game.waitingForSecondPlayer')}
           </motion.div>
         )}
 
@@ -941,7 +955,7 @@ export const GameRoom = () => {
       {canShowCards && me && (
         <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-1.5 pointer-events-auto">
           <span className="text-white/75 text-[11px] font-semibold [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]">
-            Показать карту сопернику
+            {t('game.showCardToOpponent')}
           </span>
           <div className="flex gap-2">
             {me.cards.map((c, i) => {
@@ -964,7 +978,7 @@ export const GameRoom = () => {
                     </span>
                   ) : (
                     <span className="absolute inset-x-0 -bottom-4 text-center text-emerald-300 text-[9px] font-bold">
-                      показать
+                      {t('game.show')}
                     </span>
                   )}
                 </button>
@@ -981,7 +995,7 @@ export const GameRoom = () => {
           {state.rabbitHunt.revealed ? (
             <>
               <span className="text-white/75 text-[11px] font-semibold [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]">
-                Карты, которые пришли бы
+                {t('game.rabbitHuntRevealed')}
               </span>
               <div className="flex gap-2">
                 {state.rabbitHunt.revealed.map((c, i) => (
@@ -995,7 +1009,7 @@ export const GameRoom = () => {
               onClick={requestRabbitHunt}
               className="px-4 py-2 rounded-xl bg-black/70 backdrop-blur border border-amber-400/40 text-amber-300 text-[12px] font-bold shadow-lg hover:bg-black/85 transition-colors"
             >
-              🐇 Что пришло бы? ({formatChips(state.rabbitHunt.price, state.bigBlind, chipDisplay)})
+              {t('game.rabbitHuntButton', { price: formatChips(state.rabbitHunt.price, state.bigBlind, chipDisplay) })}
             </button>
           )}
         </div>

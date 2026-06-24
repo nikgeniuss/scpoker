@@ -102,6 +102,21 @@ describe('GameManager — test infrastructure smoke', () => {
 
   it('club-members-only: не-член не может войти в клубную комнату', async () => {
     const { gm } = await createTestGameManager();
+    const { setStorage } = await import('./helpers/storage.js');
+    // createRoom теперь сам проверяет, что создатель — участник клуба (§0.13) —
+    // заводим клуб с владельцем заранее.
+    setStorage('clubs.json', [
+      {
+        id: 'club-xyz',
+        name: 'Club',
+        ownerId: 'owner',
+        members: [{ userId: 'owner', username: 'owner', role: 'owner', joinedAt: new Date().toISOString() }],
+        inviteCode: 'ABCD1234',
+        pendingRequests: [],
+        settings: {},
+        createdAt: new Date().toISOString(),
+      },
+    ]);
     const { roomId } = gm.createRoom(
       {
         name: 'ClubRoom',
@@ -116,9 +131,28 @@ describe('GameManager — test infrastructure smoke', () => {
       'owner',
     ) as { roomId: string };
 
-    // clubs.json пустой (getStorage), значит readClubs() вернёт [] → не-член
+    // 'outsider' не входит в club-xyz.members → club-members-only
     const deny = gm.canJoinRoom(roomId, 'outsider', undefined, 1000);
     expect(deny).toBe('club-members-only');
+  });
+
+  it('createRoom отказывает в clubId, если создатель не состоит в этом клубе', async () => {
+    const { gm } = await createTestGameManager();
+    // clubs.json пустой → 'owner' не member ни одного клуба
+    const result = gm.createRoom(
+      {
+        name: 'ClubRoom',
+        smallBlind: 5,
+        bigBlind: 10,
+        maxPlayers: 6,
+        turnDurationSec: 30,
+        buyInMinBb: 20,
+        buyInMaxBb: 100,
+        clubId: 'club-xyz',
+      },
+      'owner',
+    );
+    expect(result).toEqual({ error: 'club-membership-required' });
   });
 
   it('MockIo получает emit\'ы от GameManager', async () => {

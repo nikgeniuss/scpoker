@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Users, Plus, Search, Dices, Trophy } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { useJoinFlow } from '../hooks/useJoinFlow';
@@ -16,6 +17,7 @@ import { PageBackground } from '../components/layout/PageBackground';
 import { loadGameSettings } from '../config/gameSettings';
 
 export const Lobby = () => {
+  const { t } = useTranslation();
   const myId = useAuthStore((s) => s.user?.id ?? null);
   const myClub = useClubStore((s) => s.myClub);
   const navigate = useNavigate();
@@ -64,14 +66,14 @@ export const Lobby = () => {
         <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/45 backdrop-blur-md border border-emerald-500/40 text-emerald-300 text-xs font-bold shadow-lg">
-              <Users size={12} /> {onlineCount} онлайн
+              <Users size={12} /> {onlineCount} {t('lobby.online')}
             </span>
             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/45 backdrop-blur-md border border-emerald-500/40 text-emerald-300 text-xs font-bold shadow-lg">
-              <Dices size={12} /> {tableCount} {tableCount === 1 ? 'стол' : 'столов'}
+              <Dices size={12} /> {tableCount} {tableCount === 1 ? t('lobby.tableSingular') : t('lobby.tablePlural')}
             </span>
             <button
               onClick={() => navigate('/leaderboard')}
-              title="Таблица лидеров"
+              title={t('lobby.leaderboard')}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/45 backdrop-blur-md border border-amber-500/40 text-amber-300 text-xs font-bold shadow-lg hover:bg-black/60 transition-colors"
             >
               <Trophy size={12} />
@@ -84,7 +86,7 @@ export const Lobby = () => {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Поиск стола…"
+              placeholder={t('lobby.searchPlaceholder')}
               className="w-full pl-9 pr-3 py-2 rounded-lg bg-gray-800/70 backdrop-blur-md border border-white/10 text-white text-sm outline-none focus:border-emerald-500"
             />
           </div>
@@ -95,7 +97,7 @@ export const Lobby = () => {
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-gradient-to-r from-emerald-500 to-green-600 font-bold text-white text-sm shadow-lg shadow-emerald-500/30 shrink-0"
           >
             <Plus size={14} />
-            Создать комнату
+            {t('lobby.createRoom')}
           </motion.button>
         </div>
       </div>
@@ -103,28 +105,28 @@ export const Lobby = () => {
       {/* Табы по форматам: NLH + Шорт-дэк (memory game_formats). */}
       <div className="flex flex-wrap items-center gap-1 mb-3 overflow-x-auto">
         {([
-          { id: 'all', label: 'Все', enabled: true },
+          { id: 'all', label: t('lobby.formatAll'), enabled: true },
           { id: 'nlh', label: 'NLH', enabled: true },
-          { id: 'shortdeck', label: 'Шорт-дэк', enabled: true },
-        ] as const).map((t) => {
-          const active = formatTab === t.id;
+          { id: 'shortdeck', label: t('lobby.formatShortdeck'), enabled: true },
+        ] as const).map((tab) => {
+          const active = formatTab === tab.id;
           return (
             <button
-              key={t.id}
-              onClick={() => t.enabled && setFormatTab(t.id)}
-              disabled={!t.enabled}
-              title={!t.enabled ? 'Скоро' : ''}
+              key={tab.id}
+              onClick={() => tab.enabled && setFormatTab(tab.id)}
+              disabled={!tab.enabled}
+              title={!tab.enabled ? t('lobby.soon') : ''}
               className={
                 'px-3 py-1.5 rounded-lg text-sm font-bold transition-all whitespace-nowrap ' +
                 (active
                   ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30'
-                  : t.enabled
+                  : tab.enabled
                   ? 'bg-white/5 text-gray-300 hover:bg-white/10 hover:text-white'
                   : 'bg-white/5 text-gray-600 cursor-not-allowed')
               }
             >
-              {t.label}
-              {!t.enabled && <span className="ml-1 text-[10px] opacity-60">скоро</span>}
+              {tab.label}
+              {!tab.enabled && <span className="ml-1 text-[10px] opacity-60">{t('lobby.soon')}</span>}
             </button>
           );
         })}
@@ -134,11 +136,11 @@ export const Lobby = () => {
       {/* Пресеты фильтра блайндов: Микро / Низкие / Средние / Высокие */}
       <div className="flex flex-wrap items-center gap-1 mb-4">
         {([
-          { id: 'all',    label: 'Все ставки' },
-          { id: 'micro',  label: 'Микро',    hint: '≤0.10 BB' },
-          { id: 'low',    label: 'Низкие',   hint: '0.25–1.00 BB' },
-          { id: 'medium', label: 'Средние',  hint: '1.25–10.00 BB' },
-          { id: 'high',   label: 'Высокие',  hint: '>10 BB' },
+          { id: 'all',    label: t('lobby.stakeAll') },
+          { id: 'micro',  label: t('lobby.stakeMicro'),  hint: '≤0.10 BB' },
+          { id: 'low',    label: t('lobby.stakeLow'),    hint: '0.25–1.00 BB' },
+          { id: 'medium', label: t('lobby.stakeMedium'), hint: '1.25–10.00 BB' },
+          { id: 'high',   label: t('lobby.stakeHigh'),   hint: '>10 BB' },
         ] as const).map((p) => {
           const active = blindPreset === p.id;
           return (
@@ -164,7 +166,7 @@ export const Lobby = () => {
         <div className="mb-6">
           <div className="flex items-center gap-2 mb-3">
             <span className="text-xs font-bold text-emerald-400 uppercase tracking-wide">
-              Комнаты клуба · {myClub?.name}
+              {t('lobby.clubRooms')} · {myClub?.name}
             </span>
             <span className="text-[10px] text-gray-600">{clubRooms.length}</span>
           </div>
@@ -192,7 +194,7 @@ export const Lobby = () => {
           className="text-center text-gray-500 mt-20"
         >
           <p className="text-6xl mb-4">🃏</p>
-          <p>Пока нет открытых комнат. Создай первую!</p>
+          <p>{t('lobby.emptyTitle')}</p>
         </motion.div>
       ) : filtered.length === 0 ? (
         <motion.div
@@ -201,7 +203,7 @@ export const Lobby = () => {
           className="text-center text-gray-500 mt-20"
         >
           <p className="text-4xl mb-4">🔍</p>
-          <p>Под фильтр ничего не подходит.</p>
+          <p>{t('lobby.emptyFiltered')}</p>
         </motion.div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

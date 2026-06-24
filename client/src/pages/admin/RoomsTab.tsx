@@ -4,13 +4,15 @@ import { useAuthStore } from '../../store/authStore';
 import { useAdminApi } from '../../hooks/useAdminApi';
 import { ROOM_PHASE_LABEL } from './types';
 import { formatMoney } from '../../config/chipFormat';
-import type { AdminRoom } from './types';
+import type { AdminRoom, FrozenTableRecordView } from './types';
 
 export const RoomsTab = () => {
   const { token } = useAuthStore();
   const api = useAdminApi(token);
   const [rooms, setRooms] = useState<AdminRoom[]>([]);
   const [loading, setLoading] = useState(true);
+  const [frozenEvents, setFrozenEvents] = useState<FrozenTableRecordView[]>([]);
+  const [showFrozenLog, setShowFrozenLog] = useState(false);
 
   const load = useCallback(() => {
     api
@@ -26,6 +28,15 @@ export const RoomsTab = () => {
     const t = setInterval(load, 3000);
     return () => clearInterval(t);
   }, [load]);
+
+  // Журнал watchdog'а зависших столов — реже (это история, не live-состояние); грузим
+  // сразу и при раскрытии секции.
+  useEffect(() => {
+    api
+      .get<FrozenTableRecordView[]>('/admin/frozen-tables', 'Не удалось загрузить журнал зависших столов')
+      .then(setFrozenEvents)
+      .catch(() => {});
+  }, [api]);
 
   const kickPlayer = async (roomId: string, userId: string, username: string) => {
     // Временный кик: на сколько минут закрыть повторный вход за этот стол (0 — без блокировки, не бан).
@@ -69,6 +80,44 @@ export const RoomsTab = () => {
         </button>
         <span className="text-xs text-gray-500">авто-обновление каждые 3 сек</span>
       </div>
+
+      {/* Журнал watchdog'а зависших столов (ROADMAP) — диагностика, не live-состояние. */}
+      <div className="rounded-2xl p-4 bg-gray-800 border border-white/10">
+        <button
+          onClick={() => setShowFrozenLog((v) => !v)}
+          className="flex items-center gap-2 w-full text-left"
+        >
+          <span className="text-white font-bold">
+            ⚠️ Зависшие столы — журнал восстановлений ({frozenEvents.length})
+          </span>
+          <span className="text-xs text-gray-500 ml-auto">{showFrozenLog ? '▲ свернуть' : '▼ развернуть'}</span>
+        </button>
+        {showFrozenLog && (
+          frozenEvents.length === 0 ? (
+            <div className="text-gray-400 text-sm mt-3">Зависаний не было.</div>
+          ) : (
+            <div className="space-y-1 mt-3">
+              {frozenEvents.map((e, i) => (
+                <div
+                  key={e.t + '-' + e.roomId + '-' + i}
+                  className="flex flex-wrap items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-900/60 text-sm"
+                >
+                  <span className="text-gray-400 font-mono text-xs">{new Date(e.t).toLocaleString('ru-RU')}</span>
+                  <span className="text-white font-semibold">{e.name}</span>
+                  <span className="text-xs text-gray-500 font-mono">{e.roomId.slice(0, 8)}…</span>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-gray-700 text-gray-300">
+                    {ROOM_PHASE_LABEL[e.phase as keyof typeof ROOM_PHASE_LABEL] ?? e.phase}
+                  </span>
+                  <span className="text-xs text-orange-300 ml-auto">
+                    просрочка {Math.round(e.overdueMs / 1000)}с
+                  </span>
+                </div>
+              ))}
+            </div>
+          )
+        )}
+      </div>
+
       {rooms.length === 0 && (
         <div className="text-gray-400 text-sm">Нет активных комнат.</div>
       )}

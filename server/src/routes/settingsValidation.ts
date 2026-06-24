@@ -10,7 +10,7 @@ const isNonNegInt = (v: unknown): v is number =>
 export function validateSettingsPatch(
   body: Record<string, unknown>,
 ): { patch: Record<string, unknown> } | { error: string } {
-  const { turnDurationMs, autostartDelayMs, defaultPlayerChips, timebank, botMode, paidFeatures } = body;
+  const { turnDurationMs, autostartDelayMs, defaultPlayerChips, timebank, botMode, paidFeatures, payments } = body;
   const patch: Record<string, unknown> = {};
 
   if (turnDurationMs !== undefined) {
@@ -156,6 +156,67 @@ export function validateSettingsPatch(
       }
       patch.paidFeatures = { rabbitHunt: rhPatch };
     }
+  }
+  if (payments !== undefined) {
+    if (!payments || typeof payments !== 'object') {
+      return { error: 'payments: object' };
+    }
+    const p = payments as Record<string, unknown>;
+    const pmPatch: Record<string, unknown> = {};
+    if (p.enabled !== undefined) {
+      if (typeof p.enabled !== 'boolean') {
+        return { error: 'payments.enabled: boolean' };
+      }
+      pmPatch.enabled = p.enabled;
+    }
+    if (p.exchangeRateCentsPerUsdt !== undefined) {
+      if (!isPositiveInt(p.exchangeRateCentsPerUsdt) || p.exchangeRateCentsPerUsdt > 10000000) {
+        return { error: 'payments.exchangeRateCentsPerUsdt: 1..10000000' };
+      }
+      pmPatch.exchangeRateCentsPerUsdt = p.exchangeRateCentsPerUsdt;
+    }
+    const isPositiveAmount = (v: unknown): v is number =>
+      typeof v === 'number' && Number.isFinite(v) && v > 0 && v <= 1000000;
+    for (const key of ['minDepositUsdt', 'maxDepositUsdt', 'minWithdrawalUsdt', 'maxWithdrawalUsdt'] as const) {
+      const v = p[key];
+      if (v !== undefined) {
+        if (!isPositiveAmount(v)) {
+          return { error: `payments.${key}: 0..1000000 (USDT)` };
+        }
+        pmPatch[key] = v;
+      }
+    }
+    if (p.chains !== undefined) {
+      if (!p.chains || typeof p.chains !== 'object') {
+        return { error: 'payments.chains: object' };
+      }
+      const chainsObj = p.chains as Record<string, unknown>;
+      const chainsPatch: Record<string, unknown> = {};
+      for (const chain of ['tron', 'ethereum', 'bsc'] as const) {
+        const c = chainsObj[chain];
+        if (c === undefined) continue;
+        if (!c || typeof c !== 'object') {
+          return { error: `payments.chains.${chain}: object` };
+        }
+        const cObj = c as Record<string, unknown>;
+        const cPatch: Record<string, unknown> = {};
+        if (cObj.enabled !== undefined) {
+          if (typeof cObj.enabled !== 'boolean') {
+            return { error: `payments.chains.${chain}.enabled: boolean` };
+          }
+          cPatch.enabled = cObj.enabled;
+        }
+        if (cObj.minConfirmations !== undefined) {
+          if (!isPositiveInt(cObj.minConfirmations) || cObj.minConfirmations > 1000) {
+            return { error: `payments.chains.${chain}.minConfirmations: 1..1000` };
+          }
+          cPatch.minConfirmations = cObj.minConfirmations;
+        }
+        chainsPatch[chain] = cPatch;
+      }
+      pmPatch.chains = chainsPatch;
+    }
+    patch.payments = pmPatch;
   }
 
   return { patch };

@@ -30,13 +30,16 @@ import { detectBadBeat, computeBadBeatPayout } from './badBeatDetect.js';
 import { resolveShowdown } from './showdownService.js';
 import { sendNotification, type InboxNotification } from './inboxService.js';
 import { serializeActiveHand, applyActiveHandSnapshot } from './activeHandPersistence.js';
-import type { GameState as SharedGameState, RoomInfo, TimebankConfig, TimebankSettings } from '@poker-room/shared';
+import { getFreezeInfo } from './tableWatchdog.js';
+import type { FrozenTableRecord } from './frozenTableLog.js';
+import type { GameState as SharedGameState, RoomInfo, TimebankConfig, TimebankSettings, PaymentsSettings } from '@poker-room/shared';
 export type { RoomInfo, TimebankConfig, TimebankSettings };
 import {
   clearTurnTimers, scheduleTurnPhase1, scheduleTurnPhase2, scheduleSitOutTimer,
   clearDisconnectTimer, scheduleDisconnectTimer,
   clearStartTimer, clearSessionTimer, scheduleSessionTimer,
   clearWaitlistTimer, scheduleWaitlistTimer,
+  clearShowdownTimer, scheduleShowdownTimer,
 } from './timerService.js';
 
 // Базовые типы (Suit/Rank/Card/GamePhase/RoomStatus) — из канонического game/types.ts
@@ -109,6 +112,8 @@ export interface CreateRoomOptions {
   waitlistDelayMin?: number; // задержка авто-посадки из очереди после освобождения места (2..10, дефолт 2)
   format?: GameFormat; // формат стола ('nlh' по умолчанию)
   clubId?: string;     // если задан — стол только для членов клуба
+  pinned?: boolean;    // закрепить стол сверху лобби (только админ; проверяется в registerSocketHandlers)
+  autoExtendSession?: boolean; // по истечении sessionDurationHours продлевать сессию повторно вместо закрытия
 }
 
 type JoinDeniedReason =
@@ -163,6 +168,7 @@ const SOCKET_EVENTS = {
   SET_AUTO_TOPUP: 'setAutoTopUp',
   INBOX_NOTIFICATION: 'inboxNotification',
   RABBIT_HUNT: 'rabbitHunt',
+  TOURNAMENT_TABLE_ASSIGNED: 'tournamentTableAssigned',
 } as const;
 
 const AUTO_START_MIN_PLAYERS = 2;
@@ -181,6 +187,7 @@ interface GameSettings {
   timebank: TimebankSettings;
   botMode: BotModeSettings;
   paidFeatures: PaidFeaturesSettings;
+  payments: PaymentsSettings;
 }
 
 // Платные фичи (ROADMAP §10.12, новая админ-вкладка «Платные фичи»). Сейчас одна — Rabbit Hunting.
@@ -215,6 +222,22 @@ const DEFAULT_PAID_FEATURES: PaidFeaturesSettings = {
   rabbitHunt: { enabled: false, mode: 'percent', fixedAmount: 100, percent: 5 },
 };
 
+// Платежи (ROADMAP §11.1) — крипто-депозит/вывод USDT, выключено по умолчанию (требует
+// секретов в env — DEPOSIT_SEED_MNEMONIC_*/HOT_WALLET_PRIVATE_KEY_*, см. config.ts).
+const DEFAULT_PAYMENTS: PaymentsSettings = {
+  enabled: false,
+  exchangeRateCentsPerUsdt: 10000, // 1 USDT = 100.00 фишек по умолчанию
+  minDepositUsdt: 5,
+  maxDepositUsdt: 10000,
+  minWithdrawalUsdt: 5,
+  maxWithdrawalUsdt: 5000,
+  chains: {
+    tron: { enabled: true, minConfirmations: 19 },
+    ethereum: { enabled: true, minConfirmations: 12 },
+    bsc: { enabled: true, minConfirmations: 15 },
+  },
+};
+
 const DEFAULT_SETTINGS: GameSettings = {
   turnDurationMs: 30000,
   autostartDelayMs: 10000,
@@ -222,6 +245,7 @@ const DEFAULT_SETTINGS: GameSettings = {
   timebank: { ...DEFAULT_TIMEBANK },
   botMode: { ...DEFAULT_BOT_MODE },
   paidFeatures: { rabbitHunt: { ...DEFAULT_PAID_FEATURES.rabbitHunt } },
+  payments: { ...DEFAULT_PAYMENTS, chains: { ...DEFAULT_PAYMENTS.chains } },
 };
 
 const LOBBY_ROOM = 'lobby';
@@ -259,6 +283,9 @@ export interface Room {
   turnTimebankEndsAt: number | null;        // timestamp окончания таймбанк-фазы
   turnTimebankStartedAt: number | null;     // когда стартовал таймбанк (для списания elapsed)
   turnTimebankPlayerId: string | null;      // чей таймбанк сейчас идёт (страховка от гонок)
+  showdownTimer: NodeJS.Timeout | null;     // таймер показа шоудауна перед cleanupHand (5с)
+  showdownEndsAt: number | null;            // timestamp окончания окна шоудауна
+  lastProgressAt: number;                   // timestamp последнего реального продвижения раздачи (watchdog §11.x)
   isBotTable: boolean;                      // автоматически созданный стол режима ботов
   botTableLevel?: 'micro' | 'low' | 'mid';  // профиль уровня (для refill)
   clubId?: string;                          // если задан — стол только для членов клуба
@@ -272,6 +299,8 @@ export interface Room {
   sessionDurationHours: number;             // длительность сессии в часах (0 = без ограничения)
   sessionEndsAt: number | null;             // timestamp авто-закрытия (null = без ограничения)
   sessionTimer: NodeJS.Timeout | null;      // таймер авто-закрытия стола
+  autoExtendSession: boolean;               // по истечении sessionEndsAt продлевать на sessionDurationHours повторно вместо закрытия
+  pinned: boolean;                          // закреплён сверху лобби (admin-only при создании)
   sitOutTimeoutMin: number;                 // сит-аут при дисконнекте: минут держим место до кика (5..30)
   kickCooldowns: Map<string, number>;       // userId → timestamp, до которого вход за стол закрыт (временный кик админом)
   waitlistDelayMin: number;                 // задержка авто-посадки из очереди после освобождения места (2..10)
@@ -284,6 +313,9 @@ export interface Room {
   rabbitHuntCards?: Card[];      // карты, которые пришли бы (undefined = не применимо к этой раздаче)
   rabbitHuntPrice?: number;      // цена раскрытия для ЭТОЙ раздачи (фишки)
   rabbitHuntPaidBy: Set<string>; // кто уже оплатил и видит карты в этом окне
+  // Турнирный стол (§10 «Турниры»): если задан — TournamentManager владеет жизненным циклом
+  // (блайнды по уровням, элиминация без возврата в банкролл — см. autoLeaveBrokePlayers/onTournamentBust).
+  tournamentId?: string;
 }
 
 // Запись в очереди на полный стол: кто, под каким именем и с каким бай-ином сядет автоматически.
@@ -311,6 +343,17 @@ export class GameManager implements GameManagerForBots {
   roomEventRecorder?: (rec: RoomEventRecord) => void;
   // Колбэк записи снимка раздачи в историю (инжектится из index.ts). В тестах не выставлен → не пишет файл.
   handRecorder?: (rec: Omit<HandHistoryRecord, 'id'>) => void;
+  // Колбэк лога восстановлений зависших столов (инжектится из index.ts, см. tableWatchdog.ts).
+  // В тестах не выставлен → не пишет файл.
+  frozenTableRecorder?: (rec: FrozenTableRecord) => void;
+  // Колбэк элиминации игрока на турнирном столе (инжектится TournamentManager из index.ts).
+  // Вызывается ВМЕСТО обычного банкролл-возврата, когда у игрока на столе с room.tournamentId
+  // обнуляется стек (см. autoLeaveBrokePlayers) — турнирные фишки не кэшаются, место просто
+  // освобождается, а финишную позицию/выплату считает TournamentManager. В тестах не выставлен.
+  onTournamentBust?: (roomId: string, userId: string) => void;
+  // Интервал периодической проверки зависших столов — стартует явно через startTableWatchdog()
+  // (не из конструктора, см. комментарий там).
+  private watchdogTimer: NodeJS.Timeout | null = null;
 
   constructor(io: Server) {
     this.io = io;
@@ -434,6 +477,9 @@ export class GameManager implements GameManagerForBots {
           isBotTable: !!s.isBotTable,
           botTableLevel: s.botTableLevel,
           clubId: (s as { clubId?: string }).clubId,
+          pinned: !!(s as { pinned?: boolean }).pinned,
+          autoExtendSession: !!(s as { autoExtendSession?: boolean }).autoExtendSession,
+          tournamentId: (s as { tournamentId?: string }).tournamentId,
         }));
         const restored = this.rooms.get(s.id);
         if (restored && restored.sessionEndsAt) this.scheduleSessionClose(restored);
@@ -471,6 +517,9 @@ export class GameManager implements GameManagerForBots {
       isBotTable: r.isBotTable,
       botTableLevel: r.botTableLevel,
       clubId: r.clubId,
+      pinned: r.pinned,
+      autoExtendSession: r.autoExtendSession,
+      tournamentId: r.tournamentId,
     }));
     try {
       writeJSON('rooms.json', snapshots);
@@ -529,6 +578,43 @@ export class GameManager implements GameManagerForBots {
     });
   }
 
+  // Watchdog «зависших» столов (см. tableWatchdog.ts: getFreezeInfo). Раздача идёт, но дедлайн
+  // собственного таймера сервера (ход/таймбанк/шоудаун, либо просто last-progress) просрочен
+  // больше чем на FREEZE_THRESHOLD_MS — значит callback, который должен был продвинуть раздачу,
+  // не сработал (исключение/баг где-то в цепочке). Восстановление — мягкое, той же логикой, что
+  // и при рестарте сервера (restoreActiveHands): карты/банк/стеки НЕ трогаем, просто заново
+  // запускаем механизм хода (emitCurrentTurn) либо досрочно завершаем застрявший показ шоудауна
+  // (cleanupHand). Бот-столы пропускаются (getFreezeInfo).
+  private checkFrozenTables(): void {
+    const now = Date.now();
+    this.rooms.forEach((room) => {
+      const { frozen, overdueMs } = getFreezeInfo(room, now);
+      if (!frozen) return;
+      console.warn(
+        `⚠️ [watchdog] стол "${room.name}" (${room.id}) завис в фазе ${room.phase} — ` +
+        `восстанавливаю (просрочка ${Math.round(overdueMs / 1000)}с)`,
+      );
+      this.frozenTableRecorder?.({ t: now, roomId: room.id, name: room.name, phase: room.phase, overdueMs });
+      clearTurnTimers(room);
+      clearShowdownTimer(room);
+      room.lastProgressAt = now;
+      if (room.phase === 'showdown') {
+        this.cleanupHand(room.id);
+      } else {
+        this.emitCurrentTurn(room.id);
+      }
+    });
+  }
+
+  // Запускает периодическую проверку зависших столов. Вызывается явно из index.ts (как
+  // restoreActiveHands) — НЕ из конструктора, чтобы не плодить лишний setInterval в тестах,
+  // которые создают GameManager пачками и продвигают fake-таймеры на часы вперёд (это могло бы
+  // спровоцировать ложные срабатывания watchdog'а в тестах, не имеющих к нему отношения).
+  startTableWatchdog(intervalMs = 15_000): void {
+    if (this.watchdogTimer) clearInterval(this.watchdogTimer);
+    this.watchdogTimer = setInterval(() => this.checkFrozenTables(), intervalMs);
+  }
+
   // Снимок активных раздач (deck/pot/players/phase/...) — отдельно от метаданных rooms.json
   // (ROADMAP §9.2). Бот-столы и пустые комнаты не пишутся (serializeActiveHand → null).
   // Вызывается из saveRoomsSnapshot (создание/удаление комнат) и broadcastGameState
@@ -547,14 +633,24 @@ export class GameManager implements GameManagerForBots {
   private loadSettings(): GameSettings {
     try {
       const data = readJSON('settings.json') as Partial<GameSettings>;
-      // Глубокий merge для вложенного timebank/paidFeatures блока (иначе spread затрёт частично заданный)
+      // Глубокий merge для вложенного timebank/paidFeatures/payments блока (иначе spread затрёт частично заданный)
       const tb: TimebankSettings = { ...DEFAULT_TIMEBANK, ...(data.timebank ?? {}) };
       const pf: PaidFeaturesSettings = {
         rabbitHunt: { ...DEFAULT_PAID_FEATURES.rabbitHunt, ...(data.paidFeatures?.rabbitHunt ?? {}) },
       };
-      return { ...DEFAULT_SETTINGS, ...data, timebank: tb, paidFeatures: pf };
+      const pm: PaymentsSettings = {
+        ...DEFAULT_PAYMENTS,
+        ...(data.payments ?? {}),
+        chains: { ...DEFAULT_PAYMENTS.chains, ...(data.payments?.chains ?? {}) },
+      };
+      return { ...DEFAULT_SETTINGS, ...data, timebank: tb, paidFeatures: pf, payments: pm };
     } catch {
-      return { ...DEFAULT_SETTINGS, timebank: { ...DEFAULT_TIMEBANK }, paidFeatures: { rabbitHunt: { ...DEFAULT_PAID_FEATURES.rabbitHunt } } };
+      return {
+        ...DEFAULT_SETTINGS,
+        timebank: { ...DEFAULT_TIMEBANK },
+        paidFeatures: { rabbitHunt: { ...DEFAULT_PAID_FEATURES.rabbitHunt } },
+        payments: { ...DEFAULT_PAYMENTS, chains: { ...DEFAULT_PAYMENTS.chains } },
+      };
     }
   }
 
@@ -563,6 +659,15 @@ export class GameManager implements GameManagerForBots {
     const validationError = validateCreateOptions(options);
     if (validationError) {
       return { error: validationError };
+    }
+
+    // Клиент присылает clubId сам (как и pinned/format) — не доверяем без проверки (§0.13):
+    // создавать клубный стол может только участник этого клуба.
+    if (options.clubId) {
+      const club = readClubs().find(c => c.id === options.clubId);
+      if (!club || !club.members.some(m => m.userId === createdBy)) {
+        return { error: 'club-membership-required' };
+      }
     }
 
     // Timebank: override только если глобально разрешено И клиент явно прислал конфиг.
@@ -601,6 +706,8 @@ export class GameManager implements GameManagerForBots {
       waitlistDelayMin: Math.max(2, Math.min(10, Math.floor(options.waitlistDelayMin ?? 2))),
       isBotTable: false,
       clubId: options.clubId,
+      pinned: !!options.pinned,
+      autoExtendSession: !!options.autoExtendSession,
     }));
 
     // Авто-закрытие по длительности сессии (если задана)
@@ -616,6 +723,138 @@ export class GameManager implements GameManagerForBots {
     this.notifyLobbyChange();
     this.saveRoomsSnapshot();
     return { roomId };
+  }
+
+  // Создать игровой стол для турнира (TournamentManager). В отличие от createRoom — без
+  // валидации пользовательского ввода/клуба/бай-ина: вызывается только сервером с уже
+  // проверенными параметрами турнира. Стол не появляется в обычном кэш-лобби (getRoomList).
+  createTournamentTable(params: {
+    tournamentId: string;
+    name: string;
+    maxPlayers: number;
+    smallBlind: number;
+    bigBlind: number;
+    format: GameFormat;
+  }): string {
+    const roomId = nanoid(10);
+    this.rooms.set(roomId, makeRoom({
+      id: roomId,
+      name: params.name,
+      description: '',
+      createdBy: 'system:tournament',
+      maxPlayers: params.maxPlayers,
+      passwordHash: null,
+      smallBlind: params.smallBlind,
+      bigBlind: params.bigBlind,
+      turnDurationMs: this.settings.turnDurationMs,
+      buyInMinBb: 0, // не используется — посадка через seatTournamentPlayer, не addPlayer
+      buyInMaxBb: 0,
+      timebank: toRoomTimebank(this.settings.timebank),
+      rake: { percent: 0, capBb: 0 }, // турниры без рейка в v1
+      ante: 0,
+      format: params.format,
+      autoStartPlayers: 2, // раздачи продолжаются, пока живы ≥2 — первый старт вызывает TournamentManager явно
+      sessionDurationHours: 0,
+      sitOutTimeoutMin: 30,
+      waitlistDelayMin: 2,
+      isBotTable: false,
+      tournamentId: params.tournamentId,
+    }));
+    this.saveRoomsSnapshot();
+    return roomId;
+  }
+
+  // Посадить игрока за турнирный стол (TournamentManager). Минует банкролл — турнирные фишки
+  // не из банкролла (бай-ин уже списан один раз при регистрации). Если игрок сейчас онлайн —
+  // подключает его сокет к комнате и шлёт TOURNAMENT_TABLE_ASSIGNED для навигации клиента.
+  seatTournamentPlayer(roomId: string, userId: string, username: string, chips: number): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+    if (room.players.size >= room.maxPlayers || room.players.has(userId)) return false;
+
+    const sock = this.findUserSocket(userId);
+    const player = createPlayer({
+      id: userId,
+      socketId: sock?.id ?? '',
+      username,
+      chips,
+      position: room.players.size,
+      isFolded: false,
+      timebank: room.timebank.enabled ? room.timebank.startSec : 0,
+    });
+    try {
+      const users = readJSON('users.json') as Array<{ id: string; displayName?: string; avatarSeed?: string }>;
+      const u = users.find((x) => x.id === userId);
+      if (u?.displayName) player.displayName = u.displayName;
+      if (u?.avatarSeed) player.avatar = u.avatarSeed;
+    } catch {
+      // users.json недоступен — садимся без displayName/avatar, не блокируем посадку
+    }
+    room.players.set(userId, player);
+    if (sock) {
+      sock.join(roomId);
+      sock.emit(SOCKET_EVENTS.TOURNAMENT_TABLE_ASSIGNED, { tournamentId: room.tournamentId, roomId });
+    }
+    return true;
+  }
+
+  // Повысить уровень блайндов на турнирном столе (TournamentManager, по общему таймеру уровней).
+  setTableBlinds(roomId: string, smallBlind: number, bigBlind: number, ante: number): void {
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+    room.smallBlind = smallBlind;
+    room.bigBlind = bigBlind;
+    room.ante = ante;
+    this.broadcastGameState(roomId);
+  }
+
+  // Можно ли сейчас трогать стол (двигать игрока/закрывать) — только между раздачами,
+  // иначе перенос игрока мид-хэнд ломает порядок/банк/карты раздачи на исходном столе.
+  isTableSafeToRebalance(roomId: string): boolean {
+    const room = this.rooms.get(roomId);
+    return !!room && room.status === 'waiting';
+  }
+
+  // Перенести игрока между турнирными столами (балансировка/консолидация, TournamentManager).
+  // Не трогает банкролл — переносится тот же Player-объект со стеком как есть.
+  movePlayerToTable(fromRoomId: string, toRoomId: string, userId: string): boolean {
+    const fromRoom = this.rooms.get(fromRoomId);
+    const toRoom = this.rooms.get(toRoomId);
+    if (!fromRoom || !toRoom) return false;
+    if (fromRoom.status !== 'waiting') return false;
+    const player = fromRoom.players.get(userId);
+    if (!player) return false;
+    if (toRoom.players.size >= toRoom.maxPlayers) return false;
+
+    fromRoom.players.delete(userId);
+    player.position = toRoom.players.size;
+    toRoom.players.set(userId, player);
+
+    const sock = this.findUserSocket(userId);
+    if (sock) {
+      sock.leave(fromRoomId);
+      sock.join(toRoomId);
+      sock.emit(SOCKET_EVENTS.TOURNAMENT_TABLE_ASSIGNED, { tournamentId: toRoom.tournamentId, roomId: toRoomId });
+    }
+
+    this.broadcastGameState(fromRoomId);
+    this.broadcastGameState(toRoomId);
+    this.scheduleAutoStart(toRoomId);
+    return true;
+  }
+
+  // Закрыть турнирный стол после завершения турнира (без возврата фишек — выплаты по результатам
+  // считает и кредитует TournamentManager отдельно через tournamentBankroll).
+  closeTournamentTable(roomId: string): void {
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+    clearStartTimer(room);
+    clearTurnTimers(room);
+    clearShowdownTimer(room);
+    clearWaitlistTimer(room);
+    this.rooms.delete(roomId);
+    this.notifyLobbyChange();
+    this.saveRoomsSnapshot();
   }
 
   // Проверка возможности войти в комнату.
@@ -722,10 +961,15 @@ export class GameManager implements GameManagerForBots {
     }
   }
 
-  // Список комнат для лобби (без паролей).
+  // Список комнат для лобби (без паролей). Закреплённые админом столы — первыми (sort стабилен,
+  // порядок внутри групп не меняется).
   // ВАЖНО: НЕ отдаём isBotTable — игроки не должны видеть, какие столы автоматические.
   getRoomList(): RoomInfo[] {
-    return Array.from(this.rooms.values()).map(toRoomInfo);
+    // Турнирные столы не показываем в обычном кэш-лобби — это другая сущность (см. /api/tournaments).
+    return Array.from(this.rooms.values())
+      .filter(r => !r.tournamentId)
+      .sort((a, b) => Number(b.pinned) - Number(a.pinned))
+      .map(toRoomInfo);
   }
 
   // Бродкаст списка комнат подписчикам лобби
@@ -838,6 +1082,18 @@ export class GameManager implements GameManagerForBots {
   removePlayer(roomId: string, userId: string): void {
     const room = this.rooms.get(roomId);
     if (!room) return;
+
+    // Турнирный стол: добровольный выход — форфейт (как банкрот). Турнирные фишки НЕ банкролл —
+    // ничего не возвращаем; TournamentManager присвоит финишную позицию через onTournamentBust
+    // и продолжит/завершит турнир. Без этой ветки leaveRoom мог бы превратить турнирный стек
+    // в реальный банкролл (см. ветку ниже) — финансовая дыра.
+    if (room.tournamentId && room.players.has(userId)) {
+      const player = room.players.get(userId)!;
+      clearDisconnectTimer(player);
+      room.players.delete(userId);
+      this.onTournamentBust?.(roomId, userId);
+      return;
+    }
 
     const player = room.players.get(userId);
     if (player) {
@@ -1615,8 +1871,10 @@ export class GameManager implements GameManagerForBots {
     }
 
     // Длительность шоудауна: успеваем показать карточку победителя + клиентскую анимацию
-    // полёта фишек к центру (1.4s) + время на чтение крупных карт победителя.
-    setTimeout(() => this.cleanupHand(roomId), 5000);
+    // полёта фишек к центру (1.4s) + время на чтение крупных карт победителя. Таймер трекается
+    // в room.showdownTimer/showdownEndsAt (не голый setTimeout) — нужен watchdog'у зависших
+    // столов (tableWatchdog.ts), чтобы видеть дедлайн этой фазы тоже.
+    scheduleShowdownTimer(room, 5000, () => this.cleanupHand(roomId));
   }
 
   // Очистка состояния после раздачи
@@ -1631,6 +1889,7 @@ export class GameManager implements GameManagerForBots {
     console.log(`🧹 [hand-end] table="${room.name}" final: ${finalStacks}${room.pot > 0 ? ` (pot ${room.pot} сгорает)` : ''}\n`);
 
     clearTurnTimers(room);
+    clearShowdownTimer(room); // дедлайн шоудауна не должен «протухать» на следующую раздачу
     room.phase = 'waiting';
     room.status = 'waiting';
     room.pot = 0;
@@ -1728,6 +1987,16 @@ export class GameManager implements GameManagerForBots {
     const room = this.rooms.get(roomId);
     if (!room) return;
     const broke = Array.from(room.players.values()).filter(p => p.chips <= 0);
+    if (room.tournamentId) {
+      // Турнирные фишки — не банкролл: банкрот просто покидает стол (без возврата), финишную
+      // позицию/выплату считает TournamentManager через onTournamentBust.
+      broke.forEach(p => {
+        this.io.sockets.sockets.get(p.socketId)?.leave(roomId);
+        room.players.delete(p.id);
+        this.onTournamentBust?.(roomId, p.id);
+      });
+      return;
+    }
     broke.forEach(p => {
       if (this.isBot(p.id)) return;
       this.io.to(p.socketId).emit(SOCKET_EVENTS.JOIN_DENIED, { reason: 'no-chips' });
@@ -1875,10 +2144,19 @@ export class GameManager implements GameManagerForBots {
   }
 
   // Запланировать авто-закрытие стола по истечении длительности сессии.
+  // Если включено автопродление — вместо закрытия сдвигаем sessionEndsAt на ту же длительность
+  // и планируем заново (повторяется бесконечно, пока тоггл включён).
   private scheduleSessionClose(room: Room): void {
     if (!room.sessionEndsAt) return;
     const ms = Math.max(0, room.sessionEndsAt - Date.now());
     scheduleSessionTimer(room, ms, () => {
+      if (room.autoExtendSession && room.sessionDurationHours > 0) {
+        console.log(`⏰ [session-end] стол "${room.name}" автопродлён на ${room.sessionDurationHours} ч`);
+        room.sessionEndsAt = Date.now() + room.sessionDurationHours * 3600 * 1000;
+        this.saveRoomsSnapshot();
+        this.scheduleSessionClose(room);
+        return;
+      }
       console.log(`⏰ [session-end] стол "${room.name}" закрыт по длительности`);
       this.adminForceCloseRoom(room.id);
     });
@@ -1930,6 +2208,9 @@ export class GameManager implements GameManagerForBots {
   private broadcastGameState(roomId: string): void {
     const room = this.rooms.get(roomId);
     if (!room) return;
+    // Любое значимое изменение раздачи проходит через этот метод — отметка для watchdog'а
+    // зависших столов (tableWatchdog.ts): пока broadcastGameState вызывается, раздача жива.
+    room.lastProgressAt = Date.now();
     // Снимок активной раздачи — ДО проверки сокетов (рестарт-восстановление §9.2: сразу
     // после холодного старта в комнате 0 сокетов, но состояние всё равно должно персистнуться).
     this.persistActiveHands();
@@ -2021,7 +2302,14 @@ export class GameManager implements GameManagerForBots {
     const nextPf: PaidFeaturesSettings = partial.paidFeatures
       ? { rabbitHunt: { ...this.settings.paidFeatures.rabbitHunt, ...(partial.paidFeatures.rabbitHunt ?? {}) } }
       : this.settings.paidFeatures;
-    this.settings = { ...this.settings, ...partial, timebank: nextTb, botMode: nextBm, paidFeatures: nextPf };
+    const nextPm: PaymentsSettings = partial.payments
+      ? {
+          ...this.settings.payments,
+          ...partial.payments,
+          chains: { ...this.settings.payments.chains, ...(partial.payments.chains ?? {}) },
+        }
+      : this.settings.payments;
+    this.settings = { ...this.settings, ...partial, timebank: nextTb, botMode: nextBm, paidFeatures: nextPf, payments: nextPm };
     writeJSON('settings.json', this.settings);
     return { ...this.settings };
   }
@@ -2097,6 +2385,7 @@ export class GameManager implements GameManagerForBots {
     clearTurnTimers(room);
     clearStartTimer(room);
     clearSessionTimer(room);
+    clearShowdownTimer(room);
     const wasBotTable = room.isBotTable;
     this.rooms.delete(roomId);
     if (wasBotTable) this.botManager.onTableClosed(roomId);

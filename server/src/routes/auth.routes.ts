@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import jwt from 'jsonwebtoken';
 import {
   registerUser,
   loginUser,
@@ -7,9 +8,11 @@ import {
   createTelegramLinkCode,
   linkTelegramToAccount,
   setAvatarSeed,
+  updateUsername,
+  updateEmail,
 } from '../auth/auth.js';
 import { AVATAR_PRESETS } from '@poker-room/shared';
-import { TELEGRAM_BOT_TOKEN } from '../config.js';
+import { TELEGRAM_BOT_TOKEN, JWT_SECRET } from '../config.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { readJSON } from '../auth/storage.js';
 
@@ -153,24 +156,76 @@ export function createAuthRouter(): Router {
 
   router.get('/me', authMiddleware, (req, res) => {
     const jwtUser = (req as unknown as { user: { id: string; username: string; role: string } }).user;
-    // Догружаем актуальные chips/publicId/country/avatarSeed из users.json — клиенту нужен банкролл для BuyInModal
+    // Догружаем актуальные данные из users.json — клиенту нужен банкролл для BuyInModal,
+    // email/createdAt/telegramId — для страницы «Данные аккаунта» (профиль)
     let chips = 0;
     let publicId: string | undefined;
     let country: string | undefined;
     let avatarSeed: string | undefined;
+    let email: string | undefined;
+    let createdAt: string | undefined;
+    let telegramId: number | undefined;
     try {
-      const users = readJSON('users.json') as Array<{ id: string; chips: number; publicId?: string; country?: string; avatarSeed?: string }>;
+      const users = readJSON('users.json') as Array<{ id: string; chips: number; publicId?: string; country?: string; avatarSeed?: string; email?: string; createdAt?: string; telegramId?: number }>;
       const u = users.find(x => x.id === jwtUser.id);
       if (u) {
         chips = u.chips;
         publicId = u.publicId;
         country = u.country;
         avatarSeed = u.avatarSeed;
+        email = u.email;
+        createdAt = u.createdAt;
+        telegramId = u.telegramId;
       }
     } catch {
       // users.json временно недоступен (race с writeJSON-дебаунсом) — отдаём jwtUser без догрузки
     }
-    res.json({ user: { ...jwtUser, chips, publicId, country, avatarSeed } });
+    res.json({ user: { ...jwtUser, chips, publicId, country, avatarSeed, email, createdAt, telegramId } });
+  });
+
+  // Смена имени пользователя (профиль → «Данные аккаунта»). Перевыпускаем JWT — username
+  // зашит в токен и используется напрямую при socket-авторизации (имя за столом).
+  router.put('/username', authMiddleware, (req, res) => {
+    const userId = (req as unknown as { user: { id: string } }).user.id;
+    const { username } = req.body as { username?: string };
+    if (typeof username !== 'string') {
+      res.status(400).json({ error: 'username обязателен' });
+      return;
+    }
+    const result = updateUsername(userId, username);
+    if ('error' in result) {
+      const map = {
+        invalid: [400, 'Имя пользователя должно быть от 3 до 32 символов'],
+        taken: [409, 'Это имя пользователя уже занято'],
+      } as const;
+      const [status, error] = map[result.error];
+      res.status(status).json({ error });
+      return;
+    }
+    const { user } = result;
+    const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token, user: { id: user.id, username: user.username, role: user.role } });
+  });
+
+  // Смена email (профиль → «Данные аккаунта»).
+  router.put('/email', authMiddleware, (req, res) => {
+    const userId = (req as unknown as { user: { id: string } }).user.id;
+    const { email } = req.body as { email?: string };
+    if (typeof email !== 'string') {
+      res.status(400).json({ error: 'email обязателен' });
+      return;
+    }
+    const result = updateEmail(userId, email);
+    if ('error' in result) {
+      const map = {
+        invalid: [400, 'Некорректный email'],
+        taken: [409, 'Этот email уже используется'],
+      } as const;
+      const [status, error] = map[result.error];
+      res.status(status).json({ error });
+      return;
+    }
+    res.json({ email: result.user.email });
   });
 
   // Выбор аватара из фиксированного списка (профиль → карусель). Любой авторизованный.

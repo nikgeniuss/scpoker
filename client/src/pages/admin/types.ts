@@ -49,6 +49,15 @@ export const ROOM_PHASE_LABEL: Record<AdminRoom['phase'], string> = {
   showdown: 'Шоудаун',
 };
 
+// Запись журнала восстановлений зависших столов (эндпоинт GET /admin/frozen-tables).
+export interface FrozenTableRecordView {
+  t: number;
+  roomId: string;
+  name: string;
+  phase: string;
+  overdueMs: number;
+}
+
 export interface TimebankSettings {
   enabled: boolean;
   startSec: number;
@@ -76,6 +85,23 @@ export interface PaidFeaturesSettings {
   };
 }
 
+export type PaymentChain = 'tron' | 'ethereum' | 'bsc';
+
+export interface PaymentsChainSettings {
+  enabled: boolean;
+  minConfirmations: number;
+}
+
+export interface PaymentsSettings {
+  enabled: boolean;
+  exchangeRateCentsPerUsdt: number;
+  minDepositUsdt: number;
+  maxDepositUsdt: number;
+  minWithdrawalUsdt: number;
+  maxWithdrawalUsdt: number;
+  chains: Record<PaymentChain, PaymentsChainSettings>;
+}
+
 export interface GameSettings {
   turnDurationMs: number;
   autostartDelayMs: number;
@@ -83,7 +109,36 @@ export interface GameSettings {
   timebank: TimebankSettings;
   botMode: BotModeSettings;
   paidFeatures: PaidFeaturesSettings;
+  payments: PaymentsSettings;
 }
+
+export interface WithdrawalRequestView {
+  id: string;
+  userId: string;
+  username: string;
+  chain: PaymentChain;
+  amountChips: number;
+  amountUsdtRaw: string;
+  payoutAddress: string;
+  status: 'pending' | 'approved' | 'sending' | 'paid' | 'rejected' | 'failed';
+  createdAt: string;
+  resolvedAt?: string;
+  resolvedBy?: string;
+  txid?: string;
+  failReason?: string;
+}
+
+export interface HotWalletBalanceView {
+  address: string;
+  native: string;
+  usdt: string;
+}
+
+export const CHAIN_LABEL: Record<PaymentChain, string> = {
+  tron: 'Tron (TRC-20)',
+  ethereum: 'Ethereum (ERC-20)',
+  bsc: 'BSC (BEP-20)',
+};
 
 export interface BotMetaView {
   id: string;
@@ -114,3 +169,12 @@ export const TARGET_COLOR: Record<'zero' | 'plus' | 'minus', string> = {
   plus: 'bg-emerald-600',
   minus: 'bg-rose-600',
 };
+
+// Запись лога массовых выдач/возвратов фишек (эндпоинт GET /admin/chip-ops, §10.9).
+export interface ChipOpEntry {
+  ts: number;
+  by: string;
+  mode: 'add' | 'subtract';
+  amount: number;
+  usernames: string[];
+}

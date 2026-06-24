@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
 import { ChevronRight } from 'lucide-react';
 import { BadBeatLogo } from '../admin/BadBeatLogo';
@@ -9,6 +10,7 @@ import { formatMoney } from '../../config/chipFormat';
 // Баннер Bad Beat Jackpot в лобби — вход игрока на /bad-beat. Показывается только когда джекпот включён.
 // Пул читается публично (/api/badbeat). Сумма мягко пульсирует неоном.
 export const BadBeatBanner = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const enabled = useBadBeatStore((s) => s.enabled);
   const pool = useBadBeatStore((s) => s.pool);
@@ -30,7 +32,7 @@ export const BadBeatBanner = () => {
       <BadBeatLogo className="h-9 shrink-0" />
       <div className="flex flex-col items-start leading-tight min-w-0">
         <span className="text-[10px] uppercase tracking-wider text-fuchsia-300/80 font-bold">
-          Бэд-Бит Джекпот
+          {t('lobby.badBeatJackpot')}
         </span>
         <motion.span
           className="text-xl font-black tabular-nums text-white"
