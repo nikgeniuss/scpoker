@@ -1222,7 +1222,10 @@ export class GameManager implements GameManagerForBots {
       const player = room.players.get(userId);
       if (!player) return;
 
-      if (room.status === 'waiting') {
+      // Турнирный стол в waiting (ждём второго игрока, напр. неровный сплит MTT) — НЕ удалять.
+      // removePlayer на турнирном столе = форфейт (§0.2-A), а тут раздача даже не началась —
+      // игрок ничего не сделал, чтобы выбыть. Держим место сит-аутом, как в playing.
+      if (room.status === 'waiting' && !room.tournamentId) {
         this.removePlayer(roomId, userId);
         return;
       }

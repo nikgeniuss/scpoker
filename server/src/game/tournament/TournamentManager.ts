@@ -149,6 +149,10 @@ export class TournamentManager {
       t.info.entries.push({ userId, username, status: 'playing', tableId });
       t.info.prizePool += t.info.buyIn;
       this.persist();
+      // Неровный сплит при старте MTT может оставить стол с 1 игроком (status='waiting',
+      // startGame внутри startMtt молча вышел по players.size<2) — позднюю посадку нужно
+      // довести до реальной раздачи. No-op, если стол уже playing/полон.
+      this.gameManager.startGame(tableId);
       this.rebalanceTables(id);
       return t.info;
     }

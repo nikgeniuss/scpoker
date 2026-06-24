@@ -7,7 +7,7 @@ import type { GameManager } from '../GameManager.js';
 
 // movePlayerToTable/isTableSafeToRebalance (MTT-балансировка, ROADMAP §10.19) — мощность переноса
 // игрока между турнирными столами без участия банкролла, и гард «не трогать стол мид-хэнд».
-type StateView = { players: Array<{ id: string; position: number; chips: number }> };
+type StateView = { players: Array<{ id: string; position: number; chips: number; disconnected?: boolean }> };
 
 describe('GameManager — movePlayerToTable / isTableSafeToRebalance', () => {
   beforeEach(() => {
@@ -68,5 +68,22 @@ describe('GameManager — movePlayerToTable / isTableSafeToRebalance', () => {
     realGm.seatTournamentPlayer(tableB, 'B', 'Bob', 1000); // tableB уже полон (maxPlayers=1)
 
     expect(realGm.movePlayerToTable(tableA, tableB, 'A')).toBe(false);
+  });
+
+  it('дисконнект на турнирном столе в waiting — сит-аут, НЕ форфейт (живой прогон нашёл баг 2026-06-23)', async () => {
+    const { gm } = await createTestGameManager();
+    const realGm = gm as unknown as GameManager;
+
+    // Неровный сплит MTT: стол с 1 игроком, ждём второго (status остаётся 'waiting').
+    const tableA = realGm.createTournamentTable({ tournamentId: 't1', name: 'A', maxPlayers: 2, smallBlind: 10, bigBlind: 20, format: 'nlh' });
+    realGm.seatTournamentPlayer(tableA, 'A', 'Alice', 1000);
+
+    realGm.handleDisconnect('A');
+
+    // Игрок должен остаться за столом сит-аутом, а не быть удалён форфейтом.
+    const stateA = gm.getGameState(tableA) as unknown as StateView;
+    expect(stateA.players).toHaveLength(1);
+    expect(stateA.players[0].id).toBe('A');
+    expect(stateA.players[0].disconnected).toBe(true);
   });
 });

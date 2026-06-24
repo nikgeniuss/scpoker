@@ -139,6 +139,41 @@ describe('TournamentManager — MTT, мультистол', () => {
     expect(usersChips()).toMatchObject({ A: 5000, B: 5000 });
   });
 
+  it('поздняя регистрация в неровный сплит реально стартует раздачу (живой прогон нашёл баг 2026-06-23)', async () => {
+    const { gm } = await createTestGameManager();
+    const tm = new TournamentManager(gm as unknown as GameManager);
+    const created = tm.create(
+      {
+        name: 'Odd Split MTT', type: 'mtt', format: 'nlh', buyIn: 100, startingStack: 2000,
+        tableSize: 2, blindSpeed: 'hyper', levelUpMinutes: 10, lateRegMinutes: 10,
+      },
+      'admin1',
+    );
+    if ('error' in created) throw new Error(created.error);
+    const id = created.id;
+
+    // 3 регистранта → ceil(3/2)=2 стола, размеры [2,1] — один стол стартует с 1 игроком
+    // и остаётся status='waiting' (startGame внутри startMtt не дотягивает players.size<2).
+    ['A', 'B', 'C'].forEach((u) => {
+      const r = tm.register(id, u, u);
+      if ('error' in r) throw new Error(r.error);
+    });
+    const started = tm.forceStart(id);
+    if ('error' in started) throw new Error(started.error);
+
+    const lonelyTableId = started.tableIds.find(
+      (tid) => started.entries.filter((e) => e.tableId === tid).length === 1,
+    )!;
+    expect(gm.getGameState(lonelyTableId)).toMatchObject({ phase: 'waiting' });
+
+    // Поздняя регистрация D заполняет именно этот стол — раздача должна реально начаться.
+    const lateReg = tm.register(id, 'D', 'D');
+    if ('error' in lateReg) throw new Error(lateReg.error);
+    const dEntry = lateReg.entries.find((e) => e.userId === 'D')!;
+    expect(dEntry.tableId).toBe(lonelyTableId);
+    expect(gm.getGameState(lonelyTableId)).toMatchObject({ phase: 'preflop' });
+  });
+
   it('поздняя регистрация закрыта вне окна lateRegMinutes', async () => {
     const { gm } = await createTestGameManager();
     const tm = new TournamentManager(gm as unknown as GameManager);
