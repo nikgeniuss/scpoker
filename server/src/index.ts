@@ -29,6 +29,7 @@ import { TournamentManager } from './game/tournament/TournamentManager.js';
 import { setTournamentBankrollNotifier } from './game/tournament/tournamentBankroll.js';
 import { createTournamentsRouter } from './routes/tournaments.routes.js';
 import { createTournamentsAdminRouter } from './routes/tournamentsAdmin.routes.js';
+import { createRakebackRouter } from './routes/rakeback.routes.js';
 
 // CORS:
 // - В dev (ALLOWED_ORIGINS не задан) — origin: '*', credentials: false.
@@ -105,6 +106,7 @@ app.use('/api/payments', createPaymentsRouter(gameManager));
 app.use('/api/admin/payments', createPaymentsAdminRouter());
 app.use('/api/tournaments', createTournamentsRouter(tournamentManager));
 app.use('/api/admin/tournaments', createTournamentsAdminRouter(tournamentManager));
+app.use('/api/rakeback', createRakebackRouter());
 
 // Весь socket-слой (handshake JWT + single-session + обработчики событий).
 registerSocketHandlers(io, gameManager);

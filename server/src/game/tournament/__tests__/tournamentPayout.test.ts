@@ -66,3 +66,35 @@ describe('tournamentPayout — MTT-выплаты (ITM-кривая)', () => {
     expect(payout[1]).toBe(4801);
   });
 });
+
+describe('tournamentPayout — MTT-выплаты (фиксированное число мест, независимо от участников)', () => {
+  it('getMttPayoutTiers: fixedPlaces игнорирует itmPercent и держит ровно N мест', () => {
+    // 100 участников, ITM 10% дал бы 10 мест, но fixedPlaces=3 — строго 3 места.
+    const tiers = getMttPayoutTiers(100, 10, 3);
+    expect(tiers.map(t => t.place)).toEqual([1, 2, 3]);
+  });
+
+  it('getMttPayoutTiers: то же число мест при 30 и при 300 участниках (не зависит от участников)', () => {
+    const small = getMttPayoutTiers(30, 10, 9);
+    const big = getMttPayoutTiers(300, 10, 9);
+    expect(small.map(t => t.place)).toEqual(big.map(t => t.place));
+    expect(small.map(t => t.percent)).toEqual(big.map(t => t.percent));
+  });
+
+  it('getMttPayoutTiers: fixedPlaces > число участников — capped числом участников', () => {
+    const tiers = getMttPayoutTiers(5, 10, 9);
+    expect(tiers).toHaveLength(5);
+  });
+
+  it('getMttPayoutTiers: fixedPlaces=0 или не задан — fallback на ITM%-логику', () => {
+    expect(getMttPayoutTiers(18, 20, 0)).toEqual(getMttPayoutTiers(18, 20));
+    expect(getMttPayoutTiers(18, 20, undefined)).toEqual(getMttPayoutTiers(18, 20));
+  });
+
+  it('computeMttPayout: 3 фиксированных места, суммарно выплаченное == prizePool', () => {
+    const payout = computeMttPayout(10_000, 100, 10, 3);
+    expect(Object.keys(payout)).toHaveLength(3);
+    const total = Object.values(payout).reduce((a, b) => a + b, 0);
+    expect(total).toBe(10_000);
+  });
+});

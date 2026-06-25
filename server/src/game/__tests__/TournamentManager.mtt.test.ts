@@ -174,6 +174,49 @@ describe('TournamentManager — MTT, мультистол', () => {
     expect(gm.getGameState(lonelyTableId)).toMatchObject({ phase: 'preflop' });
   });
 
+  it('payoutMode=fixed: строго N призовых мест независимо от числа участников (ITM% игнорируется)', async () => {
+    const { gm } = await createTestGameManager();
+    const tm = new TournamentManager(gm as unknown as GameManager);
+
+    const created = tm.create(
+      {
+        name: 'Fixed Payout MTT', type: 'mtt', format: 'nlh', buyIn: 1000, startingStack: 1000,
+        tableSize: 2, blindSpeed: 'turbo', levelUpMinutes: 10,
+        payoutMode: 'fixed', fixedPayoutPlaces: 2, itmPercent: 10, // ITM 10% от 6 дал бы 1 место — fixed=2 должен победить
+      },
+      'admin1',
+    );
+    if ('error' in created) throw new Error(created.error);
+    const id = created.id;
+    expect(tm.get(id)!.payoutMode).toBe('fixed');
+    expect(tm.get(id)!.fixedPayoutPlaces).toBe(2);
+
+    ['A', 'B', 'C', 'D', 'E', 'F'].forEach((u) => {
+      const r = tm.register(id, u, u);
+      if ('error' in r) throw new Error(r.error);
+    });
+    const started = tm.forceStart(id);
+    if ('error' in started) throw new Error(started.error);
+
+    let guard = 0;
+    while (aliveEntries(tm, id).length > 1 && guard < 10) {
+      const victim = aliveEntries(tm, id)[0];
+      gm.removePlayer(victim.tableId!, victim.userId);
+      guard++;
+    }
+    expect(guard).toBeLessThan(10);
+
+    const finished = tm.get(id)!;
+    expect(finished.status).toBe('finished');
+
+    // Строго 2 призовых места (1-е и 2-е), несмотря на то что ITM 10% от 6 участников дал бы 1.
+    const paid = finished.entries.filter((e) => e.prize);
+    expect(paid).toHaveLength(2);
+    expect(paid.map((e) => e.finishPlace).sort()).toEqual([1, 2]);
+    const total = paid.reduce((a, e) => a + (e.prize ?? 0), 0);
+    expect(total).toBe(finished.prizePool);
+  });
+
   it('поздняя регистрация закрыта вне окна lateRegMinutes', async () => {
     const { gm } = await createTestGameManager();
     const tm = new TournamentManager(gm as unknown as GameManager);

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import ReactNiceAvatar from 'react-nice-avatar';
 import { AnimatePresence } from 'framer-motion';
-import { ChevronRight, History, Settings2, Inbox, Globe, HelpCircle, Wallet as WalletIcon } from 'lucide-react';
+import { ChevronRight, History, Settings2, Inbox, Globe, HelpCircle, Wallet as WalletIcon, Gem } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { countryFlag } from '../utils/country';
 import { formatMoney } from '../config/chipFormat';
@@ -31,6 +31,7 @@ export function Profile() {
 
   const MENU_ITEMS = [
     { icon: <WalletIcon size={20} />, label: t('profile.wallet'), sub: null, to: '/wallet' },
+    { icon: <Gem size={20} />, label: t('profile.rakeback'), sub: null, to: '/rakeback' },
     { icon: <History size={20} />, label: t('profile.pokerCraft'), sub: t('profile.pokerCraftSub'), to: '/pokercraft' },
     { icon: <Settings2 size={20} />, label: t('profile.gameSettings'), sub: null, to: null, onClick: () => setSettingsOpen(true) },
     { icon: <Inbox size={20} />, label: t('profile.inbox'), sub: null, to: '/inbox' },

@@ -26,6 +26,7 @@ import { DeckPreview } from './pages/DeckPreview';
 import { SeatingPreview } from './pages/SeatingPreview';
 import { RedesignPreview } from './pages/RedesignPreview';
 import { Tournaments } from './pages/Tournaments';
+import { RakebackInfo } from './pages/RakebackInfo';
 
 // Админка — отдельный lazy-чанк: код админ-панели (управление юзерами/комнатами/ботами/настройками)
 // НЕ попадает в основной бандл игрока. Загружается только когда админ заходит на /admin (за RequireAdmin).
@@ -58,6 +59,7 @@ function App() {
           <Route path="/pokercraft" element={<ErrorBoundary><RequireAuth><PokerCraft /></RequireAuth></ErrorBoundary>} />
           <Route path="/inbox" element={<ErrorBoundary><RequireAuth><Inbox /></RequireAuth></ErrorBoundary>} />
           <Route path="/leaderboard" element={<ErrorBoundary><RequireAuth><Leaderboard /></RequireAuth></ErrorBoundary>} />
+          <Route path="/rakeback" element={<ErrorBoundary><RequireAuth><RakebackInfo /></RequireAuth></ErrorBoundary>} />
           <Route path="/deck-preview" element={<ErrorBoundary><DeckPreview /></ErrorBoundary>} />
           <Route path="/seating-preview" element={<ErrorBoundary><SeatingPreview /></ErrorBoundary>} />
           <Route path="/redesign-preview" element={<ErrorBoundary><RedesignPreview /></ErrorBoundary>} />

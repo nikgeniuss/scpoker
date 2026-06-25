@@ -35,6 +35,7 @@ export const ru = {
     language: 'Язык',
     help: 'Помощь',
     wallet: 'Кошелёк',
+    rakeback: 'Рейкбэк',
   },
   accountData: {
     title: 'Данные аккаунта',

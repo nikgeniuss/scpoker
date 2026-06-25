@@ -34,23 +34,34 @@ export function computeSngPayout(prizePool: number, tableSize: number): Record<n
   return result;
 }
 
-// MTT: число призовых мест по преднастройке ITM% от общего числа участников (минимум 1).
-function paidPlacesCount(totalEntries: number, itmPercent: MttItmPercent): number {
+// MTT: число призовых мест. fixedPlaces (если задан и >0) — строго это число мест, независимо
+// от числа участников (capped числом участников — нельзя заплатить больше, чем людей в турнире).
+// Иначе — преднастройка ITM% от общего числа участников. Минимум 1 место в любом случае.
+function paidPlacesCount(totalEntries: number, itmPercent: MttItmPercent, fixedPlaces?: number): number {
+  if (fixedPlaces && fixedPlaces > 0) {
+    return Math.max(1, Math.min(fixedPlaces, totalEntries));
+  }
   return Math.max(1, Math.round((totalEntries * itmPercent) / 100));
 }
 
 // MTT: убывающая ITM-кривая (гармонический ряд 1, 1/2, 1/3, ... нормированный к 100%) —
 // 1-е место получает заметно больше последнего призового места, без скачков. Чистая функция.
-export function getMttPayoutTiers(totalEntries: number, itmPercent: MttItmPercent): PayoutTier[] {
-  const paidPlaces = paidPlacesCount(totalEntries, itmPercent);
+// fixedPlaces — см. paidPlacesCount (строгое число мест вместо доли от участников).
+export function getMttPayoutTiers(totalEntries: number, itmPercent: MttItmPercent, fixedPlaces?: number): PayoutTier[] {
+  const paidPlaces = paidPlacesCount(totalEntries, itmPercent, fixedPlaces);
   const weights = Array.from({ length: paidPlaces }, (_, i) => 1 / (i + 1));
   const weightSum = weights.reduce((a, b) => a + b, 0);
   return weights.map((w, i) => ({ place: i + 1, percent: (w / weightSum) * 100 }));
 }
 
 // MTT: призовые фишки по местам. Округление вниз, остаток уходит победителю — без потери фишек.
-export function computeMttPayout(prizePool: number, totalEntries: number, itmPercent: MttItmPercent): Record<number, number> {
-  const tiers = getMttPayoutTiers(totalEntries, itmPercent);
+export function computeMttPayout(
+  prizePool: number,
+  totalEntries: number,
+  itmPercent: MttItmPercent,
+  fixedPlaces?: number,
+): Record<number, number> {
+  const tiers = getMttPayoutTiers(totalEntries, itmPercent, fixedPlaces);
   const result: Record<number, number> = {};
   let distributed = 0;
   tiers.forEach(t => {

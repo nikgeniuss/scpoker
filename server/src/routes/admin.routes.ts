@@ -8,6 +8,7 @@ import { validateSettingsPatch } from './settingsValidation.js';
 import { aggregateUserStats, aggregateAllUsers, overviewStats, tableStats, formatStats } from '../game/statsService.js';
 import { getHandsForUser } from '../game/handHistory.js';
 import { getBadBeatState, updateBadBeat, topUpBadBeat, sumBadBeatHits } from '../game/badBeatService.js';
+import { getRakebackState, updateRakebackSettings } from '../game/rakebackService.js';
 import { countTablesOpened, roomNameMap, readRoomEvents } from '../game/roomEvents.js';
 import { readFrozenTableEvents } from '../game/frozenTableLog.js';
 import { recordChipOp, getChipOpsLog } from '../game/chipOpsLog.js';
@@ -341,6 +342,15 @@ export function createAdminRouter(gameManager: GameManager): Router {
     }
     const by = String((req as unknown as { user?: { username?: string } }).user?.username ?? 'admin');
     res.json(topUpBadBeat(amount, by));
+  });
+
+  // ===== Рейкбэк (VIP-кэшбэк по уровням lifetime-рейка) =====
+  router.get('/rakeback', (req, res) => {
+    res.json(getRakebackState());
+  });
+
+  router.put('/rakeback', (req, res) => {
+    res.json(updateRakebackSettings(req.body as Record<string, unknown>));
   });
 
   router.put('/settings', (req, res) => {

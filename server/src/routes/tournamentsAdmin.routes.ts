@@ -36,6 +36,8 @@ export function createTournamentsAdminRouter(tournamentManager: TournamentManage
       levelUpMinutes: body.levelUpMinutes,
       lateRegMinutes: typeof body.lateRegMinutes === 'number' ? body.lateRegMinutes : undefined,
       itmPercent: typeof body.itmPercent === 'number' ? body.itmPercent as CreateTournamentOptions['itmPercent'] : undefined,
+      payoutMode: body.payoutMode === 'fixed' ? 'fixed' : body.payoutMode === 'itm' ? 'itm' : undefined,
+      fixedPayoutPlaces: typeof body.fixedPayoutPlaces === 'number' ? body.fixedPayoutPlaces : undefined,
     };
     const result = tournamentManager.create(opts, admin.id);
     if ('error' in result) {

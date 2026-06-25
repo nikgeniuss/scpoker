@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { X, Trophy } from 'lucide-react';
 import { Stepper, Segmented, SettingRow } from './createControls';
 import { parseMoney, formatMoney } from '../../config/chipFormat';
-import type { CreateTournamentOptions, BlindSpeed, GameFormat, TournamentType, MttItmPercent } from '@poker-room/shared';
+import type { CreateTournamentOptions, BlindSpeed, GameFormat, TournamentType, MttItmPercent, MttPayoutMode } from '@poker-room/shared';
 
 const SPEED_OPTIONS: Array<{ value: BlindSpeed; label: string }> = [
   { value: 'slow', label: 'Медленно' },
@@ -29,6 +29,11 @@ const ITM_OPTIONS: Array<{ value: MttItmPercent; label: string }> = [
   { value: 20, label: '20%' },
 ];
 
+const PAYOUT_MODE_OPTIONS: Array<{ value: MttPayoutMode; label: string }> = [
+  { value: 'itm', label: 'ITM %' },
+  { value: 'fixed', label: 'Фикс. мест' },
+];
+
 interface CreateTournamentModalProps {
   onClose: () => void;
   onSubmit: (opts: CreateTournamentOptions) => void;
@@ -46,13 +51,21 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
   const [levelUpMinutes, setLevelUpMinutes] = useState(12);
   const [lateRegMinutes, setLateRegMinutes] = useState(10);
   const [itmPercent, setItmPercent] = useState<MttItmPercent>(15);
+  const [payoutMode, setPayoutMode] = useState<MttPayoutMode>('itm');
+  const [fixedPayoutPlaces, setFixedPayoutPlaces] = useState(9);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
     onSubmit({
       name: name.trim(), type, format, buyIn, startingStack, tableSize, blindSpeed, levelUpMinutes,
-      ...(type === 'mtt' ? { lateRegMinutes, itmPercent } : {}),
+      ...(type === 'mtt'
+        ? {
+            lateRegMinutes,
+            payoutMode,
+            ...(payoutMode === 'fixed' ? { fixedPayoutPlaces } : { itmPercent }),
+          }
+        : {}),
     });
   };
 
@@ -143,9 +156,23 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
                 />
               </SettingRow>
 
-              <SettingRow label="ITM%">
-                <Segmented options={ITM_OPTIONS} value={itmPercent} onChange={setItmPercent} />
+              <SettingRow label="Призовые места">
+                <Segmented options={PAYOUT_MODE_OPTIONS} value={payoutMode} onChange={setPayoutMode} />
               </SettingRow>
+
+              {payoutMode === 'itm' ? (
+                <SettingRow label="ITM%">
+                  <Segmented options={ITM_OPTIONS} value={itmPercent} onChange={setItmPercent} />
+                </SettingRow>
+              ) : (
+                <SettingRow label="Призовых мест">
+                  <Stepper
+                    display={fixedPayoutPlaces}
+                    onDec={() => setFixedPayoutPlaces((v) => Math.max(1, v - 1))}
+                    onInc={() => setFixedPayoutPlaces((v) => Math.min(1000, v + 1))}
+                  />
+                </SettingRow>
+              )}
             </>
           )}
 

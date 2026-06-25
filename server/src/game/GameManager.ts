@@ -25,6 +25,7 @@ import type { RoomEventRecord } from './roomEvents.js';
 import { getHudStats, type HandHistoryRecord, type HandAction } from './handHistory.js';
 import { computeRake, normalizeRake, type RakeConfig } from './rake.js';
 import { getBadBeatState, addToPool, payoutFromPool } from './badBeatService.js';
+import { applyRakeback } from './rakebackService.js';
 import { selectTier } from './badBeatDrop.js';
 import { detectBadBeat, computeBadBeatPayout } from './badBeatDetect.js';
 import { resolveShowdown } from './showdownService.js';
@@ -1938,31 +1939,37 @@ export class GameManager implements GameManagerForBots {
       }
     });
 
-    // Люди: фиксируем результат раздачи (Рук/PnL) для админ-статистики (ROADMAP §10.10).
-    // Запись через инжектированный колбэк (тесты его не выставляют). Рейк=0 — комиссии нет.
-    if (this.statsRecorder) {
-      const now = Date.now();
-      const rakeTotal = room.lastHandRake ?? 0;
-      // Рейк атрибутируем игрокам пропорционально вкладу в банк (totalCommitted ещё не сброшен).
-      let totalCommit = 0;
-      room.players.forEach((p) => { totalCommit += p.totalCommitted; });
-      room.players.forEach((p) => {
-        if (!this.isBot(p.id) && p.handStartChips !== undefined) {
-          const playerRake =
-            rakeTotal > 0 && totalCommit > 0
-              ? Math.round((rakeTotal * p.totalCommitted) / totalCommit)
-              : 0;
-          this.statsRecorder!({
-            t: now,
-            roomId: room.id,
-            userId: p.id,
-            delta: p.chips - p.handStartChips,
-            rake: playerRake,
-            format: room.format,
-          });
-        }
+    // Люди: фиксируем результат раздачи (Рук/PnL) для админ-статистики (ROADMAP §10.10) +
+    // рейкбэк (VIP-кэшбэк % от уплаченного рейка, ROADMAP «Рейкбэк»). statsRecorder — инжектированный
+    // колбэк (тесты его не выставляют), рейкбэк работает независимо от него (своя enabled-настройка).
+    const now = Date.now();
+    const rakeTotal = room.lastHandRake ?? 0;
+    // Рейк атрибутируем игрокам пропорционально вкладу в банк (totalCommitted ещё не сброшен).
+    let totalCommit = 0;
+    room.players.forEach((p) => { totalCommit += p.totalCommitted; });
+    room.players.forEach((p) => {
+      if (this.isBot(p.id) || p.handStartChips === undefined) return;
+      const playerRake =
+        rakeTotal > 0 && totalCommit > 0
+          ? Math.round((rakeTotal * p.totalCommitted) / totalCommit)
+          : 0;
+      this.statsRecorder?.({
+        t: now,
+        roomId: room.id,
+        userId: p.id,
+        delta: p.chips - p.handStartChips,
+        rake: playerRake,
+        format: room.format,
       });
-    }
+      if (playerRake > 0) {
+        // Тихое начисление — без уведомления (на раскачанном столе рейк капает почти на каждой
+        // раздаче, инбокс был бы залит спамом). Игрок смотрит накопленное на странице /rakeback.
+        const rb = applyRakeback(p.id, room.id, playerRake);
+        if (rb && rb.payout > 0) {
+          p.chips += rb.payout;
+        }
+      }
+    });
 
     // Авто-докупка стека — ДО autoLeaveBrokePlayers: долитый из банкролла игрок остаётся
     // за столом, а не вылетает как банкрот.

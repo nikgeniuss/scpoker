@@ -335,6 +335,10 @@ export type TournamentEntryStatus = 'registered' | 'playing' | 'eliminated';
 // Преднастройка ITM% для MTT (доля призовых мест от общего числа участников) — выбор админа при создании.
 export type MttItmPercent = 10 | 12 | 15 | 20;
 
+// Режим определения числа призовых мест в MTT: 'itm' — доля от числа участников (itmPercent),
+// 'fixed' — строго фиксированное число мест (fixedPayoutPlaces), независимо от числа участников.
+export type MttPayoutMode = 'itm' | 'fixed';
+
 export interface TournamentEntry {
   userId: string;
   username: string;
@@ -359,7 +363,9 @@ export interface TournamentInfo {
   entries: TournamentEntry[];
   tableIds: string[];      // id игровых столов после старта (SNG — всегда 1 элемент, MTT — несколько)
   lateRegMinutes: number; // MTT: окно поздней регистрации после старта, минут (0 = нет позднего рега)
-  itmPercent: MttItmPercent; // MTT: доля призовых мест от числа участников
+  itmPercent: MttItmPercent; // MTT: доля призовых мест от числа участников (используется при payoutMode==='itm')
+  payoutMode: MttPayoutMode; // MTT: 'itm' (по умолчанию) или 'fixed' (строго fixedPayoutPlaces мест)
+  fixedPayoutPlaces?: number; // MTT: число призовых мест при payoutMode==='fixed' (capped числом участников)
   createdBy: string;
   createdAt: number;
   startedAt?: number;
@@ -376,7 +382,9 @@ export interface CreateTournamentOptions {
   blindSpeed: BlindSpeed;
   levelUpMinutes: number; // 1..60
   lateRegMinutes?: number;  // MTT, по умолчанию 0
-  itmPercent?: MttItmPercent; // MTT, по умолчанию 15
+  itmPercent?: MttItmPercent; // MTT, по умолчанию 15 (используется при payoutMode==='itm', тоже по умолчанию)
+  payoutMode?: MttPayoutMode; // MTT, по умолчанию 'itm'
+  fixedPayoutPlaces?: number; // MTT, при payoutMode==='fixed' — целое 1..1000
 }
 
 export type JoinDeniedReason =

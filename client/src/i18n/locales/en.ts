@@ -37,6 +37,7 @@ export const en: typeof ru = {
     language: 'Language',
     help: 'Help',
     wallet: 'Wallet',
+    rakeback: 'Rakeback',
   },
   accountData: {
     title: 'Account data',

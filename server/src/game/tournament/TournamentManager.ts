@@ -1,6 +1,6 @@
 import { nanoid } from 'nanoid';
 import type {
-  TournamentInfo, TournamentEntry, CreateTournamentOptions, BlindLevel, MttItmPercent,
+  TournamentInfo, TournamentEntry, CreateTournamentOptions, BlindLevel, MttItmPercent, MttPayoutMode,
 } from '@poker-room/shared';
 import type { GameManager } from '../GameManager.js';
 import type { Card } from '../types.js';
@@ -58,6 +58,17 @@ export class TournamentManager {
     const itmPercent = opts.type === 'mtt' ? (opts.itmPercent ?? 15) : 100 as MttItmPercent;
     if (opts.type === 'mtt' && !VALID_ITM.includes(itmPercent)) return { error: 'invalid-itm-percent' };
 
+    const payoutMode: MttPayoutMode = opts.type === 'mtt' ? (opts.payoutMode ?? 'itm') : 'itm';
+    if (payoutMode !== 'itm' && payoutMode !== 'fixed') return { error: 'invalid-payout-mode' };
+    let fixedPayoutPlaces: number | undefined;
+    if (opts.type === 'mtt' && payoutMode === 'fixed') {
+      const places = opts.fixedPayoutPlaces;
+      if (typeof places !== 'number' || !Number.isInteger(places) || places < 1 || places > 1000) {
+        return { error: 'invalid-fixed-payout-places' };
+      }
+      fixedPayoutPlaces = places;
+    }
+
     const id = nanoid(10);
     const info: TournamentInfo = {
       id,
@@ -75,6 +86,8 @@ export class TournamentManager {
       tableIds: [],
       lateRegMinutes,
       itmPercent,
+      payoutMode,
+      fixedPayoutPlaces,
       createdBy,
       createdAt: Date.now(),
     };
@@ -369,7 +382,12 @@ export class TournamentManager {
     }
 
     const payout = t.info.type === 'mtt'
-      ? computeMttPayout(t.info.prizePool, t.info.entries.length, t.info.itmPercent)
+      ? computeMttPayout(
+          t.info.prizePool,
+          t.info.entries.length,
+          t.info.itmPercent,
+          t.info.payoutMode === 'fixed' ? t.info.fixedPayoutPlaces : undefined,
+        )
       : computeSngPayout(t.info.prizePool, t.info.tableSize);
     t.info.entries.forEach(e => {
       const prize = e.finishPlace ? payout[e.finishPlace] : undefined;
