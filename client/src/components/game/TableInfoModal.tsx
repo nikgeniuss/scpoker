@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 import { X, Coins, Clock, Users, Lock, Info, Hash } from 'lucide-react';
 import { API_URL } from '../../config/api';
 import { formatChips, formatMoney } from '../../config/chipFormat';
 import type { ChipDisplay } from '../../config/chipFormat';
 // RoomMeta — это публичный RoomInfo из общего контракта shared (модалка читает подмножество полей).
 import type { RoomInfo as RoomMeta } from '@poker-room/shared';
+import type { TFunction } from 'i18next';
 
 interface WinnerEntry {
   t: number;
@@ -13,12 +15,12 @@ interface WinnerEntry {
   handName?: string;
 }
 
-function timeAgo(t: number): string {
-  const diff = (Date.now() - t) / 1000;
-  if (diff < 60) return 'только что';
-  if (diff < 3600) return Math.floor(diff / 60) + ' мин назад';
-  if (diff < 86400) return Math.floor(diff / 3600) + ' ч назад';
-  return new Date(t).toLocaleDateString('ru-RU');
+function timeAgo(ts: number, t: TFunction, lang: string): string {
+  const diff = (Date.now() - ts) / 1000;
+  if (diff < 60) return t('tableInfoModal.timeJustNow');
+  if (diff < 3600) return t('tableInfoModal.timeMinAgo', { count: Math.floor(diff / 60) });
+  if (diff < 86400) return t('tableInfoModal.timeHourAgo', { count: Math.floor(diff / 3600) });
+  return new Date(ts).toLocaleDateString(lang === 'en' ? 'en-US' : 'ru-RU');
 }
 
 interface Props {
@@ -38,6 +40,7 @@ export const TableInfoModal = ({
   displayMode,
   onClose,
 }: Props) => {
+  const { t, i18n } = useTranslation();
   const [room, setRoom] = useState<RoomMeta | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [winners, setWinners] = useState<WinnerEntry[]>([]);
@@ -78,7 +81,7 @@ export const TableInfoModal = ({
             <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
               <h2 className="text-white font-bold text-base flex items-center gap-2">
                 <Info size={16} className="text-emerald-400" />
-                Информация о столе
+                {t('tableInfoModal.title')}
               </h2>
               <button
                 onClick={onClose}
@@ -90,51 +93,51 @@ export const TableInfoModal = ({
 
             <div className="p-4 space-y-4 max-h-[70vh] overflow-y-auto">
               {!room && !loadError && (
-                <div className="text-sm text-gray-400 py-6 text-center">Загрузка…</div>
+                <div className="text-sm text-gray-400 py-6 text-center">{t('tableInfoModal.loading')}</div>
               )}
               {loadError && (
                 <div className="text-sm text-red-400 py-4 text-center">
-                  Не удалось загрузить информацию.
+                  {t('tableInfoModal.loadError')}
                 </div>
               )}
 
               {room && (
                 <>
-                  <Section title="Основное">
-                    <Row label="Название" value={room.name} />
+                  <Section title={t('tableInfoModal.sectionMain')}>
+                    <Row label={t('tableInfoModal.name')} value={room.name} />
                     {room.description && (
-                      <Row label="Описание" value={room.description} multiline />
+                      <Row label={t('tableInfoModal.description')} value={room.description} multiline />
                     )}
-                    <Row label="Вид игры" value={room.format === 'shortdeck' ? 'Шорт-дэк (Short Deck)' : "No Limit Hold'em"} />
+                    <Row label={t('tableInfoModal.gameType')} value={room.format === 'shortdeck' ? t('tableInfoModal.shortDeck') : t('tableInfoModal.holdem')} />
                     <Row
-                      label="Блайнды"
+                      label={t('tableInfoModal.blinds')}
                       value={formatMoney(room.smallBlind) + ' / ' + formatMoney(room.bigBlind)}
                     />
                     <Row
-                      label="Создатель"
+                      label={t('tableInfoModal.createdBy')}
                       value={room.createdBy}
                     />
                     <Row
-                      label="Игроков"
-                      value={room.currentPlayers + ' из ' + room.maxPlayers}
+                      label={t('tableInfoModal.players')}
+                      value={t('tableInfoModal.playersOf', { current: room.currentPlayers, max: room.maxPlayers })}
                       icon={<Users size={12} />}
                     />
                     <Row
-                      label="Статус"
-                      value={room.status === 'playing' ? 'Раздача идёт' : 'Ожидание'}
+                      label={t('tableInfoModal.status')}
+                      value={room.status === 'playing' ? t('tableInfoModal.statusPlaying') : t('tableInfoModal.statusWaiting')}
                     />
                     {room.hasPassword && (
                       <Row
-                        label="Доступ"
-                        value="приватный (с паролем)"
+                        label={t('tableInfoModal.access')}
+                        value={t('tableInfoModal.accessPrivate')}
                         icon={<Lock size={12} className="text-yellow-400" />}
                       />
                     )}
                   </Section>
 
-                  <Section title="Параметры">
+                  <Section title={t('tableInfoModal.sectionParams')}>
                     <Row
-                      label="Бай-ин"
+                      label={t('tableInfoModal.buyIn')}
                       value={
                         room.buyInMinBb + '-' + room.buyInMaxBb + ' BB (' +
                         formatMoney(room.bigBlind * room.buyInMinBb) + '-' +
@@ -143,42 +146,42 @@ export const TableInfoModal = ({
                       icon={<Coins size={12} className="text-emerald-400" />}
                     />
                     <Row
-                      label="Время на ход"
-                      value={room.turnDurationSec + ' сек'}
+                      label={t('tableInfoModal.turnTime')}
+                      value={t('tableInfoModal.turnTimeSec', { sec: room.turnDurationSec })}
                       icon={<Clock size={12} className="text-emerald-400" />}
                     />
                     <Row
-                      label="Рейк"
+                      label={t('tableInfoModal.rake')}
                       value={
                         room.rake.percent > 0
-                          ? room.rake.percent + '% (cap ' + room.rake.capBb + ' BB)'
-                          : 'без рейка'
+                          ? t('tableInfoModal.rakeWithCap', { percent: room.rake.percent, cap: room.rake.capBb })
+                          : t('tableInfoModal.noRake')
                       }
                       icon={<Coins size={12} className="text-emerald-400" />}
                     />
                     <Row
-                      label="ID стола"
+                      label={t('tableInfoModal.tableId')}
                       value={room.id}
                       icon={<Hash size={12} className="text-white/40" />}
                       mono
                     />
                   </Section>
 
-                  <Section title="Моё на столе">
+                  <Section title={t('tableInfoModal.sectionMine')}>
                     <Row
-                      label="Текущий стек"
+                      label={t('tableInfoModal.myStack')}
                       value={formatChips(myChips, room.bigBlind, displayMode)}
                     />
                     {myCurrentBet > 0 && (
                       <Row
-                        label="В банке от меня"
+                        label={t('tableInfoModal.myBet')}
                         value={formatChips(myCurrentBet, room.bigBlind, displayMode)}
                       />
                     )}
                   </Section>
 
                   {winners.length > 0 && (
-                    <Section title="История победителей">
+                    <Section title={t('tableInfoModal.sectionWinners')}>
                       <div className="space-y-2">
                         {winners.map((w, i) => (
                           <div key={i} className="flex items-start justify-between gap-3 text-sm">
@@ -187,7 +190,7 @@ export const TableInfoModal = ({
                                 {w.winners.map((p) => p.username).join(', ')}
                               </div>
                               <div className="text-white/40 text-[11px]">
-                                {w.handName ?? 'без вскрытия'} · {timeAgo(w.t)}
+                                {w.handName ?? t('tableInfoModal.noShowdown')} · {timeAgo(w.t, t, i18n.language)}
                               </div>
                             </div>
                             <span className="text-emerald-400 font-bold shrink-0 tabular-nums">
@@ -207,7 +210,7 @@ export const TableInfoModal = ({
                 onClick={onClose}
                 className="flex-1 min-h-[44px] px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 text-sm font-bold"
               >
-                Закрыть
+                {t('tableInfoModal.close')}
               </button>
             </div>
           </motion.div>

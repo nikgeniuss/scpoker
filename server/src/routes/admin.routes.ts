@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { GameManager } from '../game/GameManager.js';
 import type { User } from '../auth/auth.js';
+import { adminDisableTwoFactor } from '../auth/auth.js';
 import { adminMiddleware } from '../middleware/auth.js';
 import { readJSON, writeJSON } from '../auth/storage.js';
 import { updateManualMapping } from '../decks/decks.js';
@@ -63,11 +64,12 @@ export function createAdminRouter(gameManager: GameManager): Router {
     const users = readJSON('users.json') as Array<{
       id: string; username: string; email: string; role: string;
       chips: number; createdAt: string; banned?: boolean; passwordHash: string; roomTemplates?: unknown;
+      twoFactorSecret?: string; twoFactorPendingSecret?: string; twoFactorBackupCodeHashes?: string[];
     }>;
     const stats = aggregateAllUsers();
     res.json(
-      // passwordHash и roomTemplates не отдаём в список (rest-siblings, omit)
-      users.map(({ passwordHash: _passwordHash, roomTemplates: _roomTemplates, ...rest }) => {
+      // passwordHash/roomTemplates/2FA-секреты не отдаём в список (rest-siblings, omit)
+      users.map(({ passwordHash: _passwordHash, roomTemplates: _roomTemplates, twoFactorSecret: _t2fs, twoFactorPendingSecret: _t2fp, twoFactorBackupCodeHashes: _t2fb, ...rest }) => {
         const s = stats[rest.id];
         return { ...rest, banned: !!rest.banned, pnl: s?.pnl ?? 0, hands: s?.hands ?? 0 };
       })
@@ -209,8 +211,21 @@ export function createAdminRouter(gameManager: GameManager): Router {
       const text = banned ? 'Ваш аккаунт заблокирован' : 'Ваш аккаунт разблокирован';
       gameManager.sendInboxNotification(targetId, banned ? 'ban' : 'unban', text);
     }
-    const { passwordHash: _passwordHash, ...rest } = users[idx];
+    const { passwordHash: _passwordHash, twoFactorSecret: _t2fs, twoFactorPendingSecret: _t2fp, twoFactorBackupCodeHashes: _t2fb, ...rest } = users[idx];
     res.json({ ...rest, banned: !!rest.banned });
+  });
+
+  // Принудительное отключение 2FA у игрока — единственный путь восстановления при утере
+  // устройства и backup-кодов. Без кода (доверие к админу), не требует подтверждения игрока.
+  router.post('/users/:id/2fa/disable', (req, res) => {
+    const result = adminDisableTwoFactor(String(req.params.id));
+    if ('error' in result) {
+      const status = result.error === 'not-found' ? 404 : 400;
+      const error = result.error === 'not-found' ? 'Юзер не найден' : '2FA не включена у этого юзера';
+      res.status(status).json({ error });
+      return;
+    }
+    res.json({ success: true });
   });
 
   // Массовая выдача / возврат фишек списку юзеров

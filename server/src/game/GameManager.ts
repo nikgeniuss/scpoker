@@ -1,7 +1,7 @@
 ﻿import { Server, Socket } from 'socket.io';
 import bcrypt from 'bcrypt';
 import { nanoid } from 'nanoid';
-import { createDeck, shuffleDeck, dealCards, getFutureBoardCards } from './deck.js';
+import { createDeck, shuffleDeck, dealCards, dealCommunityCards, getFutureBoardCards } from './deck.js';
 import { evaluateHand, formatHandName } from './hands.js';
 import { readJSON, writeJSON } from '../auth/storage.js';
 import { BotManager, type GameManagerForBots, type BotInfo, type BotModeSettings } from './BotManager.js';
@@ -17,7 +17,7 @@ import type { Card, GamePhase, RoomStatus, GameFormat } from './types.js';
 import { isBot as isBotId } from './botIdentity.js';
 import { serializeGameState } from './gameStateSerializer.js';
 import { handHintName } from './handHint.js';
-import { winProbabilityVsRandom } from './equity.js';
+import { winProbabilityVsRandom, computeRealEquity } from './equity.js';
 import { computeRabbitHuntEligibility, canPayRabbitHunt } from './rabbitHuntService.js';
 import { readClubs } from './clubsStorage.js';
 import type { HandStatRecord } from './statsService.js';
@@ -28,12 +28,19 @@ import { getBadBeatState, addToPool, payoutFromPool } from './badBeatService.js'
 import { applyRakeback } from './rakebackService.js';
 import { selectTier } from './badBeatDrop.js';
 import { detectBadBeat, computeBadBeatPayout } from './badBeatDetect.js';
-import { resolveShowdown } from './showdownService.js';
+import { resolveShowdown, type ShowdownResult } from './showdownService.js';
+import { resolveMultiRunShowdown } from './multiRunService.js';
+import { hasNetworkCollision } from './antiCollusion.js';
 import { sendNotification, type InboxNotification } from './inboxService.js';
 import { serializeActiveHand, applyActiveHandSnapshot } from './activeHandPersistence.js';
 import { getFreezeInfo } from './tableWatchdog.js';
+import { forceDisconnectOtherSessions, disconnectSocketsBySid } from '../socket/sessionManager.js';
+import { SessionTimeWatchdog } from './sessionTimeWatchdog.js';
+import { getResponsibleGamblingState, markResponsibleGamblingWarned } from '../auth/auth.js';
+import { aggregateUserStats } from './statsService.js';
+import { periodRange, isLimitCrossed } from './responsibleGamblingService.js';
 import type { FrozenTableRecord } from './frozenTableLog.js';
-import type { GameState as SharedGameState, RoomInfo, TimebankConfig, TimebankSettings, PaymentsSettings } from '@poker-room/shared';
+import type { GameState as SharedGameState, RoomInfo, TimebankConfig, TimebankSettings, PaymentsSettings, ResponsibleGamblingSettings } from '@poker-room/shared';
 export type { RoomInfo, TimebankConfig, TimebankSettings };
 import {
   clearTurnTimers, scheduleTurnPhase1, scheduleTurnPhase2, scheduleSitOutTimer,
@@ -83,6 +90,9 @@ export interface Player {
   revealedCards?: number[];
   // HUD-lite: кэш VPIP/PFR по истории раздач (вычисляется при посадке).
   hudStats?: { vpip: number; pfr: number; hands: number };
+  // Anti-collusion (доделка §10.6): IP/device-id на момент посадки — для запрета второго
+  // места за тем же столом с того же IP/устройства (room.antiCollusionEnabled).
+  networkInfo?: { ip: string; deviceId: string };
 }
 
 // PublicPlayer/GameState (локальные дубли shared.Player/shared.GameState) и
@@ -115,6 +125,14 @@ export interface CreateRoomOptions {
   clubId?: string;     // если задан — стол только для членов клуба
   pinned?: boolean;    // закрепить стол сверху лобби (только админ; проверяется в registerSocketHandlers)
   autoExtendSession?: boolean; // по истечении sessionDurationHours продлевать сессию повторно вместо закрытия
+  // Доделка §10.6 (2026-06-26) — все автоматические, без согласия игрока на каждую раздачу.
+  straddleEnabled?: boolean;
+  bombPotEnabled?: boolean;
+  doubleBoardEnabled?: boolean;
+  rimtEnabled?: boolean;
+  evCashoutEnabled?: boolean;
+  noTurnNoShowEnabled?: boolean;
+  antiCollusionEnabled?: boolean;
 }
 
 type JoinDeniedReason =
@@ -130,7 +148,8 @@ type JoinDeniedReason =
   | 'insufficient-bankroll'
   | 'invalid-buyin'
   | 'too-many-tables'
-  | 'club-members-only';
+  | 'club-members-only'
+  | 'anti-collusion';
 
 // Мультитейблинг: максимум одновременно открытых столов на одного игрока.
 const MAX_TABLES_PER_USER = 3;
@@ -189,6 +208,7 @@ interface GameSettings {
   botMode: BotModeSettings;
   paidFeatures: PaidFeaturesSettings;
   payments: PaymentsSettings;
+  responsibleGambling: ResponsibleGamblingSettings;
 }
 
 // Платные фичи (ROADMAP §10.12, новая админ-вкладка «Платные фичи»). Сейчас одна — Rabbit Hunting.
@@ -200,6 +220,7 @@ export interface PaidFeaturesSettings {
     percent: number;           // 0..100, режим percent
   };
 }
+
 
 const DEFAULT_TIMEBANK: TimebankSettings = {
   enabled: true,
@@ -221,6 +242,15 @@ const DEFAULT_BOT_MODE: BotModeSettings = {
 
 const DEFAULT_PAID_FEATURES: PaidFeaturesSettings = {
   rabbitHunt: { enabled: false, mode: 'percent', fixedAmount: 100, percent: 5 },
+};
+
+// Защита игрока — opt-out, не opt-in: по умолчанию все пункты доступны, админ может отключить.
+const DEFAULT_RESPONSIBLE_GAMBLING: ResponsibleGamblingSettings = {
+  depositLimitEnabled: true,
+  lossLimitEnabled: true,
+  sessionTimeLimitEnabled: true,
+  selfExclusionEnabled: true,
+  timeoutEnabled: true,
 };
 
 // Платежи (ROADMAP §11.1) — крипто-депозит/вывод USDT, выключено по умолчанию (требует
@@ -247,6 +277,7 @@ const DEFAULT_SETTINGS: GameSettings = {
   botMode: { ...DEFAULT_BOT_MODE },
   paidFeatures: { rabbitHunt: { ...DEFAULT_PAID_FEATURES.rabbitHunt } },
   payments: { ...DEFAULT_PAYMENTS, chains: { ...DEFAULT_PAYMENTS.chains } },
+  responsibleGambling: { ...DEFAULT_RESPONSIBLE_GAMBLING },
 };
 
 const LOBBY_ROOM = 'lobby';
@@ -293,6 +324,7 @@ export interface Room {
   handIndex: number;                        // счётчик раздач за столом (для seeded RNG ботов)
   rake: RakeConfig;                         // per-table рейк (percent=0 → выключен)
   lastHandRake?: number;                    // рейк, удержанный в последней раздаче (для статистики)
+  lastHandWinners?: string[];               // победители последней раздачи (для атрибуции баунти при бaсте, см. onTournamentBust)
   actionLog?: HandAction[];                 // лог действий текущей раздачи (для replay в истории)
   ante: number;                             // анте в фишках (0 = нет)
   format: GameFormat;                       // формат игры ('nlh' | 'shortdeck')
@@ -317,6 +349,17 @@ export interface Room {
   // Турнирный стол (§10 «Турниры»): если задан — TournamentManager владеет жизненным циклом
   // (блайнды по уровням, элиминация без возврата в банкролл — см. autoLeaveBrokePlayers/onTournamentBust).
   tournamentId?: string;
+  // Доделка §10.6 (2026-06-26) — спец-режимы стола, см. docs/ROADMAP.md и план реализации.
+  straddleEnabled: boolean;
+  bombPotEnabled: boolean;
+  doubleBoardEnabled: boolean;
+  rimtEnabled: boolean;
+  evCashoutEnabled: boolean;
+  noTurnNoShowEnabled: boolean;
+  antiCollusionEnabled: boolean;
+  communityCardsB: Card[] | null; // второй борд (Double Board) или второй прогон (RIMT)
+  deckB: Card[] | null;           // форк остатка деки под второй борд/прогон
+  settlementMode?: 'rimt' | 'evCashout'; // раздача решена досрочно — см. resolveEarlyDecided
 }
 
 // Запись в очереди на полный стол: кто, под каким именем и с каким бай-ином сядет автоматически.
@@ -350,11 +393,16 @@ export class GameManager implements GameManagerForBots {
   // Колбэк элиминации игрока на турнирном столе (инжектится TournamentManager из index.ts).
   // Вызывается ВМЕСТО обычного банкролл-возврата, когда у игрока на столе с room.tournamentId
   // обнуляется стек (см. autoLeaveBrokePlayers) — турнирные фишки не кэшаются, место просто
-  // освобождается, а финишную позицию/выплату считает TournamentManager. В тестах не выставлен.
-  onTournamentBust?: (roomId: string, userId: string) => void;
+  // освобождается, а финишную позицию/выплату считает TournamentManager. killerIds — игроки,
+  // выигравшие раздачу, в которой произошёл бaст (для баунти, см. room.lastHandWinners); пустой
+  // массив при форфейте (добровольный выход/дисконнект — никто не выигрывал раздачу). В тестах не выставлен.
+  onTournamentBust?: (roomId: string, userId: string, killerIds: string[]) => void;
   // Интервал периодической проверки зависших столов — стартует явно через startTableWatchdog()
   // (не из конструктора, см. комментарий там).
   private watchdogTimer: NodeJS.Timeout | null = null;
+  // Лимит времени сессии (ROADMAP §11.2) — та же причина явного старта, что у watchdogTimer.
+  private sessionTimeTimer: NodeJS.Timeout | null = null;
+  private sessionTimeWatchdog = new SessionTimeWatchdog();
 
   constructor(io: Server) {
     this.io = io;
@@ -481,6 +529,13 @@ export class GameManager implements GameManagerForBots {
           pinned: !!(s as { pinned?: boolean }).pinned,
           autoExtendSession: !!(s as { autoExtendSession?: boolean }).autoExtendSession,
           tournamentId: (s as { tournamentId?: string }).tournamentId,
+          straddleEnabled: !!(s as { straddleEnabled?: boolean }).straddleEnabled,
+          bombPotEnabled: !!(s as { bombPotEnabled?: boolean }).bombPotEnabled,
+          doubleBoardEnabled: !!(s as { doubleBoardEnabled?: boolean }).doubleBoardEnabled,
+          rimtEnabled: !!(s as { rimtEnabled?: boolean }).rimtEnabled,
+          evCashoutEnabled: !!(s as { evCashoutEnabled?: boolean }).evCashoutEnabled,
+          noTurnNoShowEnabled: !!(s as { noTurnNoShowEnabled?: boolean }).noTurnNoShowEnabled,
+          antiCollusionEnabled: !!(s as { antiCollusionEnabled?: boolean }).antiCollusionEnabled,
         }));
         const restored = this.rooms.get(s.id);
         if (restored && restored.sessionEndsAt) this.scheduleSessionClose(restored);
@@ -521,6 +576,13 @@ export class GameManager implements GameManagerForBots {
       pinned: r.pinned,
       autoExtendSession: r.autoExtendSession,
       tournamentId: r.tournamentId,
+      straddleEnabled: r.straddleEnabled,
+      bombPotEnabled: r.bombPotEnabled,
+      doubleBoardEnabled: r.doubleBoardEnabled,
+      rimtEnabled: r.rimtEnabled,
+      evCashoutEnabled: r.evCashoutEnabled,
+      noTurnNoShowEnabled: r.noTurnNoShowEnabled,
+      antiCollusionEnabled: r.antiCollusionEnabled,
     }));
     try {
       writeJSON('rooms.json', snapshots);
@@ -616,6 +678,31 @@ export class GameManager implements GameManagerForBots {
     this.watchdogTimer = setInterval(() => this.checkFrozenTables(), intervalMs);
   }
 
+  // Вызывается из registerSocketHandlers при подключении/полном отключении юзера (см. там же
+  // hasOtherActiveSocket — мультитейблинг не должен сбрасывать отсчёт сессии раньше времени).
+  trackUserConnected(userId: string): void {
+    this.sessionTimeWatchdog.onConnect(userId);
+  }
+  trackUserDisconnected(userId: string): void {
+    this.sessionTimeWatchdog.onDisconnect(userId);
+  }
+
+  // Периодическая проверка лимита времени сессии — только предупреждение (ROADMAP §11.2),
+  // без форс-логаута. Та же причина явного старта из index.ts, что у startTableWatchdog.
+  startSessionTimeWatchdog(intervalMs = 60_000): void {
+    if (this.sessionTimeTimer) clearInterval(this.sessionTimeTimer);
+    this.sessionTimeTimer = setInterval(() => {
+      if (!this.settings.responsibleGambling.sessionTimeLimitEnabled) return;
+      const crossed = this.sessionTimeWatchdog.tick(
+        Date.now(),
+        (userId) => getResponsibleGamblingState(userId).sessionTimeLimitMinutes,
+      );
+      for (const userId of crossed) {
+        this.sendInboxNotification(userId, 'rg-warning', 'Вы превысили установленный лимит времени сессии.');
+      }
+    }, intervalMs);
+  }
+
   // Снимок активных раздач (deck/pot/players/phase/...) — отдельно от метаданных rooms.json
   // (ROADMAP §9.2). Бот-столы и пустые комнаты не пишутся (serializeActiveHand → null).
   // Вызывается из saveRoomsSnapshot (создание/удаление комнат) и broadcastGameState
@@ -644,13 +731,15 @@ export class GameManager implements GameManagerForBots {
         ...(data.payments ?? {}),
         chains: { ...DEFAULT_PAYMENTS.chains, ...(data.payments?.chains ?? {}) },
       };
-      return { ...DEFAULT_SETTINGS, ...data, timebank: tb, paidFeatures: pf, payments: pm };
+      const rg: ResponsibleGamblingSettings = { ...DEFAULT_RESPONSIBLE_GAMBLING, ...(data.responsibleGambling ?? {}) };
+      return { ...DEFAULT_SETTINGS, ...data, timebank: tb, paidFeatures: pf, payments: pm, responsibleGambling: rg };
     } catch {
       return {
         ...DEFAULT_SETTINGS,
         timebank: { ...DEFAULT_TIMEBANK },
         paidFeatures: { rabbitHunt: { ...DEFAULT_PAID_FEATURES.rabbitHunt } },
         payments: { ...DEFAULT_PAYMENTS, chains: { ...DEFAULT_PAYMENTS.chains } },
+        responsibleGambling: { ...DEFAULT_RESPONSIBLE_GAMBLING },
       };
     }
   }
@@ -709,6 +798,13 @@ export class GameManager implements GameManagerForBots {
       clubId: options.clubId,
       pinned: !!options.pinned,
       autoExtendSession: !!options.autoExtendSession,
+      straddleEnabled: !!options.straddleEnabled,
+      bombPotEnabled: !!options.bombPotEnabled,
+      doubleBoardEnabled: !!options.doubleBoardEnabled,
+      rimtEnabled: !!options.rimtEnabled,
+      evCashoutEnabled: !!options.evCashoutEnabled,
+      noTurnNoShowEnabled: !!options.noTurnNoShowEnabled,
+      antiCollusionEnabled: !!options.antiCollusionEnabled,
     }));
 
     // Авто-закрытие по длительности сессии (если задана)
@@ -862,7 +958,7 @@ export class GameManager implements GameManagerForBots {
   // Если userId уже в players — это реконнект, пропускаем все проверки кроме существования.
   // Late entry: если комната в playing-фазе, новый игрок добавляется как folded на текущую
   // раздачу и получит карты со следующей (см. addPlayer).
-  canJoinRoom(roomId: string, userId: string, password?: string, buyInAmount?: number): JoinDeniedReason | null {
+  canJoinRoom(roomId: string, userId: string, password?: string, buyInAmount?: number, networkInfo?: { ip: string; deviceId: string }): JoinDeniedReason | null {
     const room = this.rooms.get(roomId);
     if (!room) return 'not-found';
     if (room.players.has(userId)) return null; // реконнект в уже открытый стол — без лимита
@@ -873,7 +969,7 @@ export class GameManager implements GameManagerForBots {
     }
     // Мультитейблинг: не больше MAX_TABLES_PER_USER одновременно открытых столов.
     if (this.countUserTables(userId) >= MAX_TABLES_PER_USER) return 'too-many-tables';
-    return this.seatDeny(room, userId, password, buyInAmount, true);
+    return this.seatDeny(room, userId, password, buyInAmount, true, networkInfo);
   }
 
   // Сколько столов уже занято этим игроком (для лимита мультитейблинга).
@@ -887,12 +983,19 @@ export class GameManager implements GameManagerForBots {
 
   // Общие проверки посадки (кулдаун/пароль/банкролл/бай-ин). checkFull=false — для очереди:
   // стол уже полный (это предусловие очереди), но пароль/банкролл/сумму валидируем так же.
-  private seatDeny(room: Room, userId: string, password: string | undefined, buyInAmount: number | undefined, checkFull: boolean): JoinDeniedReason | null {
+  private seatDeny(room: Room, userId: string, password: string | undefined, buyInAmount: number | undefined, checkFull: boolean, networkInfo?: { ip: string; deviceId: string }): JoinDeniedReason | null {
     // Временный кик админом: вход за стол закрыт до истечения кулдауна (без бана аккаунта)
     const cooldownUntil = room.kickCooldowns.get(userId);
     if (cooldownUntil !== undefined) {
       if (Date.now() < cooldownUntil) return 'on-cooldown';
       room.kickCooldowns.delete(userId); // истёк — снимаем
+    }
+    // Anti-collusion (доделка §10.6): тот же IP/device уже сидит за этим столом.
+    if (room.antiCollusionEnabled && networkInfo) {
+      const seated = Array.from(room.players.values())
+        .filter((p) => p.networkInfo)
+        .map((p) => p.networkInfo!);
+      if (hasNetworkCollision(seated, networkInfo)) return 'anti-collusion';
     }
     // Стол «полный» для прямого входа, если мест нет ИЛИ есть очередь: пока кто-то ждёт,
     // освободившееся место зарезервировано за очередью (прохожий не занимает его мимо очереди).
@@ -1008,7 +1111,7 @@ export class GameManager implements GameManagerForBots {
   // Добавить игрока или обработать реконнект (комната должна существовать).
   // buyInAmount — запрошенная сумма для посадки (в чипсах). Если не передана — fallback:
   // min(maxBuyIn, bankroll), что близко к старому поведению (сесть с максимумом).
-  addPlayer(roomId: string, userId: string, socketId: string, username: string, buyInAmount?: number): boolean {
+  addPlayer(roomId: string, userId: string, socketId: string, username: string, buyInAmount?: number, networkInfo?: { ip: string; deviceId: string }): boolean {
     const room = this.rooms.get(roomId);
     if (!room) return false;
 
@@ -1072,6 +1175,8 @@ export class GameManager implements GameManagerForBots {
       }
     }
 
+    if (networkInfo) player.networkInfo = networkInfo;
+
     room.players.set(userId, player);
     this.broadcastGameState(roomId);
     this.notifyLobbyChange();
@@ -1092,7 +1197,7 @@ export class GameManager implements GameManagerForBots {
       const player = room.players.get(userId)!;
       clearDisconnectTimer(player);
       room.players.delete(userId);
-      this.onTournamentBust?.(roomId, userId);
+      this.onTournamentBust?.(roomId, userId, []); // форфейт — никто не выигрывал раздачу, баунти не платится
       return;
     }
 
@@ -1301,6 +1406,9 @@ export class GameManager implements GameManagerForBots {
 
     room.deck = remainingDeck;
     room.communityCards = [];
+    room.communityCardsB = null; // сброс второго борда (Double Board/RIMT) прошлой раздачи
+    room.deckB = null;
+    room.settlementMode = undefined;
     room.pot = 0;
     room.lastHandRake = 0; // сброс рейка прошлой раздачи
     room.currentBet = room.bigBlind;
@@ -1359,15 +1467,51 @@ export class GameManager implements GameManagerForBots {
       console.log(`   🎰 [ante] каждый внёс ${room.ante} (pot=${room.pot})`);
     }
 
-    if (smallBlindPlayer) {
-      this.placeBet(room, smallBlindPlayer.id, room.smallBlind);
-      room.actionLog.push({ phase: 'preflop', playerId: smallBlindPlayer.id, type: 'sb', amount: room.smallBlind });
-      console.log(`   💰 [blind] SB ${smallBlindPlayer.username} → ${room.smallBlind} (pot=${room.pot})`);
-    }
-    if (bigBlindPlayer) {
-      this.placeBet(room, bigBlindPlayer.id, room.bigBlind);
-      room.actionLog.push({ phase: 'preflop', playerId: bigBlindPlayer.id, type: 'bb', amount: room.bigBlind });
-      console.log(`   💰 [blind] BB ${bigBlindPlayer.username} → ${room.bigBlind} (pot=${room.pot})`);
+    if (room.bombPotEnabled) {
+      // Bomb Pot (доделка §10.6): все вносят форс-бет 3×BB (как в UI-заглушке bombPotAnte),
+      // флоп раздаётся сразу — без префлоп-торгов. SB/BB не постятся отдельно.
+      const bombAmount = room.bigBlind * 3;
+      playerIds.forEach((id) => {
+        this.postAnte(room, id, bombAmount);
+        room.actionLog!.push({ phase: 'preflop', playerId: id, type: 'bomb', amount: bombAmount });
+      });
+      console.log(`   💣 [bomb-pot] каждый внёс ${bombAmount} (pot=${room.pot})`);
+      const flop = dealCommunityCards(room.deck, 3);
+      room.communityCards = flop.cards;
+      room.deck = flop.remainingDeck;
+      room.phase = 'flop';
+      room.currentBet = 0;
+      room.lastRaiseSize = room.bigBlind;
+      room.currentPlayerIndex = (room.dealerIndex + 1) % N; // постфлоп-порядок (SB-позиция первая)
+      console.log(`   🌊 [bomb-pot flop] ${flop.cards.map(c => c.rank + c.suit[0]).join(' ')} (pot=${room.pot})`);
+    } else {
+      if (smallBlindPlayer) {
+        this.placeBet(room, smallBlindPlayer.id, room.smallBlind);
+        room.actionLog.push({ phase: 'preflop', playerId: smallBlindPlayer.id, type: 'sb', amount: room.smallBlind });
+        console.log(`   💰 [blind] SB ${smallBlindPlayer.username} → ${room.smallBlind} (pot=${room.pot})`);
+      }
+      if (bigBlindPlayer) {
+        this.placeBet(room, bigBlindPlayer.id, room.bigBlind);
+        room.actionLog.push({ phase: 'preflop', playerId: bigBlindPlayer.id, type: 'bb', amount: room.bigBlind });
+        console.log(`   💰 [blind] BB ${bigBlindPlayer.username} → ${room.bigBlind} (pot=${room.pot})`);
+      }
+
+      // Стрэддл (доделка §10.6): при включении UTG ОБЯЗАТЕЛЬНО стрэддлит каждую раздачу
+      // (mandatory straddle table — без личного опта игрока, см. план реализации). Heads-up
+      // не имеет UTG — пропускаем. Если у UTG не хватает фишек на полный стрэддл — ходит как обычно.
+      if (room.straddleEnabled && !isHeadsUp) {
+        const utgIndex = room.currentPlayerIndex; // = (dealerIndex+3) % N, уже посчитан выше
+        const utgPlayer = this.getPlayerAt(room, utgIndex);
+        const straddleAmount = room.bigBlind * 2;
+        if (utgPlayer && utgPlayer.chips >= straddleAmount) {
+          this.placeBet(room, utgPlayer.id, straddleAmount);
+          room.currentBet = straddleAmount;
+          room.lastRaiseSize = room.bigBlind; // стрэддл = полный рейз на 1×BB сверху BB
+          room.currentPlayerIndex = (utgIndex + 1) % N; // ход начинается после стрэддлера
+          room.actionLog.push({ phase: 'preflop', playerId: utgPlayer.id, type: 'straddle', amount: straddleAmount });
+          console.log(`   💰 [straddle] ${utgPlayer.username} → ${straddleAmount} (pot=${room.pot})`);
+        }
+      }
     }
 
     this.broadcastGameState(roomId);
@@ -1637,6 +1781,14 @@ export class GameManager implements GameManagerForBots {
     room.lockedCallers = new Set();
     clearTurnTimers(room);
 
+    // RIMT/EV Cashout (доделка §10.6): торги закрылись ДОСРОЧНО (все, кто мог бы ещё биться
+    // за банк, либо all-in, либо их ≤1) и борд ещё не полный — обычная доигровка по улицам
+    // не нужна, решаем раздачу досрочно (двойной прогон борда либо equity-сплит).
+    if (room.communityCards.length < 5 && (room.rimtEnabled || room.evCashoutEnabled) && this.isHandDecidedEarly(room)) {
+      this.resolveEarlyDecided(roomId);
+      return;
+    }
+
     const t = computePhaseTransition(room.phase, room.deck);
 
     if (t.isShowdown) {
@@ -1644,8 +1796,22 @@ export class GameManager implements GameManagerForBots {
       return;
     }
 
+    // Double Board (доделка §10.6): на первом постфлоп-переходе форкаем остаток деки —
+    // второй борд дилится из независимо перемешанной копии (карты МОГУТ повторяться между
+    // бордами — как Run It Twice в реальных рум-софтах, два независимых прогона остатка деки).
+    if (room.doubleBoardEnabled && room.phase === 'preflop') {
+      room.deckB = shuffleDeck(room.deck);
+    }
+
     room.communityCards = [...room.communityCards, ...t.newCards];
     room.deck = t.remainingDeck;
+
+    if (room.doubleBoardEnabled && room.deckB) {
+      const tb = computePhaseTransition(room.phase, room.deckB);
+      room.communityCardsB = [...(room.communityCardsB ?? []), ...tb.newCards];
+      room.deckB = tb.remainingDeck;
+    }
+
     room.phase = t.nextPhase;
 
     const cardsStr = t.newCards.map(c => c.rank + c.suit[0]).join(' ');
@@ -1658,6 +1824,135 @@ export class GameManager implements GameManagerForBots {
     room.currentPlayerIndex = (room.dealerIndex + 1) % room.players.size;
     this.broadcastGameState(roomId);
     this.emitCurrentTurn(roomId);
+  }
+
+  // RIMT/EV Cashout (доделка §10.6): больше никто не сможет сделать ставку в этой раздаче —
+  // среди недосфолдивших ≤1 игрок с фишками (остальные all-in). Борд ещё не полный (проверяется
+  // отдельно вызывающим) — обычный одно-стрит-за-раз каскад можно (и нужно) пропустить.
+  private isHandDecidedEarly(room: Room): boolean {
+    const canStillAct = Array.from(room.players.values()).filter(p => !p.isFolded && p.chips > 0).length;
+    return canStillAct <= 1;
+  }
+
+  // Доиграть один борд от текущей фазы до ривера (с правильными burn-картами на каждой улице),
+  // не дожидаясь действий игроков — используется RIMT при досрочном all-in.
+  private dealRemainingBoard(phase: GamePhase, deck: Card[]): { cards: Card[]; remainingDeck: Card[] } {
+    let currentPhase = phase;
+    let cards: Card[] = [];
+    let remainingDeck = deck;
+    while (currentPhase !== 'river' && currentPhase !== 'showdown') {
+      const t = computePhaseTransition(currentPhase, remainingDeck);
+      cards = [...cards, ...t.newCards];
+      remainingDeck = t.remainingDeck;
+      currentPhase = t.nextPhase;
+    }
+    return { cards, remainingDeck };
+  }
+
+  // RIMT (доделка §10.6): ранний all-in до ривера — доигрываем борд ДВАЖДЫ (два независимых
+  // форка остатка деки), банк делится между прогонами (см. multiRunService.ts). EV Cashout —
+  // приоритетнее при одновременном включении (см. план реализации/§10.6).
+  private resolveEarlyDecided(roomId: string): void {
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+
+    const allPlayers = Array.from(room.players.values());
+    const active = allPlayers.filter(p => !p.isFolded && p.cards.length > 0);
+    const playersForShowdown = allPlayers.map(p => ({ id: p.id, username: p.username, cards: p.cards, totalCommitted: p.totalCommitted }));
+    const activeForShowdown = active.map(p => ({ id: p.id, username: p.username, cards: p.cards, totalCommitted: p.totalCommitted }));
+
+    if (room.evCashoutEnabled) {
+      // EV Cashout (доделка §10.6): вместо доигровки — банк делится по equity (Монте-Карло
+      // между РЕАЛЬНЫМИ дырочными картами контестантов, см. computeRealEquity в equity.ts).
+      // Борд НЕ доигрывается (room.communityCards остаётся как был на момент триггера) — это
+      // осознанное решение: показывать «случайно дотасованный» борд, который не определял
+      // фактическую выплату, было бы только путать игроков (см. план реализации).
+      console.log(`   📐 [EV Cashout] ранний all-in — банк делится по equity (pot=${room.pot})`);
+      room.settlementMode = 'evCashout';
+
+      const flopDealt = room.communityCards.length >= 3;
+      const rakeTotal = computeRake(room.pot, room.bigBlind, room.rake, flopDealt);
+      const distributable = room.pot - rakeTotal;
+
+      const equities = computeRealEquity(
+        active.map(p => ({ id: p.id, hole: p.cards })),
+        room.communityCards,
+        room.deck,
+        room.format,
+      );
+
+      const ids = Object.keys(equities);
+      const amounts: Record<string, number> = {};
+      let distributed = 0;
+      ids.forEach((id, idx) => {
+        if (idx === ids.length - 1) {
+          amounts[id] = Math.max(0, distributable - distributed); // последнему — остаток (без потери центов)
+        } else {
+          const amt = Math.floor(distributable * equities[id]);
+          amounts[id] = amt;
+          distributed += amt;
+        }
+      });
+
+      const result: ShowdownResult = {
+        winners: ids.filter(id => amounts[id] > 0),
+        handInfo: undefined,
+        amounts,
+        rake: rakeTotal,
+        badBeatDrop: 0,
+      };
+
+      this.applyShowdownResult(roomId, result);
+      return;
+    }
+
+    const deckA = shuffleDeck(room.deck);
+    const deckB = shuffleDeck(room.deck);
+    const runA = this.dealRemainingBoard(room.phase, deckA);
+    const runB = this.dealRemainingBoard(room.phase, deckB);
+    const boardA = [...room.communityCards, ...runA.cards];
+    const boardB = [...room.communityCards, ...runB.cards];
+    room.communityCards = boardA;
+    room.communityCardsB = boardB;
+    room.deck = runA.remainingDeck;
+    room.deckB = runB.remainingDeck;
+    room.settlementMode = 'rimt';
+
+    console.log(`   🎲 [RIMT] ранний all-in — доигрываем борд 2× (pot=${room.pot})`);
+
+    const result = resolveMultiRunShowdown(
+      room.pot,
+      [boardA, boardB],
+      room.bigBlind,
+      room.rake,
+      room.format,
+      playersForShowdown,
+      activeForShowdown,
+    );
+
+    this.applyShowdownResult(roomId, result);
+  }
+
+  // Хвост showdown/resolveEarlyDecided: применить chip-дельты, очистить банк, записать рейк/
+  // бэдбит-дроп в пул, закрыть раздачу (endGame). Бэдбит-ДЕТЕКЦИЯ (не дроп) сюда не входит —
+  // она специфична для «настоящего» showdown() (один финальный борд, см. вызывающий код).
+  private applyShowdownResult(roomId: string, result: ShowdownResult): void {
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+
+    for (const [id, delta] of Object.entries(result.amounts)) {
+      const p = room.players.get(id);
+      if (p) p.chips += delta;
+    }
+    room.pot = 0;
+    room.lastHandRake = result.rake;
+
+    if (result.badBeatDrop > 0) {
+      addToPool(result.badBeatDrop);
+      console.log(`   🎰 [badbeat] дроп в пул: ${result.badBeatDrop}`);
+    }
+
+    this.endGame(roomId, result.winners, result.handInfo, result.amounts);
   }
 
   // Шоудаун
@@ -1694,36 +1989,39 @@ export class GameManager implements GameManagerForBots {
     const potTotal = room.pot; // банк до распределения — для guard'а ≥10ББ
     const bbState = getBadBeatState();
     const hasBots = allPlayers.some(p => this.isBot(p.id));
+    // Double Board (доделка §10.6): детекция Bad Beat пропускается — нет единого финального
+    // борда для проверки квалифицирующей руки (см. multiRunService.ts).
     const bbActive =
+      !room.doubleBoardEnabled &&
       bbState.enabled &&
       room.passwordHash === null &&
       !room.isBotTable &&
       !hasBots &&
       potTotal >= 10 * room.bigBlind;
 
-    const result = resolveShowdown(
-      room.pot,
-      room.communityCards,
-      room.bigBlind,
-      room.rake,
-      room.format,
-      allPlayers.map(p => ({ id: p.id, username: p.username, cards: p.cards, totalCommitted: p.totalCommitted })),
-      active.map(p => ({ id: p.id, username: p.username, cards: p.cards, totalCommitted: p.totalCommitted })),
-      bbActive ? bbState : null,
-    );
+    const playersForShowdown = allPlayers.map(p => ({ id: p.id, username: p.username, cards: p.cards, totalCommitted: p.totalCommitted }));
+    const activeForShowdown = active.map(p => ({ id: p.id, username: p.username, cards: p.cards, totalCommitted: p.totalCommitted }));
 
-    // Применяем chip-дельты (resolveShowdown не мутирует)
-    for (const [id, delta] of Object.entries(result.amounts)) {
-      const p = room.players.get(id);
-      if (p) p.chips += delta;
-    }
-    room.pot = 0;
-    room.lastHandRake = result.rake;
-
-    if (result.badBeatDrop > 0) {
-      addToPool(result.badBeatDrop);
-      console.log(`   🎰 [badbeat] дроп в пул: ${result.badBeatDrop}`);
-    }
+    const result = room.doubleBoardEnabled && room.communityCardsB
+      ? resolveMultiRunShowdown(
+          room.pot,
+          [room.communityCards, room.communityCardsB],
+          room.bigBlind,
+          room.rake,
+          room.format,
+          playersForShowdown,
+          activeForShowdown,
+        )
+      : resolveShowdown(
+          room.pot,
+          room.communityCards,
+          room.bigBlind,
+          room.rake,
+          room.format,
+          playersForShowdown,
+          activeForShowdown,
+          bbActive ? bbState : null,
+        );
 
     const allWinners = result.winners;
     if (allWinners.length === 0) {
@@ -1731,6 +2029,9 @@ export class GameManager implements GameManagerForBots {
     }
 
     // Bad Beat Jackpot — детект срабатывания + выплата из пула (Фаза 3, Вариант А).
+    // Запускается ДО применения основных chip-дельт (applyShowdownResult ниже) — детекция
+    // читает только карты/борд (не зависит от room.pot/chips), выплата джекпота — отдельная
+    // аддитивная прибавка к стеку, порядок относительно основного payout не важен.
     // Условия (полные) — в detectBadBeat: рука ≥ порога, обе карманные у победителя и проигравшего,
     // каре → карманная пара, ≥4 сдали префлоп. Карты при фолде не очищаются (cleanup позже),
     // поэтому «сдал префлоп» = игроки с картами на showdown.
@@ -1780,7 +2081,7 @@ export class GameManager implements GameManagerForBots {
       }
     }
 
-    this.endGame(roomId, allWinners, result.handInfo, result.amounts);
+    this.applyShowdownResult(roomId, result);
   }
 
   // Конец раздачи: показываем шоудаун 5 сек, потом cleanup
@@ -1789,6 +2090,7 @@ export class GameManager implements GameManagerForBots {
     if (!room) return;
 
     clearTurnTimers(room);
+    room.lastHandWinners = winners; // для атрибуции баунти при бaсте (см. autoLeaveBrokePlayers)
 
     let winAmounts = amounts;
     // Если endGame вызван не через showdown (все folded кроме одного) — забираем pot ему
@@ -1805,6 +2107,12 @@ export class GameManager implements GameManagerForBots {
         winAmounts = { [winner.id]: payout };
         console.log(`🏆 [uncontested] ${winner.username} забирает pot=${room.pot}${rake > 0 ? ` (рейк ${rake})` : ''} → +${payout} (остальные folded)`);
         room.pot = 0;
+        // No Turn No Show (доделка §10.6): победитель без вскрытия автоматически показывает
+        // карты (анти-чит — честность RNG видна даже без контеста), а не остаётся скрытым
+        // до добровольного тапа (showCard), как по умолчанию.
+        if (room.noTurnNoShowEnabled && winner.cards.length >= 2) {
+          winner.revealedCards = [0, 1];
+        }
       }
     }
 
@@ -1969,6 +2277,21 @@ export class GameManager implements GameManagerForBots {
           p.chips += rb.payout;
         }
       }
+
+      // Лимит на потери (ROADMAP §11.2) — только предупреждение, раздача не блокируется.
+      // Раздача только что записана в statsRecorder выше — попадает в aggregateUserStats синхронно.
+      if (this.settings.responsibleGambling.lossLimitEnabled) {
+        const rg = getResponsibleGamblingState(p.id);
+        if (rg.lossLimitCents) {
+          const { sinceMs, key } = periodRange(rg.lossLimitPeriod ?? 'day', new Date(now));
+          const { pnl } = aggregateUserStats(p.id, sinceMs, now);
+          const lossCents = Math.max(0, -pnl);
+          if (isLimitCrossed(lossCents, rg.lossLimitCents) && rg.lossWarnedPeriodKey !== key) {
+            this.sendInboxNotification(p.id, 'rg-warning', 'Вы превысили установленный лимит на потери.');
+            markResponsibleGamblingWarned(p.id, 'loss', key);
+          }
+        }
+      }
     });
 
     // Авто-докупка стека — ДО autoLeaveBrokePlayers: долитый из банкролла игрок остаётся
@@ -1999,11 +2322,12 @@ export class GameManager implements GameManagerForBots {
     const broke = Array.from(room.players.values()).filter(p => p.chips <= 0);
     if (room.tournamentId) {
       // Турнирные фишки — не банкролл: банкрот просто покидает стол (без возврата), финишную
-      // позицию/выплату считает TournamentManager через onTournamentBust.
+      // позицию/выплату считает TournamentManager через onTournamentBust. killerIds — победители
+      // ИМЕННО этой раздачи (lastHandWinners, см. endGame) — для атрибуции баунти.
       broke.forEach(p => {
         this.io.sockets.sockets.get(p.socketId)?.leave(roomId);
         room.players.delete(p.id);
-        this.onTournamentBust?.(roomId, p.id);
+        this.onTournamentBust?.(roomId, p.id, room.lastHandWinners ?? []);
       });
       return;
     }
@@ -2319,7 +2643,10 @@ export class GameManager implements GameManagerForBots {
           chains: { ...this.settings.payments.chains, ...(partial.payments.chains ?? {}) },
         }
       : this.settings.payments;
-    this.settings = { ...this.settings, ...partial, timebank: nextTb, botMode: nextBm, paidFeatures: nextPf, payments: nextPm };
+    const nextRg: ResponsibleGamblingSettings = partial.responsibleGambling
+      ? { ...this.settings.responsibleGambling, ...partial.responsibleGambling }
+      : this.settings.responsibleGambling;
+    this.settings = { ...this.settings, ...partial, timebank: nextTb, botMode: nextBm, paidFeatures: nextPf, payments: nextPm, responsibleGambling: nextRg };
     writeJSON('settings.json', this.settings);
     return { ...this.settings };
   }
@@ -2371,6 +2698,20 @@ export class GameManager implements GameManagerForBots {
     const until = this.rooms.get(roomId)?.kickCooldowns.get(userId);
     if (until === undefined) return 0;
     return Math.max(0, until - Date.now());
+  }
+
+  // Compliance-кик (ROADMAP §11.2): самоисключение/тайм-аут активированы прямо сейчас —
+  // игрока нужно немедленно вышибить из-за стола(ов), а не ждать следующего реконнекта.
+  // Рвём ВСЕ его сокеты тем же путём, что и single-session кик — обычный 'disconnect'
+  // handler сам корректно посадит игрока в сит-аут/уберёт со стола (как при разрыве сети).
+  kickUserForCompliance(userId: string, reason: 'self-excluded' | 'timeout', until: string): void {
+    forceDisconnectOtherSessions(this.io, userId, { reason, until });
+  }
+
+  // Revoke сессии («Мои устройства», ROADMAP §10.15) — рвёт сокет только этой сессии,
+  // не трогая другие активные устройства того же юзера.
+  revokeUserSession(sid: string): void {
+    disconnectSocketsBySid(this.io, sid);
   }
 
   // Админский force-close: уведомить всех и удалить комнату.

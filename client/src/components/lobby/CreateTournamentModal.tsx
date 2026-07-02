@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { X, Trophy } from 'lucide-react';
-import { Stepper, Segmented, SettingRow } from './createControls';
+import { Stepper, Segmented, SettingRow, Toggle } from './createControls';
 import { parseMoney, formatMoney } from '../../config/chipFormat';
-import type { CreateTournamentOptions, BlindSpeed, GameFormat, TournamentType, MttItmPercent, MttPayoutMode } from '@poker-room/shared';
+import type { CreateTournamentOptions, BlindSpeed, GameFormat, TournamentType, MttItmPercent, MttPayoutMode, BountyType } from '@poker-room/shared';
 
 const SPEED_OPTIONS: Array<{ value: BlindSpeed; label: string }> = [
   { value: 'slow', label: 'Медленно' },
@@ -34,6 +34,11 @@ const PAYOUT_MODE_OPTIONS: Array<{ value: MttPayoutMode; label: string }> = [
   { value: 'fixed', label: 'Фикс. мест' },
 ];
 
+const BOUNTY_TYPE_OPTIONS: Array<{ value: BountyType; label: string }> = [
+  { value: 'flat', label: 'Флэт' },
+  { value: 'progressive', label: 'Progressive (PKO)' },
+];
+
 interface CreateTournamentModalProps {
   onClose: () => void;
   onSubmit: (opts: CreateTournamentOptions) => void;
@@ -53,6 +58,13 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
   const [itmPercent, setItmPercent] = useState<MttItmPercent>(15);
   const [payoutMode, setPayoutMode] = useState<MttPayoutMode>('itm');
   const [fixedPayoutPlaces, setFixedPayoutPlaces] = useState(9);
+  const [reEntryEnabled, setReEntryEnabled] = useState(false);
+  const [maxReEntries, setMaxReEntries] = useState(1);
+  const [guaranteeEnabled, setGuaranteeEnabled] = useState(false);
+  const [guaranteedPrizePool, setGuaranteedPrizePool] = useState(10000);
+  const [bountyEnabled, setBountyEnabled] = useState(false);
+  const [bountyType, setBountyType] = useState<BountyType>('flat');
+  const [bountyPercent, setBountyPercent] = useState(50);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,8 +76,13 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
             lateRegMinutes,
             payoutMode,
             ...(payoutMode === 'fixed' ? { fixedPayoutPlaces } : { itmPercent }),
+            reEntryEnabled,
+            ...(reEntryEnabled ? { maxReEntries } : {}),
+            ...(guaranteeEnabled ? { guaranteedPrizePool } : {}),
           }
         : {}),
+      bountyEnabled,
+      ...(bountyEnabled ? { bountyType, bountyPercent } : {}),
     });
   };
 
@@ -146,6 +163,25 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
             />
           </SettingRow>
 
+          <SettingRow label="Баунти / PKO">
+            <Toggle checked={bountyEnabled} onChange={setBountyEnabled} />
+          </SettingRow>
+
+          {bountyEnabled && (
+            <>
+              <SettingRow label="Тип баунти">
+                <Segmented options={BOUNTY_TYPE_OPTIONS} value={bountyType} onChange={setBountyType} />
+              </SettingRow>
+              <SettingRow label="Доля бай-ина в баунти, %">
+                <Stepper
+                  display={bountyPercent}
+                  onDec={() => setBountyPercent((v) => Math.max(1, v - 5))}
+                  onInc={() => setBountyPercent((v) => Math.min(90, v + 5))}
+                />
+              </SettingRow>
+            </>
+          )}
+
           {type === 'mtt' && (
             <>
               <SettingRow label="Поздняя рег., мин">
@@ -170,6 +206,34 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
                     display={fixedPayoutPlaces}
                     onDec={() => setFixedPayoutPlaces((v) => Math.max(1, v - 1))}
                     onInc={() => setFixedPayoutPlaces((v) => Math.min(1000, v + 1))}
+                  />
+                </SettingRow>
+              )}
+
+              <SettingRow label="Ре-энтри">
+                <Toggle checked={reEntryEnabled} onChange={setReEntryEnabled} />
+              </SettingRow>
+
+              {reEntryEnabled && (
+                <SettingRow label="Макс. ре-энтри на игрока">
+                  <Stepper
+                    display={maxReEntries}
+                    onDec={() => setMaxReEntries((v) => Math.max(1, v - 1))}
+                    onInc={() => setMaxReEntries((v) => Math.min(10, v + 1))}
+                  />
+                </SettingRow>
+              )}
+
+              <SettingRow label="Гарантированный приз">
+                <Toggle checked={guaranteeEnabled} onChange={setGuaranteeEnabled} />
+              </SettingRow>
+
+              {guaranteeEnabled && (
+                <SettingRow label="Сумма гарантии">
+                  <input
+                    value={formatMoney(guaranteedPrizePool)}
+                    onChange={(e) => setGuaranteedPrizePool(Math.max(0, parseMoney(e.target.value)))}
+                    className="w-24 text-right bg-gray-800 border border-white/10 rounded-lg px-2 py-1.5 text-white text-sm outline-none focus:border-amber-500"
                   />
                 </SettingRow>
               )}

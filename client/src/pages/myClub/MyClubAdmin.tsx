@@ -1,22 +1,24 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
 import { ChevronLeft, Users, Settings } from 'lucide-react';
 import { useMyClub } from '../../hooks/useMyClub';
 import { MembersTab } from './MembersTab';
 import { SettingsTab } from './SettingsTab';
 
-const TABS = [
-  { id: 'members', label: 'Участники', Icon: Users },
-  { id: 'settings', label: 'Настройки', Icon: Settings },
-] as const;
-
-type TabId = (typeof TABS)[number]['id'];
+type TabId = 'members' | 'settings';
 
 export const MyClubAdmin = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { myClub, refresh } = useMyClub();
   const [tab, setTab] = useState<TabId>('members');
+
+  const TABS: { id: TabId; label: string; Icon: typeof Users }[] = [
+    { id: 'members', label: t('myClub.tabMembers'), Icon: Users },
+    { id: 'settings', label: t('myClub.tabSettings'), Icon: Settings },
+  ];
 
   // myClub guaranteed non-null здесь (RequireClubOwner проверил выше)
   if (!myClub) return null;
@@ -28,14 +30,14 @@ export const MyClubAdmin = () => {
         <div className="relative flex items-center justify-center mb-6">
           <button
             onClick={() => navigate('/')}
-            aria-label="Назад"
+            aria-label={t('myClub.back')}
             className="absolute left-0 w-10 h-10 flex items-center justify-center rounded-full text-white/80 hover:bg-white/10 transition-colors"
           >
             <ChevronLeft size={26} />
           </button>
           <div className="text-center">
             <h1 className="text-lg font-bold truncate max-w-[200px]">{myClub.name}</h1>
-            <p className="text-[10px] text-emerald-400 uppercase tracking-wide mt-0.5">Мой клуб</p>
+            <p className="text-[10px] text-emerald-400 uppercase tracking-wide mt-0.5">{t('myClub.myClub')}</p>
           </div>
         </div>
 

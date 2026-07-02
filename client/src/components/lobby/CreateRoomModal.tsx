@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 import { ChevronLeft } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useTimebankConfig } from '../../hooks/useTimebankConfig';
@@ -10,39 +11,9 @@ import { Toggle, Stepper, Segmented, RangeSlider, DualRangeSlider, Dropdown, Set
 import { fetchTemplates, putTemplates, type RoomTemplate } from '../../config/roomTemplates';
 import { formatMoney, parseMoney } from '../../config/chipFormat';
 
-// Пресеты блайндов по уровням ставок (см. roadmap 10.6)
-const BLIND_PRESETS = [
-  { id: 'micro', label: 'Микро', sb: 1, bb: 2 },
-  { id: 'low', label: 'Низкие', sb: 5, bb: 10 },
-  { id: 'mid', label: 'Средние', sb: 25, bb: 50 },
-  { id: 'high', label: 'Высокие', sb: 100, bb: 200 },
-] as const;
-
-const TURN_DURATION_OPTS = [13, 15, 18, 20, 25].map((s) => ({ value: s, label: s + ' Сек' }));
 const DEFAULT_TURN_DURATION_SEC = 15;
 const DEFAULT_BUYIN_MIN_BB = 20;
 const DEFAULT_BUYIN_MAX_BB = 100;
-
-// Тексты bottom-sheet'ов для инфо-«i». Клубные формулировки убраны (memory no-clubs).
-const INFO: Record<string, { title: string; lines: string[] }> = {
-  badbeat: {
-    title: 'Бэд-Бит Джекпот',
-    lines: [
-      'Джекпот срывается, когда очень сильная рука проигрывает ещё более сильной на вскрытии.',
-      'Типовые условия: рука доходит до шоудауна; и победитель, и проигравший используют обе карманные карты; минимальная комбинация — каре.',
-      'После выплаты джекпот обнуляется и копится заново.',
-    ],
-  },
-  squid: { title: 'Squid Game', lines: ['Специальный VIP-формат стола. В разработке.'] },
-  aof: { title: 'All-In or Fold', lines: ['Режим, где из действий доступны только олл-ин или фолд. В разработке.'] },
-  straddle: { title: 'Страдл', lines: ['Добровольная «тёмная» ставка вслепую до раздачи (обычно 2× BB), раздувает банк. В разработке.'] },
-  calltime: { title: 'CallTime', lines: ['Ограничение по времени на принятие решения за столом. В разработке.'] },
-  norathole: { title: 'Без расхода', lines: ['Анти-рэтхол: нельзя сесть с уменьшенным стеком в течение N часов после ухода. В разработке.'] },
-  bombpot: { title: 'Bomb Pot', lines: ['Все вносят анте префлоп, сразу сдаётся флоп — раздача с увеличенным банком. В разработке.'] },
-  ev: { title: 'EV Cashout', lines: ['Возможность забрать матожидание на олл-ине вместо дисперсии. В разработке.'] },
-  noturn: { title: 'No Turn No Show', lines: ['Анти-чит: обязательное вскрытие руки в оговорённых ситуациях. В разработке.'] },
-  runtable: { title: 'Таблица с повторами', lines: ['Run It Multiple Times — несколько прогонов борда при олл-ине. В разработке.'] },
-};
 
 interface CreateRoomModalProps {
   onClose: () => void;
@@ -52,6 +23,39 @@ interface CreateRoomModalProps {
 type FormatTab = 'cash' | 'sng' | 'mtt';
 
 export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => {
+  const { t } = useTranslation();
+
+  // Пресеты блайндов по уровням ставок (см. roadmap 10.6)
+  const BLIND_PRESETS = [
+    { id: 'micro', label: t('createRoomModal.presetMicro'), sb: 1, bb: 2 },
+    { id: 'low', label: t('createRoomModal.presetLow'), sb: 5, bb: 10 },
+    { id: 'mid', label: t('createRoomModal.presetMid'), sb: 25, bb: 50 },
+    { id: 'high', label: t('createRoomModal.presetHigh'), sb: 100, bb: 200 },
+  ] as const;
+
+  const TURN_DURATION_OPTS = [13, 15, 18, 20, 25].map((s) => ({ value: s, label: t('createRoomModal.secOption', { count: s }) }));
+
+  // Тексты bottom-sheet'ов для инфо-«i». Клубные формулировки убраны (memory no-clubs).
+  const INFO: Record<string, { title: string; lines: string[] }> = {
+    badbeat: {
+      title: t('createRoomModal.infoBadBeatTitle'),
+      lines: [
+        t('createRoomModal.infoBadBeatLine1'),
+        t('createRoomModal.infoBadBeatLine2'),
+        t('createRoomModal.infoBadBeatLine3'),
+      ],
+    },
+    squid: { title: t('createRoomModal.infoSquidTitle'), lines: [t('createRoomModal.infoSquidLine')] },
+    aof: { title: t('createRoomModal.infoAofTitle'), lines: [t('createRoomModal.infoAofLine')] },
+    straddle: { title: t('createRoomModal.infoStraddleTitle'), lines: [t('createRoomModal.infoStraddleLine')] },
+    calltime: { title: t('createRoomModal.infoCallTimeTitle'), lines: [t('createRoomModal.infoCallTimeLine')] },
+    norathole: { title: t('createRoomModal.infoNoRatholeTitle'), lines: [t('createRoomModal.infoNoRatholeLine')] },
+    bombpot: { title: t('createRoomModal.infoBombPotTitle'), lines: [t('createRoomModal.infoBombPotLine')] },
+    ev: { title: t('createRoomModal.infoEvTitle'), lines: [t('createRoomModal.infoEvLine')] },
+    noturn: { title: t('createRoomModal.infoNoTurnTitle'), lines: [t('createRoomModal.infoNoTurnLine')] },
+    runtable: { title: t('createRoomModal.infoRunTableTitle'), lines: [t('createRoomModal.infoRunTableLine')] },
+  };
+
   const [format] = useState<FormatTab>('cash'); // SNG/Турнир — disabled (memory game_formats)
   const [variant, setVariant] = useState<GameFormat>('nlh'); // NLH / Шорт-дэк (memory game_formats)
   const [name, setName] = useState('');
@@ -83,6 +87,14 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
   const [clubOnly, setClubOnly] = useState(false);
   const [pinned, setPinned] = useState(false);
   const [autoExtendSession, setAutoExtendSession] = useState(false);
+  // Доделка §10.6 (2026-06-26) — спец-режимы стола, все автоматические (без опта на раздачу).
+  const [straddleEnabled, setStraddleEnabled] = useState(false);
+  const [noTurnNoShowEnabled, setNoTurnNoShowEnabled] = useState(false);
+  const [bombPotEnabled, setBombPotEnabled] = useState(false);
+  const [antiCollusionEnabled, setAntiCollusionEnabled] = useState(false);
+  const [doubleBoardEnabled, setDoubleBoardEnabled] = useState(false);
+  const [rimtEnabled, setRimtEnabled] = useState(false);
+  const [evCashoutEnabled, setEvCashoutEnabled] = useState(false);
 
   // Загрузка сохранённых шаблонов с сервера
   useEffect(() => {
@@ -115,6 +127,13 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
     clubId: myClub && clubOnly ? myClub.id : undefined,
     pinned: isAdmin ? pinned : undefined,
     autoExtendSession: sessionHours > 0 && autoExtendSession ? true : undefined,
+    straddleEnabled: straddleEnabled || undefined,
+    noTurnNoShowEnabled: noTurnNoShowEnabled || undefined,
+    bombPotEnabled: bombPotEnabled || undefined,
+    antiCollusionEnabled: antiCollusionEnabled || undefined,
+    doubleBoardEnabled: doubleBoardEnabled || undefined,
+    rimtEnabled: rimtEnabled || undefined,
+    evCashoutEnabled: evCashoutEnabled || undefined,
   });
 
   // Применить шаблон ко всем полям формы.
@@ -139,6 +158,13 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
     setVariant(o.format ?? 'nlh');
     setPinned(!!o.pinned);
     setAutoExtendSession(!!o.autoExtendSession);
+    setStraddleEnabled(!!o.straddleEnabled);
+    setNoTurnNoShowEnabled(!!o.noTurnNoShowEnabled);
+    setBombPotEnabled(!!o.bombPotEnabled);
+    setAntiCollusionEnabled(!!o.antiCollusionEnabled);
+    setDoubleBoardEnabled(!!o.doubleBoardEnabled);
+    setRimtEnabled(!!o.rimtEnabled);
+    setEvCashoutEnabled(!!o.evCashoutEnabled);
     if (o.timebank && tbLocal) setTbLocal(o.timebank);
   };
 
@@ -146,12 +172,12 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
     if (!token) return;
     const tName =
       `${smallBlind}/${bigBlind} · ${maxPlayers}max` +
-      (rakePercent > 0 ? ` · рейк ${rakePercent}%` : '') +
-      (ante > 0 ? ` · анте ${ante}` : '');
-    const next = [...templates.filter((t) => t.name !== tName), { name: tName, opts: buildOpts() }];
+      (rakePercent > 0 ? ` · ${t('createRoomModal.templateNameRake', { percent: rakePercent })}` : '') +
+      (ante > 0 ? ` · ${t('createRoomModal.templateNameAnte', { amount: ante })}` : '');
+    const next = [...templates.filter((tpl) => tpl.name !== tName), { name: tName, opts: buildOpts() }];
     try {
       setTemplates(await putTemplates(token, next));
-      toast.success('Шаблон сохранён');
+      toast.success(t('createRoomModal.templateSaved'));
     } catch (e) {
       toast.error((e as Error).message);
     }
@@ -160,8 +186,8 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
   const doDeleteTemplate = async (tName: string) => {
     if (!token) return;
     try {
-      setTemplates(await putTemplates(token, templates.filter((t) => t.name !== tName)));
-      toast.success('Шаблон удалён');
+      setTemplates(await putTemplates(token, templates.filter((tpl) => tpl.name !== tName)));
+      toast.success(t('createRoomModal.templateDeleted'));
     } catch (e) {
       toast.error((e as Error).message);
     }
@@ -173,18 +199,18 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
       setEditingName(null);
       return;
     }
-    const target = templates.find((t) => t.name === oldName);
+    const target = templates.find((tpl) => tpl.name === oldName);
     if (!target) {
       setEditingName(null);
       return;
     }
     // Заменяем старое имя; если newName уже есть — перезаписываем (без дублей).
     const next = templates
-      .filter((t) => t.name !== oldName && t.name !== newName)
+      .filter((tpl) => tpl.name !== oldName && tpl.name !== newName)
       .concat({ name: newName, opts: target.opts });
     try {
       setTemplates(await putTemplates(token, next));
-      toast.success('Шаблон переименован');
+      toast.success(t('createRoomModal.templateRenamed'));
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -194,13 +220,13 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (name.trim().length < 3) return toast.error('Название от 3 символов');
-    if (isPrivate && password.length < 4) return toast.error('Пароль от 4 символов');
-    if (buyInMinBb < 5 || buyInMinBb > 1000) return toast.error('Минимальный бай-ин — 5..1000 BB');
-    if (buyInMaxBb < buyInMinBb || buyInMaxBb > 1000) return toast.error('Максимальный бай-ин — от мин до 1000 BB');
-    if (description.trim().length > 200) return toast.error('Описание — не больше 200 символов');
+    if (name.trim().length < 3) return toast.error(t('createRoomModal.validationNameLength'));
+    if (isPrivate && password.length < 4) return toast.error(t('createRoomModal.validationPasswordLength'));
+    if (buyInMinBb < 5 || buyInMinBb > 1000) return toast.error(t('createRoomModal.validationMinBuyIn'));
+    if (buyInMaxBb < buyInMinBb || buyInMaxBb > 1000) return toast.error(t('createRoomModal.validationMaxBuyIn'));
+    if (description.trim().length > 200) return toast.error(t('createRoomModal.validationDescriptionLength'));
     if (showTimebank && tbLocal && tbLocal.capSec < tbLocal.startSec) {
-      return toast.error('Cap таймбанка не меньше стартового запаса');
+      return toast.error(t('createRoomModal.validationTimebankCap'));
     }
     onSubmit(buildOpts());
   };
@@ -224,42 +250,42 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
           {/* Шапка */}
           <div className="shrink-0 px-5 pt-4 bg-[#0f0f0f]">
             <div className="flex items-center gap-2 mb-3">
-              <button type="button" onClick={onClose} aria-label="Назад" className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-white/5 text-white">
+              <button type="button" onClick={onClose} aria-label={t('createRoomModal.back')} className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-white/5 text-white">
                 <ChevronLeft size={22} />
               </button>
               <h3 className="text-lg font-bold text-white">
-                Создать Новый Стол - <span className="text-emerald-400">{variant === 'shortdeck' ? 'Шорт-дэк' : 'NLH'}</span>
+                {t('createRoomModal.titlePrefix')} <span className="text-emerald-400">{variant === 'shortdeck' ? t('createRoomModal.shortdeck') : t('createRoomModal.nlh')}</span>
               </h3>
             </div>
             {/* Табы форматов: Кольцевая активна; SNG/Турнир — disabled (memory game_formats) */}
             <div className="flex">
               {[
-                { id: 'cash', label: 'Кольцевая игра', enabled: true },
-                { id: 'sng', label: 'SNG', enabled: false },
-                { id: 'mtt', label: 'Турнир', enabled: false },
-              ].map((t) => (
+                { id: 'cash', label: t('createRoomModal.tabCash'), enabled: true },
+                { id: 'sng', label: t('createRoomModal.tabSng'), enabled: false },
+                { id: 'mtt', label: t('createRoomModal.tabMtt'), enabled: false },
+              ].map((ft) => (
                 <div
-                  key={t.id}
+                  key={ft.id}
                   className={
                     'flex-1 text-center pb-2 text-sm font-semibold border-b-2 ' +
-                    (format === t.id
+                    (format === ft.id
                       ? 'text-white border-emerald-500'
-                      : t.enabled
+                      : ft.enabled
                         ? 'text-gray-400 border-transparent'
                         : 'text-gray-600 border-transparent')
                   }
-                  title={t.enabled ? '' : 'Скоро'}
+                  title={ft.enabled ? '' : t('createRoomModal.soonTooltip')}
                 >
-                  {t.label}
-                  {!t.enabled && <span className="block text-[9px] text-gray-600">скоро</span>}
+                  {ft.label}
+                  {!ft.enabled && <span className="block text-[9px] text-gray-600">{t('createRoomModal.soon')}</span>}
                 </div>
               ))}
             </div>
             {/* Вариант игры: NLH / Шорт-дэк (memory game_formats — только эти два) */}
             <div className="flex gap-2 mt-3">
               {([
-                { id: 'nlh', label: 'NLH' },
-                { id: 'shortdeck', label: 'Шорт-дэк' },
+                { id: 'nlh', label: t('createRoomModal.nlh') },
+                { id: 'shortdeck', label: t('createRoomModal.shortdeck') },
               ] as { id: GameFormat; label: string }[]).map((v) => (
                 <button
                   key={v.id}
@@ -283,14 +309,14 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
             {/* Загрузка сохранённых шаблонов */}
             {templates.length > 0 && (
               <div className="pt-4">
-                <div className="text-xs text-gray-400 mb-1">Шаблоны (нажми — применить)</div>
+                <div className="text-xs text-gray-400 mb-1">{t('createRoomModal.templatesLabel')}</div>
                 <div className="flex flex-wrap gap-2">
-                  {templates.map((t) => (
+                  {templates.map((tpl) => (
                     <div
-                      key={t.name}
+                      key={tpl.name}
                       className="flex items-center gap-1 bg-gray-800 border border-white/10 rounded-lg pl-2 pr-1 py-1"
                     >
-                      {editingName === t.name ? (
+                      {editingName === tpl.name ? (
                         <>
                           <input
                             value={editValue}
@@ -298,15 +324,15 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
                             maxLength={60}
                             onChange={(e) => setEditValue(e.target.value)}
                             onKeyDown={(e) => {
-                              if (e.key === 'Enter') doRenameTemplate(t.name);
+                              if (e.key === 'Enter') doRenameTemplate(tpl.name);
                               if (e.key === 'Escape') setEditingName(null);
                             }}
                             className="w-32 bg-gray-900 border border-white/10 rounded px-2 py-0.5 text-white text-sm outline-none focus:border-emerald-500"
                           />
                           <button
                             type="button"
-                            onClick={() => doRenameTemplate(t.name)}
-                            aria-label="Сохранить имя"
+                            onClick={() => doRenameTemplate(tpl.name)}
+                            aria-label={t('createRoomModal.saveTemplateName')}
                             className="w-5 h-5 flex items-center justify-center rounded text-emerald-400 hover:bg-white/5"
                           >
                             ✓
@@ -314,7 +340,7 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
                           <button
                             type="button"
                             onClick={() => setEditingName(null)}
-                            aria-label="Отмена"
+                            aria-label={t('createRoomModal.cancel')}
                             className="w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:bg-white/5 text-base leading-none"
                           >
                             ×
@@ -322,24 +348,24 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
                         </>
                       ) : (
                         <>
-                          <button type="button" onClick={() => applyTemplate(t.opts)} className="text-sm text-white pl-1">
-                            {t.name}
+                          <button type="button" onClick={() => applyTemplate(tpl.opts)} className="text-sm text-white pl-1">
+                            {tpl.name}
                           </button>
                           <button
                             type="button"
                             onClick={() => {
-                              setEditingName(t.name);
-                              setEditValue(t.name);
+                              setEditingName(tpl.name);
+                              setEditValue(tpl.name);
                             }}
-                            aria-label="Переименовать шаблон"
+                            aria-label={t('createRoomModal.renameTemplate')}
                             className="w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:text-emerald-400 hover:bg-white/5 text-xs"
                           >
                             ✎
                           </button>
                           <button
                             type="button"
-                            onClick={() => doDeleteTemplate(t.name)}
-                            aria-label="Удалить шаблон"
+                            onClick={() => doDeleteTemplate(tpl.name)}
+                            aria-label={t('createRoomModal.deleteTemplate')}
                             className="w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:text-red-400 hover:bg-white/5 text-base leading-none"
                           >
                             ×
@@ -354,22 +380,22 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
 
             {/* Заголовок стола */}
             <div className="pt-4">
-              <label className="text-xs text-gray-400 mb-1 block">Заголовок</label>
+              <label className="text-xs text-gray-400 mb-1 block">{t('createRoomModal.titleFieldLabel')}</label>
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Введите название стола"
+                placeholder={t('createRoomModal.titlePlaceholder')}
                 className="w-full bg-gray-800 border border-white/10 rounded-lg px-4 py-2.5 text-white text-sm outline-none focus:border-emerald-500"
               />
             </div>
 
             {/* Базовые тогглы (часть — «скоро») */}
             {myClub && (
-              <SettingRow label={'Только для клуба · ' + myClub.name}>
+              <SettingRow label={t('createRoomModal.clubOnlyLabel') + ' ' + myClub.name}>
                 <Toggle checked={clubOnly} onChange={setClubOnly} />
               </SettingRow>
             )}
-            <SettingRow label="Приватные игры">
+            <SettingRow label={t('createRoomModal.privateGames')}>
               <Toggle checked={isPrivate} onChange={setIsPrivate} />
             </SettingRow>
             {isPrivate && (
@@ -377,40 +403,40 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Пароль (мин. 4 символа)"
+                placeholder={t('createRoomModal.passwordPlaceholder')}
                 className="w-full bg-gray-800 border border-white/10 rounded-lg px-4 py-2.5 text-white text-sm outline-none focus:border-emerald-500 mt-2"
               />
             )}
             {isAdmin && (
-              <SettingRow label="Закрепить сверху">
+              <SettingRow label={t('createRoomModal.pinToTop')}>
                 <Toggle checked={pinned} onChange={setPinned} />
               </SettingRow>
             )}
-            <SettingRow label="Бэд-бит Джекпот" soon disabled onInfo={openInfo('badbeat')}>
+            <SettingRow label={t('createRoomModal.badBeatJackpot')} soon disabled onInfo={openInfo('badbeat')}>
               <Toggle checked={false} onChange={noop} disabled />
             </SettingRow>
-            <SettingRow label="Squid Game" soon disabled onInfo={openInfo('squid')}>
+            <SettingRow label={t('createRoomModal.squidGame')} soon disabled onInfo={openInfo('squid')}>
               <Toggle checked={false} onChange={noop} disabled />
             </SettingRow>
-            <SettingRow label="All-In or Fold" soon disabled onInfo={openInfo('aof')}>
+            <SettingRow label={t('createRoomModal.allInOrFold')} soon disabled onInfo={openInfo('aof')}>
               <Toggle checked={false} onChange={noop} disabled />
             </SettingRow>
 
             {/* Размер стола + время действия */}
-            <SettingRow label="Размер стола">
+            <SettingRow label={t('createRoomModal.tableSize')}>
               <Stepper
-                display={maxPlayers + ' Макс. игроков'}
+                display={t('createRoomModal.maxPlayersStepper', { count: maxPlayers })}
                 onDec={() => setMaxPlayers((v) => Math.max(2, v - 1))}
                 onInc={() => setMaxPlayers((v) => Math.min(12, v + 1))}
               />
             </SettingRow>
             <div className="py-3 border-b border-white/5">
-              <div className="text-sm text-white mb-2">Время действия</div>
+              <div className="text-sm text-white mb-2">{t('createRoomModal.turnDuration')}</div>
               <Segmented options={TURN_DURATION_OPTS} value={turnDurationSec} onChange={setTurnDurationSec} />
             </div>
 
             {/* Таймбанк */}
-            <SettingRow label="Таймбанк">
+            <SettingRow label={t('createRoomModal.timebank')}>
               <Toggle
                 checked={!!tbLocal?.enabled}
                 onChange={(v) => tbLocal && setTbLocal({ ...tbLocal, enabled: v })}
@@ -419,28 +445,28 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
             </SettingRow>
             {tbLocal?.enabled && (
               <>
-                <SettingRow label="Старт тайм-банка" disabled={!showTimebank}>
+                <SettingRow label={t('createRoomModal.timebankStart')} disabled={!showTimebank}>
                   <Dropdown
                     value={tbLocal.startSec}
                     disabled={!showTimebank}
                     onChange={(v) => setTbLocal({ ...tbLocal, startSec: v, capSec: Math.max(tbLocal.capSec, v) })}
-                    options={[20, 30, 40, 50, 60].map((s) => ({ value: s, label: s + ' Сек' }))}
+                    options={[20, 30, 40, 50, 60].map((s) => ({ value: s, label: t('createRoomModal.secOption', { count: s }) }))}
                   />
                 </SettingRow>
                 <div className={'py-3 border-b border-white/5 ' + (!showTimebank ? 'opacity-50' : '')}>
-                  <div className="text-sm text-white mb-2">Дополнительный тайм-банк после</div>
+                  <div className="text-sm text-white mb-2">{t('createRoomModal.timebankBonusAfter')}</div>
                   <div className="grid grid-cols-2 gap-2">
                     <Dropdown
                       value={tbLocal.bonusEveryHands}
                       disabled={!showTimebank}
                       onChange={(v) => setTbLocal({ ...tbLocal, bonusEveryHands: v })}
-                      options={[5, 10, 15, 20, 30].map((n) => ({ value: n, label: n + ' рук' }))}
+                      options={[5, 10, 15, 20, 30].map((n) => ({ value: n, label: t('createRoomModal.handsOption', { count: n }) }))}
                     />
                     <Dropdown
                       value={tbLocal.bonusSec}
                       disabled={!showTimebank}
                       onChange={(v) => setTbLocal({ ...tbLocal, bonusSec: v })}
-                      options={[10, 20, 30, 40, 60].map((s) => ({ value: s, label: s + ' Сек' }))}
+                      options={[10, 20, 30, 40, 60].map((s) => ({ value: s, label: t('createRoomModal.secOption', { count: s }) }))}
                     />
                   </div>
                 </div>
@@ -449,11 +475,11 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
 
             {/* Блайнды */}
             <div className="flex items-center justify-between py-2 text-sm pt-3">
-              <span className="text-gray-400">Блайнды</span>
+              <span className="text-gray-400">{t('createRoomModal.blindsLabel')}</span>
               <span className="text-white font-bold tabular-nums">{formatMoney(smallBlind)} / {formatMoney(bigBlind)}</span>
             </div>
             <div className="py-2">
-              <div className="text-xs text-gray-400 mb-2">Размер блайндов</div>
+              <div className="text-xs text-gray-400 mb-2">{t('createRoomModal.blindsSizeLabel')}</div>
               <Segmented<string>
                 options={BLIND_PRESETS.map((p) => ({ value: p.id as string, label: p.label }))}
                 value={activePresetId ?? ''}
@@ -468,7 +494,7 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
             </div>
             <div className="grid grid-cols-2 gap-3 py-2 border-b border-white/5">
               <div>
-                <label className="text-xs text-gray-400 mb-1 block">Малый блайнд</label>
+                <label className="text-xs text-gray-400 mb-1 block">{t('createRoomModal.smallBlindLabel')}</label>
                 <input
                   type="number"
                   min="0.01"
@@ -479,7 +505,7 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
                 />
               </div>
               <div>
-                <label className="text-xs text-gray-400 mb-1 block">Большой блайнд</label>
+                <label className="text-xs text-gray-400 mb-1 block">{t('createRoomModal.bigBlindLabel')}</label>
                 <input
                   type="number"
                   min="0.02"
@@ -490,20 +516,20 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
                 />
               </div>
             </div>
-            <SettingRow label="Анте">
+            <SettingRow label={t('createRoomModal.ante')}>
               <Stepper
-                display={ante === 0 ? 'Нет' : formatMoney(ante)}
+                display={ante === 0 ? t('createRoomModal.anteNone') : formatMoney(ante)}
                 onDec={() => setAnte((v) => Math.max(0, v - Math.max(1, Math.round(bigBlind / 4))))}
                 onInc={() => setAnte((v) => Math.min(bigBlind, v + Math.max(1, Math.round(bigBlind / 4))))}
               />
             </SettingRow>
-            <SettingRow label="Страдл" soon disabled onInfo={openInfo('straddle')}>
-              <Toggle checked={false} onChange={noop} disabled />
+            <SettingRow label={t('createRoomModal.straddle')} onInfo={openInfo('straddle')}>
+              <Toggle checked={straddleEnabled} onChange={setStraddleEnabled} />
             </SettingRow>
 
             {/* Бай-ин */}
             <div className="flex items-center justify-between py-2 text-sm pt-3">
-              <span className="text-gray-400">Байин (BB)</span>
+              <span className="text-gray-400">{t('createRoomModal.buyInBb')}</span>
               <span className="text-white font-bold tabular-nums">{buyInMinBb} / {buyInMaxBb}</span>
             </div>
             <div className="py-3 border-b border-white/5">
@@ -519,13 +545,13 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
                 }}
               />
             </div>
-            <SettingRow label="Авторизация Бай-ина" soon disabled>
+            <SettingRow label={t('createRoomModal.buyInAuth')} soon disabled>
               <Toggle checked={false} onChange={noop} disabled />
             </SettingRow>
 
             {/* Рейк (функционально) — два дропдауна: процент + Cap. 0% = выключен. */}
             <div className="py-3 border-b border-white/5 flex items-center justify-between gap-2">
-              <span className="text-sm text-white shrink-0">Рейк</span>
+              <span className="text-sm text-white shrink-0">{t('createRoomModal.rake')}</span>
               <div className="flex gap-2">
                 <Dropdown
                   value={rakePercent}
@@ -535,35 +561,35 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
                 <Dropdown
                   value={rakeCapBb}
                   onChange={setRakeCapBb}
-                  options={[{ value: 100, label: 'Без Cap' }, ...[1, 2, 3, 5, 10].map((c) => ({ value: c, label: c + ' BB' }))]}
+                  options={[{ value: 100, label: t('createRoomModal.noCap') }, ...[1, 2, 3, 5, 10].map((c) => ({ value: c, label: c + ' BB' }))]}
                 />
               </div>
             </div>
 
             {/* Прочие игровые опции (в разработке) */}
-            <SettingRow label="CallTime" soon disabled onInfo={openInfo('calltime')}>
+            <SettingRow label={t('createRoomModal.callTime')} soon disabled onInfo={openInfo('calltime')}>
               <Toggle checked={false} onChange={noop} disabled />
             </SettingRow>
-            <SettingRow label="Без расхода" soon disabled onInfo={openInfo('norathole')}>
-              <span className="text-sm text-gray-500">6 час(ов)</span>
+            <SettingRow label={t('createRoomModal.noRathole')} soon disabled onInfo={openInfo('norathole')}>
+              <span className="text-sm text-gray-500">{t('createRoomModal.hoursValue', { count: 6 })}</span>
             </SettingRow>
             <div className="pb-3 border-b border-white/5 opacity-40">
               <RangeSlider min={1} max={12} step={1} value={6} onChange={noop} disabled />
             </div>
-            <SettingRow label="Bomb Pot" soon disabled onInfo={openInfo('bombpot')}>
-              <Toggle checked={false} onChange={noop} disabled />
+            <SettingRow label={t('createRoomModal.bombPot')} onInfo={openInfo('bombpot')}>
+              <Toggle checked={bombPotEnabled} onChange={setBombPotEnabled} />
             </SettingRow>
             {/* Вложенная группа Bomb Pot (визуально, disabled) */}
             <div className="pl-3 border-l-2 border-white/5 ml-1">
-              <SettingRow label="Анте Bomb Pot" soon disabled>
+              <SettingRow label={t('createRoomModal.bombPotAnte')} soon disabled>
                 <span className="text-sm text-gray-500">3× BB</span>
               </SettingRow>
               <div className="py-3 border-b border-white/5 opacity-40">
-                <div className="text-sm text-white mb-2">Частота Bomb Pot</div>
+                <div className="text-sm text-white mb-2">{t('createRoomModal.bombPotFrequency')}</div>
                 <Segmented
                   options={[
-                    { value: 'hands', label: 'Раздачи' },
-                    { value: 'min', label: 'Минута' },
+                    { value: 'hands', label: t('createRoomModal.optHands') },
+                    { value: 'min', label: t('createRoomModal.optMinute') },
                   ]}
                   value={'hands'}
                   onChange={noop}
@@ -573,88 +599,77 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
                   <RangeSlider min={1} max={20} step={1} value={5} onChange={noop} disabled />
                 </div>
               </div>
-              <SettingRow label="Bomb Pot Double Board" soon disabled>
+              <SettingRow label={t('createRoomModal.bombPotDoubleBoard')} soon disabled>
                 <Toggle checked={false} onChange={noop} disabled />
               </SettingRow>
             </div>
-            <SettingRow label="Double Board" soon disabled>
+            <SettingRow label={t('createRoomModal.doubleBoard')}>
+              <Toggle checked={doubleBoardEnabled} onChange={setDoubleBoardEnabled} />
+            </SettingRow>
+            <SettingRow label={t('createRoomModal.allInInsurance')} soon disabled>
               <Toggle checked={false} onChange={noop} disabled />
             </SettingRow>
-            <SettingRow label="All-in страховка" soon disabled>
-              <Toggle checked={false} onChange={noop} disabled />
+            <SettingRow label={t('createRoomModal.evCashout')} onInfo={openInfo('ev')}>
+              <Toggle checked={evCashoutEnabled} onChange={setEvCashoutEnabled} />
             </SettingRow>
-            <SettingRow label="EV Cashout" soon disabled onInfo={openInfo('ev')}>
-              <Toggle checked={false} onChange={noop} disabled />
+            <SettingRow label={t('createRoomModal.runItMultiple')}>
+              <Toggle checked={rimtEnabled} onChange={setRimtEnabled} />
             </SettingRow>
-            <SettingRow label="Запустить несколько раз" soon disabled>
-              <Toggle checked={false} onChange={noop} disabled />
+            <SettingRow label={t('createRoomModal.noTurnNoShow')} onInfo={openInfo('noturn')}>
+              <Toggle checked={noTurnNoShowEnabled} onChange={setNoTurnNoShowEnabled} />
             </SettingRow>
-            <SettingRow label="No Turn No Show" soon disabled onInfo={openInfo('noturn')}>
-              <Toggle checked={false} onChange={noop} disabled />
-            </SettingRow>
-            <SettingRow label="Автостарт">
+            <SettingRow label={t('createRoomModal.autoStart')}>
               <Stepper
-                display={autoStartPlayers + ' Игроков'}
+                display={t('createRoomModal.playersStepper', { count: autoStartPlayers })}
                 onDec={() => setAutoStartPlayers((v) => Math.max(2, v - 1))}
                 onInc={() => setAutoStartPlayers((v) => Math.min(maxPlayers, v + 1))}
               />
             </SettingRow>
-            <SettingRow label="Обязательный VPIP" soon disabled>
+            <SettingRow label={t('createRoomModal.requiredVpip')} soon disabled>
               <Toggle checked={false} onChange={noop} disabled />
             </SettingRow>
 
-            {/* Ограничение / организация (в разработке) */}
-            <div className="text-sm text-white pt-3 mb-2">Ограничение игры</div>
-            <div className="py-2 opacity-50">
-              <Segmented
-                options={[
-                  { value: 'ip', label: 'IP' },
-                  { value: 'gps', label: 'GPS' },
-                  { value: 'dev', label: 'Устройство' },
-                  { value: 'chat', label: 'Чат' },
-                ]}
-                value={'ip'}
-                onChange={noop}
-                disabled
-              />
-            </div>
-            <SettingRow label="Таблица с повторами" soon disabled onInfo={openInfo('runtable')}>
-              <Toggle checked={false} onChange={noop} disabled />
+            {/* Ограничение / организация */}
+            <SettingRow label={t('createRoomModal.gameRestriction')}>
+              <Toggle checked={antiCollusionEnabled} onChange={setAntiCollusionEnabled} />
             </SettingRow>
-            <SettingRow label="Длительность игры">
-              <span className="text-sm text-white">{sessionHours === 0 ? 'Без ограничения' : sessionHours + ':00'}</span>
+            <SettingRow label={t('createRoomModal.runItTwice')} onInfo={openInfo('runtable')}>
+              <Toggle checked={rimtEnabled} onChange={setRimtEnabled} />
+            </SettingRow>
+            <SettingRow label={t('createRoomModal.sessionDuration')}>
+              <span className="text-sm text-white">{sessionHours === 0 ? t('createRoomModal.noLimit') : sessionHours + ':00'}</span>
             </SettingRow>
             <div className="pb-3 border-b border-white/5">
               <RangeSlider min={0} max={12} step={1} value={sessionHours} onChange={setSessionHours} />
             </div>
-            <SettingRow label="Автопродление" disabled={sessionHours === 0}>
+            <SettingRow label={t('createRoomModal.autoExtend')} disabled={sessionHours === 0}>
               <Toggle
                 checked={autoExtendSession}
                 onChange={setAutoExtendSession}
                 disabled={sessionHours === 0}
               />
             </SettingRow>
-            <SettingRow label="Сит-аут при потере связи">
-              <span className="text-sm text-white">{sitOutTimeoutMin} мин</span>
+            <SettingRow label={t('createRoomModal.sitOutTimeout')}>
+              <span className="text-sm text-white">{t('createRoomModal.minutesValue', { count: sitOutTimeoutMin })}</span>
             </SettingRow>
             <div className="pb-3 border-b border-white/5">
               <RangeSlider min={5} max={30} step={1} value={sitOutTimeoutMin} onChange={setSitOutTimeoutMin} />
             </div>
-            <SettingRow label="Задержка посадки из очереди">
-              <span className="text-sm text-white">{waitlistDelayMin} мин</span>
+            <SettingRow label={t('createRoomModal.waitlistDelay')}>
+              <span className="text-sm text-white">{t('createRoomModal.minutesValue', { count: waitlistDelayMin })}</span>
             </SettingRow>
             <div className="pb-3 border-b border-white/5">
               <RangeSlider min={2} max={10} step={1} value={waitlistDelayMin} onChange={setWaitlistDelayMin} />
             </div>
 
             {/* Описание (функционально) */}
-            <div className="text-sm text-white pt-3 mb-1">Описание</div>
+            <div className="text-sm text-white pt-3 mb-1">{t('createRoomModal.description')}</div>
             <div className="py-2">
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value.slice(0, 200))}
                 rows={2}
-                placeholder="Короткое описание стола (видно в лобби)"
+                placeholder={t('createRoomModal.descriptionPlaceholder')}
                 className="w-full bg-gray-800 border border-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-emerald-500 resize-none"
               />
               <div className="text-right text-[11px] text-gray-500 mt-0.5">{description.length}/200</div>
@@ -668,13 +683,13 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
               onClick={doSaveTemplate}
               className="flex-1 py-3 rounded-xl border-2 border-emerald-500 text-white font-bold hover:bg-emerald-500/10"
             >
-              Сохранить Шаблон
+              {t('createRoomModal.saveTemplateButton')}
             </button>
             <button
               type="submit"
               className="flex-1 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 font-bold text-white"
             >
-              Создать
+              {t('createRoomModal.create')}
             </button>
           </div>
         </form>

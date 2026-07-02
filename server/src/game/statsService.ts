@@ -5,6 +5,10 @@
 import { readJSON, writeJSON } from '../auth/storage.js';
 
 const FILE = 'hands.json';
+const LIFETIME_FILE = 'handsLifetime.json';
+// Кап лога — не даёт hands.json расти бесконечно (ROADMAP §11.3). Обрезка касается только
+// периодных/табличных метрик и графика; lifetime-итоги (handsLifetime.json) обрезкой не затронуты.
+const MAX_RECORDS = 20000;
 
 // Одна запись = результат одного игрока-человека за одну раздачу.
 export interface HandStatRecord {
@@ -33,6 +37,20 @@ function readLog(): HandStatRecord[] {
   } catch {
     return []; // файла ещё нет или повреждён — пустой лог
   }
+}
+
+// Per-user lifetime-итоги (hands/pnl/rake за всё время), независимые от обрезки hands.json.
+function readLifetime(): Record<string, UserStats> {
+  try {
+    const v = readJSON(LIFETIME_FILE) as Record<string, UserStats>;
+    return v && typeof v === 'object' ? v : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeLifetime(v: Record<string, UserStats>): void {
+  writeJSON(LIFETIME_FILE, v);
 }
 
 // === Чистые агрегаторы (тестируются без файловой системы) ===
@@ -87,25 +105,46 @@ export function aggregateAllRecordsInPeriod(
 export function recordHandStat(rec: HandStatRecord): void {
   const log = readLog();
   log.push(rec);
-  writeJSON(FILE, log);
+  // Старые записи обрезаются — доступны только периодным/табличным метрикам в пределах
+  // оставшегося окна. Lifetime-итоги ниже считаются отдельно и обрезкой не теряются.
+  const trimmed = log.length > MAX_RECORDS ? log.slice(log.length - MAX_RECORDS) : log;
+  writeJSON(FILE, trimmed);
+
+  const lifetime = readLifetime();
+  const s = lifetime[rec.userId] ?? emptyStats();
+  s.hands++;
+  s.pnl += rec.delta;
+  s.rake += rec.rake;
+  lifetime[rec.userId] = s;
+  writeLifetime(lifetime);
 }
 
 export function aggregateUserStats(userId: string, sinceMs: number | null, untilMs: number | null): UserStats {
+  if (sinceMs === null && untilMs === null) {
+    return readLifetime()[userId] ?? emptyStats();
+  }
   return aggregateRecords(readLog(), userId, sinceMs, untilMs);
 }
 
 export function aggregateAllUsers(): Record<string, UserStats> {
-  return aggregateAllRecords(readLog());
+  return readLifetime();
 }
 
 export function aggregateAllUsersInPeriod(sinceMs: number | null, untilMs: number | null): Record<string, UserStats> {
+  if (sinceMs === null && untilMs === null) {
+    return readLifetime();
+  }
   return aggregateAllRecordsInPeriod(readLog(), sinceMs, untilMs);
 }
 
 // Кумулятивный PnL по раздачам для графика банкролла (PokerCraft-lite §10.10).
+// Если ранние раздачи юзера выпали из-за обрезки лога — график получает точку-якорь
+// (lifetime PnL минус сумма дельт оставшихся записей), чтобы линия не «обрывалась» в ноль.
 export function getChartData(userId: string): { t: number; cumPnL: number }[] {
   const mine = readLog().filter(r => r.userId === userId).sort((a, b) => a.t - b.t);
-  let cum = 0;
+  const survivingSum = mine.reduce((sum, r) => sum + r.delta, 0);
+  const lifetimePnl = readLifetime()[userId]?.pnl ?? survivingSum;
+  let cum = lifetimePnl - survivingSum;
   return mine.map(r => { cum += r.delta; return { t: r.t, cumPnL: cum }; });
 }
 

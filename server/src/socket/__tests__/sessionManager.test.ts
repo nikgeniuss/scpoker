@@ -41,6 +41,16 @@ describe('forceDisconnectOtherSessions', () => {
     expect(log.disconnected).toEqual([]);
     expect(log.emitted).toEqual([]);
   });
+
+  it('кастомный payload (compliance-кик, ROADMAP §11.2) — emit получает reason/until вместо дефолтного', () => {
+    const { io, addSocket } = makeIo();
+    const sockets = (io as unknown as { sockets: { sockets: Map<string, { emit: (e: string, p: unknown) => void }> } }).sockets.sockets;
+    const emitted: unknown[] = [];
+    addSocket('a1', 'A');
+    sockets.get('a1')!.emit = (_e, p) => emitted.push(p);
+    forceDisconnectOtherSessions(io, 'A', { reason: 'self-excluded', until: '2099-01-01T00:00:00.000Z' });
+    expect(emitted).toEqual([{ reason: 'self-excluded', until: '2099-01-01T00:00:00.000Z' }]);
+  });
 });
 
 describe('hasOtherActiveSocket', () => {

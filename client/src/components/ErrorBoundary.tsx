@@ -1,5 +1,6 @@
 import { Component, type ReactNode, type ErrorInfo } from 'react';
 import { AlertTriangle } from 'lucide-react';
+import i18n from '../i18n';
 
 interface Props {
   children: ReactNode;
@@ -29,13 +30,13 @@ export class ErrorBoundary extends Component<Props, State> {
         <div className="max-w-md w-full bg-gray-900 border border-red-500/40 rounded-2xl p-6 space-y-4">
           <div className="flex items-center gap-3 text-red-400">
             <AlertTriangle size={28} />
-            <h2 className="text-xl font-bold">Что-то пошло не так</h2>
+            <h2 className="text-xl font-bold">{i18n.t('errorBoundary.title')}</h2>
           </div>
           <p className="text-gray-300 text-sm">
-            Произошла ошибка при отображении этой страницы. Попробуйте перезагрузить или вернуться на главную.
+            {i18n.t('errorBoundary.description')}
           </p>
           <details className="text-xs text-gray-500 bg-black/40 rounded-lg p-3">
-            <summary className="cursor-pointer text-gray-400">Подробности</summary>
+            <summary className="cursor-pointer text-gray-400">{i18n.t('errorBoundary.details')}</summary>
             <pre className="mt-2 whitespace-pre-wrap break-words">{this.state.error.message}</pre>
           </details>
           <div className="flex gap-2 pt-2">
@@ -43,13 +44,13 @@ export class ErrorBoundary extends Component<Props, State> {
               onClick={() => window.location.reload()}
               className="flex-1 px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-500 to-green-600 text-white font-bold shadow-lg shadow-emerald-500/30 hover:opacity-90"
             >
-              Перезагрузить
+              {i18n.t('errorBoundary.reload')}
             </button>
             <button
               onClick={() => (window.location.href = '/')}
               className="flex-1 px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-white hover:bg-white/10"
             >
-              На главную
+              {i18n.t('errorBoundary.home')}
             </button>
           </div>
         </div>

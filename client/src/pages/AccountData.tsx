@@ -5,12 +5,14 @@ import { ChevronRight, Pencil, Check, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../store/authStore';
 import { API_URL } from '../config/api';
+import { TwoFactorSetupModal, TwoFactorDisableModal } from '../components/profile/TwoFactorSetupModal';
 
 interface AccountInfo {
   email?: string;
   publicId?: string;
   createdAt?: string;
   telegramId?: number;
+  twoFactorEnabled?: boolean;
 }
 
 // Строка профиля с инлайн-редактированием (имя пользователя / email). Карандаш → инпут → сохранить/отмена.
@@ -90,6 +92,7 @@ export function AccountData() {
   const login = useAuthStore(s => s.login);
   const navigate = useNavigate();
   const [info, setInfo] = useState<AccountInfo | null>(null);
+  const [twoFactorModal, setTwoFactorModal] = useState<'setup' | 'disable' | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -109,12 +112,12 @@ export function AccountData() {
     });
     const data = await res.json();
     if (!res.ok) {
-      toast.error(data.error || 'Не удалось изменить имя');
+      toast.error(data.error || t('accountData.usernameChangeFailed'));
       return;
     }
     // Новый токен — username зашит в JWT и используется при socket-авторизации (имя за столом)
     login(data.token, { ...user, username: data.user.username });
-    toast.success('Имя пользователя изменено');
+    toast.success(t('accountData.usernameChanged'));
   };
 
   const saveEmail = async (next: string) => {
@@ -125,11 +128,11 @@ export function AccountData() {
     });
     const data = await res.json();
     if (!res.ok) {
-      toast.error(data.error || 'Не удалось изменить email');
+      toast.error(data.error || t('accountData.emailChangeFailed'));
       return;
     }
     setInfo((prev) => (prev ? { ...prev, email: data.email } : prev));
-    toast.success('Email изменён');
+    toast.success(t('accountData.emailChanged'));
   };
 
   return (
@@ -162,8 +165,46 @@ export function AccountData() {
             <span className="text-sm text-white/40">{t('accountData.telegram')}</span>
             <span className="text-sm font-medium">{info?.telegramId ? t('accountData.telegramLinked') : t('accountData.telegramNotLinked')}</span>
           </div>
+          <div className="flex items-center justify-between px-4 py-3.5">
+            <span className="text-sm text-white/40">{t('accountData.kyc')}</span>
+            <span className="text-sm font-medium text-white/50">{t('accountData.kycNotVerified')}</span>
+          </div>
+          <div className="flex items-center justify-between px-4 py-3.5">
+            <span className="text-sm text-white/40">{t('accountData.twoFactor')}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium">
+                {info?.twoFactorEnabled ? t('accountData.twoFactorEnabled') : t('accountData.twoFactorDisabled')}
+              </span>
+              <button
+                onClick={() => setTwoFactorModal(info?.twoFactorEnabled ? 'disable' : 'setup')}
+                className="text-xs font-bold text-emerald-400 hover:text-emerald-300"
+              >
+                {info?.twoFactorEnabled ? t('accountData.twoFactorDisable') : t('accountData.twoFactorEnable')}
+              </button>
+            </div>
+          </div>
+          <button
+            onClick={() => navigate('/devices')}
+            className="w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-white/5"
+          >
+            <span className="text-sm text-white/40">{t('accountData.devices')}</span>
+            <ChevronRight size={16} className="text-white/20" />
+          </button>
         </div>
       </div>
+
+      {twoFactorModal === 'setup' && (
+        <TwoFactorSetupModal
+          onClose={() => setTwoFactorModal(null)}
+          onEnabled={() => setInfo((prev) => (prev ? { ...prev, twoFactorEnabled: true } : prev))}
+        />
+      )}
+      {twoFactorModal === 'disable' && (
+        <TwoFactorDisableModal
+          onClose={() => setTwoFactorModal(null)}
+          onDisabled={() => setInfo((prev) => (prev ? { ...prev, twoFactorEnabled: false } : prev))}
+        />
+      )}
     </div>
   );
 }

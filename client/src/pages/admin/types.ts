@@ -15,6 +15,7 @@ export interface AdminUser {
   note?: string;
   pnl?: number;   // PnL за всё время (из hands-лога; для сортировки/деталей)
   hands?: number; // сыграно рук за всё время
+  twoFactorEnabled?: boolean;
 }
 
 // Агрегат статистики игрока за период (эндпоинт GET /admin/users/:id/stats)
@@ -102,6 +103,14 @@ export interface PaymentsSettings {
   chains: Record<PaymentChain, PaymentsChainSettings>;
 }
 
+export interface ResponsibleGamblingSettings {
+  depositLimitEnabled: boolean;
+  lossLimitEnabled: boolean;
+  sessionTimeLimitEnabled: boolean;
+  selfExclusionEnabled: boolean;
+  timeoutEnabled: boolean;
+}
+
 export interface GameSettings {
   turnDurationMs: number;
   autostartDelayMs: number;
@@ -110,6 +119,7 @@ export interface GameSettings {
   botMode: BotModeSettings;
   paidFeatures: PaidFeaturesSettings;
   payments: PaymentsSettings;
+  responsibleGambling: ResponsibleGamblingSettings;
 }
 
 export interface WithdrawalRequestView {

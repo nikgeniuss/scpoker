@@ -1,4 +1,5 @@
 import { lazy, Suspense, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Info, Smile, Settings, LogOut, Coins, Menu } from 'lucide-react';
 import { formatMoney } from '../../config/chipFormat';
 
@@ -36,6 +37,7 @@ export const MobileTableMenu = ({
   onLeave,
   hideTrigger,
 }: MobileTableMenuProps) => {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
 
   // Действие из меню закрывает панель.
@@ -67,7 +69,7 @@ export const MobileTableMenu = ({
           <div className="flex items-center justify-center gap-2.5 flex-wrap pb-1">
             {typeof userChips === 'number' && (
               <span
-                title="Свободный банкролл"
+                title={t('mobileTableMenu.freeBankroll')}
                 className="inline-flex items-center gap-1 px-2.5 h-11 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-bold whitespace-nowrap"
               >
                 <Coins size={14} /> {formatMoney(userChips)}
@@ -78,7 +80,7 @@ export const MobileTableMenu = ({
                 <AdminTableControls slot="nav" onOpenAdmin={act(onOpenAdmin)} />
               </Suspense>
             )}
-            <button onClick={act(onOpenInfo)} title="Информация о столе" className={btn}>
+            <button onClick={act(onOpenInfo)} title={t('mobileTableMenu.tableInfo')} className={btn}>
               <Info size={18} />
             </button>
             {isAdmin && (
@@ -86,15 +88,15 @@ export const MobileTableMenu = ({
                 <AdminTableControls slot="peek" roomId={roomId} peekOn={peekOn} setPeekOn={setPeekOn} />
               </Suspense>
             )}
-            <button onClick={act(onToggleEmoji)} title="Реакции" className={btn}>
+            <button onClick={act(onToggleEmoji)} title={t('mobileTableMenu.reactions')} className={btn}>
               <Smile size={18} />
             </button>
-            <button onClick={act(onOpenSettings)} title="Настройки игры" className={btn}>
+            <button onClick={act(onOpenSettings)} title={t('mobileTableMenu.gameSettings')} className={btn}>
               <Settings size={18} />
             </button>
             <button
               onClick={act(onLeave)}
-              title="Выйти за стол (в лобби)"
+              title={t('mobileTableMenu.leaveTable')}
               className={
                 'flex items-center justify-center w-11 h-11 rounded-xl bg-red-600/80 hover:bg-red-700 text-white border border-red-500/40'
               }
@@ -112,8 +114,8 @@ export const MobileTableMenu = ({
         <button
           type="button"
           onClick={() => setOpen(true)}
-          aria-label="Меню стола"
-          title="Меню стола"
+          aria-label={t('mobileTableMenu.tableMenu')}
+          title={t('mobileTableMenu.tableMenu')}
           className="fixed right-3 bottom-[calc(env(safe-area-inset-bottom)+84px)] z-40 flex items-center justify-center w-10 h-10 rounded-full bg-black/60 backdrop-blur border border-white/15 text-white/85 active:text-white shadow-lg shadow-black/40"
         >
           <Menu size={20} />

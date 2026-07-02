@@ -1,4 +1,5 @@
 import { useNavigate, useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Plus } from 'lucide-react';
 import type { CardData } from './Card';
 import { useTablesStore, MAX_TABLES } from '../../store/tablesStore';
@@ -29,6 +30,7 @@ const MiniCard = ({ card }: { card: CardData }) => (
 // активный стол выделен, стол с «моим ходом» — янтарная пульсация. «+» открывает лобби
 // для нового стола (макс MAX_TABLES). Клик по пилюле — переключение активного стола.
 export const TablePills = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { roomId: activeId } = useParams();
   const order = useTablesStore((s) => s.order);
@@ -37,17 +39,17 @@ export const TablePills = () => {
   return (
     <div className="flex items-center gap-1.5">
       {order.map((id) => {
-        const t = tables[id];
-        if (!t) return null;
+        const tbl = tables[id];
+        if (!tbl) return null;
         const active = id === activeId;
         return (
           <button
             key={id}
             onClick={() => navigate('/game/' + id)}
-            title={t.roomName}
+            title={tbl.roomName}
             className={
               'relative flex items-center gap-1 px-1.5 h-9 rounded-xl border backdrop-blur transition ' +
-              (t.isMyTurn
+              (tbl.isMyTurn
                 ? 'border-amber-400 ring-2 ring-amber-400/70 bg-amber-500/15 animate-pulse'
                 : active
                   ? 'border-emerald-400/70 bg-emerald-500/15'
@@ -55,16 +57,16 @@ export const TablePills = () => {
             }
           >
             <span className="flex items-center gap-0.5">
-              {t.myCards.length > 0 ? (
-                t.myCards.map((c, i) => <MiniCard key={i} card={c} />)
+              {tbl.myCards.length > 0 ? (
+                tbl.myCards.map((c, i) => <MiniCard key={i} card={c} />)
               ) : (
                 <span className="text-white/40 text-xs px-1">—</span>
               )}
             </span>
             {/* Бейдж выигрыша на showdown */}
-            {t.wonAmount != null && t.wonAmount > 0 && (
+            {tbl.wonAmount != null && tbl.wonAmount > 0 && (
               <span className="absolute -top-1.5 -right-1.5 px-1 rounded-full bg-emerald-500 text-white text-[9px] font-black leading-tight shadow">
-                +{formatMoney(t.wonAmount)}
+                +{formatMoney(tbl.wonAmount)}
               </span>
             )}
           </button>
@@ -73,7 +75,7 @@ export const TablePills = () => {
       {order.length < MAX_TABLES && (
         <button
           onClick={() => navigate('/lobby')}
-          title="Открыть ещё стол"
+          title={t('tablePills.openAnotherTable')}
           className="flex items-center justify-center w-9 h-9 rounded-xl bg-black/40 border border-white/15 text-white/70 hover:text-white hover:bg-black/55 transition"
         >
           <Plus size={18} />

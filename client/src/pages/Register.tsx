@@ -1,5 +1,6 @@
 ﻿import { useState, type Dispatch, type SetStateAction, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../store/authStore';
 import { Eye, EyeOff, Lock, Mail, User, Check } from 'lucide-react';
 import { z } from 'zod';
@@ -10,7 +11,7 @@ import { TelegramButton } from '../components/auth/TelegramButton';
 
 import { API_URL } from '../config/api';
 
-const emailSchema = z.string().email('Некорректный email');
+const emailSchema = z.string().email('invalid email');
 
 interface RegisterForm {
   username: string;
@@ -42,6 +43,7 @@ const PremiumCardTable = ({
   onSubmit,
   navigate,
 }: PremiumCardTableProps) => {
+  const { t } = useTranslation();
   const { isTelegram } = useTelegram();
   const strength = (() => {
     const p = form.password || '';
@@ -53,9 +55,9 @@ const PremiumCardTable = ({
     if (/[0-9]/.test(p)) s++;
     if (/[^A-Za-z0-9]/.test(p)) s++;
 
-    if (s <= 2) return { label: 'Слабый', color: 'bg-red-500', width: '33%' };
-    if (s === 3) return { label: 'Средний', color: 'bg-yellow-500', width: '66%' };
-    return { label: 'Сильный', color: 'bg-emerald-500', width: '100%' };
+    if (s <= 2) return { label: t('auth.register.strengthWeak'), color: 'bg-red-500', width: '33%' };
+    if (s === 3) return { label: t('auth.register.strengthMedium'), color: 'bg-yellow-500', width: '66%' };
+    return { label: t('auth.register.strengthStrong'), color: 'bg-emerald-500', width: '100%' };
   })();
 
   return (
@@ -102,11 +104,11 @@ const PremiumCardTable = ({
               </div>
 
               <h2 className="text-center text-3xl font-bold text-white mb-2">
-                Регистрация
+                {t('auth.register.title')}
               </h2>
 
               <p className="text-center text-white/40 text-sm mb-7">
-                Присоединяйся к лучшим за столом
+                {t('auth.register.subtitle')}
               </p>
 
               <form onSubmit={onSubmit} className="space-y-4">
@@ -114,7 +116,7 @@ const PremiumCardTable = ({
                 <div className="relative">
                   <User className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" size={16} />
                   <input
-                    placeholder="Имя пользователя"
+                    placeholder={t('auth.register.usernamePlaceholder')}
                     value={form.username}
                     onChange={(e) => setForm({ ...form, username: e.target.value })}
                     className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 text-white outline-none"
@@ -124,7 +126,7 @@ const PremiumCardTable = ({
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" size={16} />
                   <input
-                    placeholder="Email"
+                    placeholder={t('auth.register.emailPlaceholder')}
                     value={form.email}
                     onChange={(e) => setForm({ ...form, email: e.target.value })}
                     className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 text-white outline-none"
@@ -136,7 +138,7 @@ const PremiumCardTable = ({
 
                   <input
                     type={showPassword ? 'text' : 'password'}
-                    placeholder="Пароль"
+                    placeholder={t('auth.register.passwordPlaceholder')}
                     value={form.password}
                     onChange={(e) => setForm({ ...form, password: e.target.value })}
                     className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 pr-10 text-white outline-none"
@@ -168,7 +170,7 @@ const PremiumCardTable = ({
 
                   <input
                     type="password"
-                    placeholder="Повтор пароля"
+                    placeholder={t('auth.register.confirmPasswordPlaceholder')}
                     value={form.confirmPassword}
                     onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
                     className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 text-white outline-none"
@@ -185,24 +187,33 @@ const PremiumCardTable = ({
                     checked={agree}
                     onChange={(e) => setAgree(e.target.checked)}
                   />
-                  Я согласен с правилами и условиями
+                  <span>
+                    {t('auth.register.agreePrefix')}{' '}
+                    <a href="/terms" target="_blank" rel="noopener noreferrer" className="text-emerald-400 underline">
+                      {t('auth.register.tos')}
+                    </a>{' '}
+                    {t('auth.register.agreeAnd')}{' '}
+                    <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-emerald-400 underline">
+                      {t('auth.register.privacy')}
+                    </a>
+                  </span>
                 </label>
 
                 <button
-                  disabled={loading}
-                  className="w-full bg-gradient-to-r from-emerald-500 to-green-600 py-3.5 rounded-xl text-white font-bold shadow-lg shadow-emerald-500/30"
+                  disabled={loading || !agree}
+                  className="w-full bg-gradient-to-r from-emerald-500 to-green-600 py-3.5 rounded-xl text-white font-bold shadow-lg shadow-emerald-500/30 disabled:opacity-50"
                 >
-                  {loading ? 'Создание...' : 'Создать аккаунт'}
+                  {loading ? t('auth.register.submitting') : t('auth.register.submit')}
                 </button>
               </form>
 
               <p className="text-center text-white/30 text-sm mt-5">
-                Уже есть аккаунт?{' '}
+                {t('auth.register.haveAccount')}{' '}
                 <span
                   onClick={() => navigate('/login')}
                   className="text-emerald-400 cursor-pointer"
                 >
-                  Войти
+                  {t('auth.register.login')}
                 </span>
               </p>
 
@@ -210,9 +221,9 @@ const PremiumCardTable = ({
               {!isTelegram && (
                 <div className="mt-6 flex flex-col items-center gap-3">
                   <div className="flex items-center gap-3 w-full text-white/30 text-xs">
-                    <span className="flex-1 h-px bg-white/10" /> или <span className="flex-1 h-px bg-white/10" />
+                    <span className="flex-1 h-px bg-white/10" /> {t('auth.login.or')} <span className="flex-1 h-px bg-white/10" />
                   </div>
-                  <TelegramButton label="Играть в Telegram" onClick={() => { window.location.href = tgAppDeepLink(); }} />
+                  <TelegramButton label={t('mainMenu.playInTelegram')} onClick={() => { window.location.href = tgAppDeepLink(); }} />
                 </div>
               )}
 
@@ -226,6 +237,7 @@ const PremiumCardTable = ({
 };
 
 const RegisterPage = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const loginFn = useAuthStore((s) => s.login);
 
@@ -242,12 +254,17 @@ const RegisterPage = () => {
 
   const validate = () => {
     if (!emailSchema.safeParse(form.email).success) {
-      toast.error('Некорректный email');
+      toast.error(t('auth.register.invalidEmail'));
       return false;
     }
 
     if (form.password !== form.confirmPassword) {
-      toast.error('Пароли не совпадают');
+      toast.error(t('auth.register.passwordMismatch'));
+      return false;
+    }
+
+    if (!agree) {
+      toast.error(t('auth.register.mustAgree'));
       return false;
     }
 
@@ -268,20 +285,21 @@ const RegisterPage = () => {
           username: form.username,
           email: form.email,
           password: form.password,
+          tosAccepted: agree,
         }),
       });
 
       const data = await res.json();
 
       if (res.ok) {
-        toast.success('Аккаунт создан');
+        toast.success(t('auth.register.accountCreated'));
         loginFn(data.token, data.user);
         navigate('/');
       } else {
-        toast.error(data.error || 'Ошибка');
+        toast.error(data.error || t('auth.register.error'));
       }
     } catch {
-      toast.error('Ошибка сети');
+      toast.error(t('auth.register.networkError'));
     }
 
     setLoading(false);

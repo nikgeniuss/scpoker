@@ -54,3 +54,54 @@ export function winProbabilityVsRandom(
   }
   return win / iterations;
 }
+
+// EV Cashout (доделка §10.6): equity МЕЖДУ контестантами с ИЗВЕСТНЫМИ дырочными картами (не
+// против случайных — в отличие от winProbabilityVsRandom, которая остаётся как есть для
+// подсказок §0.1). Вызывается ТОЛЬКО когда действие уже закрыто (all-in до ривера) — раскрытие
+// карт контестантам в этот момент равноценно обычному доигрышу/showdown, утечки §0.1 нет.
+// Монте-Карло по остатку деки (`deckRemaining` — уже без дырочных/борда, как room.deck).
+// Возвращает долю победы 0..1 на игрока (тай делится); сумма долей ≈1 в пределе итераций.
+export function computeRealEquity(
+  contestants: { id: string; hole: Card[] }[],
+  board: Card[],
+  deckRemaining: Card[],
+  format: GameFormat = 'nlh',
+  iterations = 2000,
+  rng: () => number = Math.random,
+): Record<string, number> {
+  const wins: Record<string, number> = {};
+  contestants.forEach((c) => { wins[c.id] = 0; });
+  if (contestants.length === 0) return wins;
+  if (contestants.length === 1) {
+    wins[contestants[0].id] = 1;
+    return wins;
+  }
+
+  const boardNeed = 5 - board.length;
+  if (boardNeed > 0 && deckRemaining.length < boardNeed) {
+    // Защитный фоллбэк (не должно происходить при корректном вызове) — равные доли.
+    const equal = 1 / contestants.length;
+    contestants.forEach((c) => { wins[c.id] = equal; });
+    return wins;
+  }
+
+  for (let it = 0; it < iterations; it++) {
+    const p = deckRemaining.slice();
+    for (let i = 0; i < boardNeed; i++) {
+      const j = i + Math.floor(rng() * (p.length - i));
+      const t = p[i]; p[i] = p[j]; p[j] = t;
+    }
+    const fullBoard = board.concat(p.slice(0, boardNeed));
+    const results = contestants.map((c) => ({ id: c.id, hr: evaluateHand(c.hole, fullBoard, format) }));
+    let best = results[0].hr;
+    for (let k = 1; k < results.length; k++) {
+      if (compareHands(results[k].hr, best) > 0) best = results[k].hr;
+    }
+    const winners = results.filter((r) => compareHands(r.hr, best) === 0);
+    const share = 1 / winners.length;
+    winners.forEach((w) => { wins[w.id] += share; });
+  }
+
+  contestants.forEach((c) => { wins[c.id] /= iterations; });
+  return wins;
+}

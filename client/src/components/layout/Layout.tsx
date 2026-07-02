@@ -100,11 +100,28 @@ export const Layout = ({ children }: LayoutProps) => {
     !!token && !!user,
   );
 
-  // forceDisconnect — открыли игру в другой вкладке; сервер рубит этот сокет → сообщение + редирект.
-  useSocketEvent(
+  // forceDisconnect — несколько причин: (а) открыли игру в другой вкладке (single-session) →
+  // сообщение + редирект в лобби; (б) самоисключение/тайм-аут активированы прямо сейчас
+  // (ROADMAP §11.2) → полный logout + редирект на /login, обычным реконнектом не вернуться,
+  // т.к. дальнейший login заблокирован на сервере до истечения срока; (в) сессию отозвали
+  // вручную в «Мои устройства» (§10.15) → тоже полный logout, токен этой сессии уже невалиден.
+  useSocketEvent<{ reason?: string; until?: string }>(
     SOCKET_EVENTS.FORCE_DISCONNECT,
-    () => {
-      toast.error('Эта вкладка отключена — игра открыта в другой вкладке', { duration: 5000 });
+    (payload) => {
+      if (payload?.reason === 'self-excluded' || payload?.reason === 'timeout') {
+        const key = payload.reason === 'self-excluded' ? 'layout.selfExcludedDisconnected' : 'layout.timeoutDisconnected';
+        toast.error(t(key, { until: payload.until }), { duration: 8000 });
+        logout();
+        navigate('/login');
+        return;
+      }
+      if (payload?.reason === 'session-revoked') {
+        toast.error(t('layout.sessionRevokedDisconnected'), { duration: 8000 });
+        logout();
+        navigate('/login');
+        return;
+      }
+      toast.error(t('layout.tabDisconnected'), { duration: 5000 });
       disconnectSocket();
       navigate('/lobby');
     },
@@ -126,7 +143,7 @@ export const Layout = ({ children }: LayoutProps) => {
   useSocketEvent<{ roomId: string }>(
     SOCKET_EVENTS.SEAT_FROM_WAITLIST,
     ({ roomId }) => {
-      toast.success('Место освободилось — вы за столом!');
+      toast.success(t('layout.seatFreed'));
       navigate('/game/' + roomId);
     },
     !!user,
@@ -138,7 +155,7 @@ export const Layout = ({ children }: LayoutProps) => {
     'connect_error',
     (err) => {
       if (err.message === 'Invalid token' || err.message === 'No token') {
-        toast.error('Сессия устарела, войдите снова', { duration: 5000 });
+        toast.error(t('layout.sessionExpired'), { duration: 5000 });
         logout();
         navigate('/login');
       }
@@ -169,7 +186,7 @@ export const Layout = ({ children }: LayoutProps) => {
               animate={{ opacity: 1, x: 0 }}
               className="text-xl md:text-2xl font-bold flex items-center gap-2 cursor-pointer whitespace-nowrap shrink-0"
               onClick={() => navigate('/')}
-              title="На главную"
+              title={t('layout.home')}
             >
             </motion.div>
 
@@ -191,7 +208,7 @@ export const Layout = ({ children }: LayoutProps) => {
                 <span className="text-gray-300 text-sm max-w-[110px] md:max-w-none truncate">{user.username}</span>
                 {typeof user.chips === 'number' && (
                   <span
-                    title="Свободный банкролл"
+                    title={t('layout.freeBankroll')}
                     className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs md:text-sm font-bold whitespace-nowrap"
                   >
                     <Coins size={14} /> {formatMoney(user.chips)}

@@ -32,6 +32,13 @@ export function makeRoom(params: {
   pinned?: boolean;
   autoExtendSession?: boolean;
   tournamentId?: string;
+  straddleEnabled?: boolean;
+  bombPotEnabled?: boolean;
+  doubleBoardEnabled?: boolean;
+  rimtEnabled?: boolean;
+  evCashoutEnabled?: boolean;
+  noTurnNoShowEnabled?: boolean;
+  antiCollusionEnabled?: boolean;
 }): Room {
   return {
     id: params.id,
@@ -92,5 +99,14 @@ export function makeRoom(params: {
     observers: new Map(),
     rabbitHuntPaidBy: new Set(),
     tournamentId: params.tournamentId,
+    straddleEnabled: params.straddleEnabled ?? false,
+    bombPotEnabled: params.bombPotEnabled ?? false,
+    doubleBoardEnabled: params.doubleBoardEnabled ?? false,
+    rimtEnabled: params.rimtEnabled ?? false,
+    evCashoutEnabled: params.evCashoutEnabled ?? false,
+    noTurnNoShowEnabled: params.noTurnNoShowEnabled ?? false,
+    antiCollusionEnabled: params.antiCollusionEnabled ?? false,
+    communityCardsB: null,
+    deckB: null,
   };
 }

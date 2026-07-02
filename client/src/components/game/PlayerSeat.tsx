@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import { motion } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 import { Card } from './Card';
 import type { CardData } from './Card';
 import { formatChips } from '../../config/chipFormat';
@@ -86,6 +87,7 @@ const PlayerSeatImpl = ({
   showHint,
   onAvatarClick,
 }: PlayerSeatProps) => {
+  const { t } = useTranslation();
   const avatarGrad = avatarColor(player.username);
 
   return (
@@ -337,7 +339,7 @@ const PlayerSeatImpl = ({
           typeof player.timebank === 'number' &&
           typeof timebankSecondsLeft !== 'number' && (
             <div
-              title={player.timebank > 0 ? 'Таймбанк' : 'Таймбанк исчерпан'}
+              title={player.timebank > 0 ? t('playerSeat.timebank') : t('playerSeat.timebankExhausted')}
               className={
                 'absolute -bottom-2 -right-2 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold border flex items-center justify-center ' +
                 (player.timebank > 0
@@ -357,7 +359,7 @@ const PlayerSeatImpl = ({
 
         {player.disconnected && !player.isFolded && (
           <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-orange-600/90 text-white text-[10px] font-bold shadow whitespace-nowrap">
-            🔌 откл.
+            🔌 {t('playerSeat.disconnected')}
           </div>
         )}
       </div>

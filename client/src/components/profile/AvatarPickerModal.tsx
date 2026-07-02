@@ -1,4 +1,5 @@
 import { motion, useMotionValue, useTransform, animate, type MotionValue } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 import ReactNiceAvatar from 'react-nice-avatar';
 import { X } from 'lucide-react';
 import { AVATAR_PRESETS } from '@poker-room/shared';
@@ -33,6 +34,7 @@ interface AvatarPickerModalProps {
 }
 
 export const AvatarPickerModal = ({ currentSeed, onClose, onPick }: AvatarPickerModalProps) => {
+  const { t } = useTranslation();
   const initialIndex = Math.max(0, AVATAR_PRESETS.indexOf(currentSeed));
   const initialColumn = initialIndex % COLUMNS;
   const x = useMotionValue(-initialColumn * COLUMN_WIDTH);
@@ -59,7 +61,7 @@ export const AvatarPickerModal = ({ currentSeed, onClose, onPick }: AvatarPicker
         className="bg-gray-900 border border-emerald-500/30 rounded-3xl p-5 w-full max-w-sm"
       >
         <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-bold text-white">Выбор аватара</h3>
+          <h3 className="text-lg font-bold text-white">{t('avatarPickerModal.title')}</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-white">
             <X size={20} />
           </button>
@@ -89,7 +91,7 @@ export const AvatarPickerModal = ({ currentSeed, onClose, onPick }: AvatarPicker
             ))}
           </motion.div>
         </div>
-        <p className="text-center text-xs text-gray-500 mt-3">Свайп влево/вправо, тап — выбрать</p>
+        <p className="text-center text-xs text-gray-500 mt-3">{t('avatarPickerModal.hint')}</p>
       </motion.div>
     </motion.div>
   );

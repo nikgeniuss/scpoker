@@ -1,4 +1,4 @@
-import type { PayoutTier, MttItmPercent } from '@poker-room/shared';
+import type { PayoutTier, MttItmPercent, BountyType } from '@poker-room/shared';
 
 // Стандартные SNG-сплиты по числу участников (как в реальных румах): чем меньше стол, тем меньше
 // призовых мест. Точные % — общеотраслевой дефолт (50/30/20 для 6-9-max, top-2 для меньших).
@@ -52,6 +52,24 @@ export function getMttPayoutTiers(totalEntries: number, itmPercent: MttItmPercen
   const weights = Array.from({ length: paidPlaces }, (_, i) => 1 / (i + 1));
   const weightSum = weights.reduce((a, b) => a + b, 0);
   return weights.map((w, i) => ({ place: i + 1, percent: (w / weightSum) * 100 }));
+}
+
+// Баунти/PKO: как делится «цена за голову» жертвы между кэшем убийце (в банкролл, сразу) и
+// приростом СОБСТВЕННОГО баунти убийцы (для progressive — растёт по ходу турнира у выживших).
+// 'flat' — всё кэшем сразу, ничего не растёт. Округление вниз, остаток уходит в кэш (без потерь).
+export function computeBountySplit(bountyType: BountyType, bountyAmount: number): { cash: number; addToOwnBounty: number } {
+  if (bountyType === 'progressive') {
+    const addToOwnBounty = Math.floor(bountyAmount / 2);
+    return { cash: bountyAmount - addToOwnBounty, addToOwnBounty };
+  }
+  return { cash: bountyAmount, addToOwnBounty: 0 };
+}
+
+// MTT-гарантия: сколько рум должен доплатить в prizePool, чтобы достичь guaranteedPrizePool, если
+// бай-инов не хватило. 0 — гарантия не задана или уже выполнена собранными бай-инами. Чистая функция.
+export function computeGuaranteeOverlay(prizePool: number, guaranteedPrizePool?: number): number {
+  if (!guaranteedPrizePool || guaranteedPrizePool <= prizePool) return 0;
+  return guaranteedPrizePool - prizePool;
 }
 
 // MTT: призовые фишки по местам. Округление вниз, остаток уходит победителю — без потери фишек.

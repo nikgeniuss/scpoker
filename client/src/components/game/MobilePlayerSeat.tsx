@@ -4,6 +4,7 @@
 
 import { memo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 import { Card } from './Card';
 import type { CardData } from './Card';
 import { avatarColor } from './seatColors';
@@ -91,6 +92,7 @@ const MobilePlayerSeatImpl = ({
   showHint,
   onAvatarClick,
 }: MobilePlayerSeatProps) => {
+  const { t } = useTranslation();
   const grad = avatarColor(player.username);
   const avatarPx = isMe ? 48 : 40;
 
@@ -288,7 +290,7 @@ const MobilePlayerSeatImpl = ({
       {/* FOLD pill НАД аватаром (для me — низ занят fixed-cards блоком) */}
       {player.isFolded && (
         <div className="absolute -top-3 left-1/2 -translate-x-1/2 text-red-400 text-[10px] font-black whitespace-nowrap z-10 [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]">
-          Фолд
+          {t('game.actionFold')}
         </div>
       )}
 

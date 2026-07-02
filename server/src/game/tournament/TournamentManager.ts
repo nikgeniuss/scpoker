@@ -1,11 +1,11 @@
 import { nanoid } from 'nanoid';
 import type {
-  TournamentInfo, TournamentEntry, CreateTournamentOptions, BlindLevel, MttItmPercent, MttPayoutMode,
+  TournamentInfo, TournamentEntry, CreateTournamentOptions, BlindLevel, MttItmPercent, MttPayoutMode, BountyType,
 } from '@poker-room/shared';
 import type { GameManager } from '../GameManager.js';
 import type { Card } from '../types.js';
 import { buildBlindSchedule, currentLevelForElapsed, msUntilNextLevel } from './tournamentSchedule.js';
-import { computeSngPayout, computeMttPayout } from './tournamentPayout.js';
+import { computeSngPayout, computeMttPayout, computeGuaranteeOverlay, computeBountySplit } from './tournamentPayout.js';
 import { planRebalanceMove, pickTableToClose, type TableSeats } from './tournamentBalancing.js';
 import { readTournaments, writeTournaments } from './tournamentStorage.js';
 import { tournamentBankroll } from './tournamentBankroll.js';
@@ -31,7 +31,7 @@ export class TournamentManager {
   private tournaments = new Map<string, TournamentRuntime>();
 
   constructor(private gameManager: GameManager) {
-    gameManager.onTournamentBust = (roomId, userId) => this.handleBust(roomId, userId);
+    gameManager.onTournamentBust = (roomId, userId, killerIds) => this.handleBust(roomId, userId, killerIds);
   }
 
   list(): TournamentInfo[] {
@@ -69,6 +69,33 @@ export class TournamentManager {
       fixedPayoutPlaces = places;
     }
 
+    const reEntryEnabled = opts.type === 'mtt' ? !!opts.reEntryEnabled : false;
+    let maxReEntries: number | undefined;
+    if (reEntryEnabled) {
+      const mr = opts.maxReEntries ?? 1;
+      if (!Number.isInteger(mr) || mr < 1 || mr > 10) return { error: 'invalid-max-reentries' };
+      maxReEntries = mr;
+    }
+
+    let guaranteedPrizePool: number | undefined;
+    if (opts.type === 'mtt' && opts.guaranteedPrizePool !== undefined) {
+      if (!Number.isInteger(opts.guaranteedPrizePool) || opts.guaranteedPrizePool < 0) {
+        return { error: 'invalid-guaranteed-prize-pool' };
+      }
+      guaranteedPrizePool = opts.guaranteedPrizePool > 0 ? opts.guaranteedPrizePool : undefined;
+    }
+
+    const bountyEnabled = !!opts.bountyEnabled;
+    let bountyType: BountyType | undefined;
+    let bountyPercent: number | undefined;
+    if (bountyEnabled) {
+      bountyType = opts.bountyType === 'progressive' ? 'progressive' : 'flat';
+      bountyPercent = opts.bountyPercent ?? 50;
+      if (!Number.isInteger(bountyPercent) || bountyPercent < 1 || bountyPercent > 90) {
+        return { error: 'invalid-bounty-percent' };
+      }
+    }
+
     const id = nanoid(10);
     const info: TournamentInfo = {
       id,
@@ -88,6 +115,12 @@ export class TournamentManager {
       itmPercent,
       payoutMode,
       fixedPayoutPlaces,
+      reEntryEnabled,
+      maxReEntries,
+      guaranteedPrizePool,
+      bountyEnabled,
+      bountyType,
+      bountyPercent,
       createdBy,
       createdAt: Date.now(),
     };
@@ -125,7 +158,11 @@ export class TournamentManager {
   register(id: string, userId: string, username: string): TournamentInfo | ServiceError {
     const t = this.tournaments.get(id);
     if (!t) return { error: 'not-found' };
-    if (t.info.entries.some(e => e.userId === userId)) return { error: 'already-registered' };
+    // Активная запись (ещё играет/в очереди на старт) блокирует повторный вход. Запись со
+    // status==='eliminated' — НЕ блокирует: это прошлый бaст, через который проходит ре-энтри ниже.
+    if (t.info.entries.some(e => e.userId === userId && e.status !== 'eliminated')) {
+      return { error: 'already-registered' };
+    }
 
     if (t.info.status === 'registering') {
       if (t.info.type === 'sng' && t.info.entries.length >= t.info.tableSize) return { error: 'full' };
@@ -134,9 +171,10 @@ export class TournamentManager {
       if (bankroll === null) return { error: 'user-not-found' };
       if (bankroll < t.info.buyIn) return { error: 'insufficient-bankroll' };
 
+      const bounty = this.bountyPerEntry(t.info);
       tournamentBankroll.persistChips(userId, bankroll - t.info.buyIn);
-      t.info.entries.push({ userId, username, status: 'registered' });
-      t.info.prizePool += t.info.buyIn;
+      t.info.entries.push({ userId, username, status: 'registered', ...(bounty > 0 ? { bounty } : {}) });
+      t.info.prizePool += t.info.buyIn - bounty;
       this.persist();
 
       if (t.info.type === 'sng' && t.info.entries.length >= t.info.tableSize) {
@@ -145,10 +183,18 @@ export class TournamentManager {
       return t.info;
     }
 
-    // Поздняя регистрация (только MTT, в окне lateRegMinutes после старта).
+    // Поздняя регистрация и ре-энтри (только MTT, в окне lateRegMinutes после старта). Ре-энтри —
+    // это НОВАЯ отдельная запись entries, а не реюз старой: прошлый бaст уже финализирован своим
+    // finishPlace в handleBust, новый вход — заново с полным стеком (как в реальных рум-турнирах).
     if (t.info.type === 'mtt' && t.info.status === 'running' && t.info.startedAt) {
       const elapsed = Date.now() - t.info.startedAt;
       if (t.info.lateRegMinutes <= 0 || elapsed > t.info.lateRegMinutes * 60_000) return { error: 'late-reg-closed' };
+
+      const priorEntries = t.info.entries.filter(e => e.userId === userId);
+      if (priorEntries.length > 0) {
+        if (!t.info.reEntryEnabled) return { error: 'reentry-disabled' };
+        if (priorEntries.length > (t.info.maxReEntries ?? 0)) return { error: 'reentry-limit-reached' };
+      }
 
       const bankroll = tournamentBankroll.getUserChips(userId);
       if (bankroll === null) return { error: 'user-not-found' };
@@ -157,10 +203,11 @@ export class TournamentManager {
       const tableId = this.leastFullTable(t);
       if (!tableId) return { error: 'no-seats-available' };
 
+      const bounty = this.bountyPerEntry(t.info);
       tournamentBankroll.persistChips(userId, bankroll - t.info.buyIn);
       this.gameManager.seatTournamentPlayer(tableId, userId, username, t.info.startingStack);
-      t.info.entries.push({ userId, username, status: 'playing', tableId });
-      t.info.prizePool += t.info.buyIn;
+      t.info.entries.push({ userId, username, status: 'playing', tableId, ...(bounty > 0 ? { bounty } : {}) });
+      t.info.prizePool += t.info.buyIn - bounty;
       this.persist();
       // Неровный сплит при старте MTT может оставить стол с 1 игроком (status='waiting',
       // startGame внутри startMtt молча вышел по players.size<2) — позднюю посадку нужно
@@ -179,8 +226,9 @@ export class TournamentManager {
     if (t.info.status !== 'registering') return { error: 'invalid-status' };
     const idx = t.info.entries.findIndex(e => e.userId === userId);
     if (idx < 0) return { error: 'not-registered' };
+    const bounty = t.info.entries[idx].bounty ?? 0;
     t.info.entries.splice(idx, 1);
-    t.info.prizePool -= t.info.buyIn;
+    t.info.prizePool -= t.info.buyIn - bounty;
     this.refund(userId, t.info.buyIn);
     this.persist();
     return t.info;
@@ -280,17 +328,22 @@ export class TournamentManager {
   }
 
   // Колбэк из GameManager.autoLeaveBrokePlayers/removePlayer — игрок выбыл (банкрот или форфейт) с турнирного стола.
-  private handleBust(roomId: string, userId: string): void {
+  // killerIds — победители раздачи, в которой произошёл бaст (пусто при форфейте) — для баунти.
+  private handleBust(roomId: string, userId: string, killerIds: string[]): void {
     const t = Array.from(this.tournaments.values()).find(x => x.info.tableIds.includes(roomId));
     if (!t) return;
-    const entry = t.info.entries.find(e => e.userId === userId);
-    if (!entry || entry.status !== 'playing') return;
+    // С ре-энтри у юзера может быть несколько entries (старые eliminated) — берём ИМЕННО
+    // текущую играющую запись, иначе финализируем не ту (см. ROADMAP §10.6 «Ре-энтри»).
+    const entry = t.info.entries.find(e => e.userId === userId && e.status === 'playing');
+    if (!entry) return;
 
     // Считаем ДО того, как пометим текущего банкрота — finishPlace = число живших на момент баста.
     const stillPlaying = t.info.entries.filter(e => e.status === 'playing');
     entry.status = 'eliminated';
     entry.finishPlace = stillPlaying.length;
     entry.tableId = undefined;
+
+    this.applyBounty(t, entry, killerIds);
 
     const remaining = stillPlaying.filter(e => e.userId !== userId);
     this.persist();
@@ -361,6 +414,43 @@ export class TournamentManager {
     this.persist();
   }
 
+  // Баунти/PKO: какая часть бай-ина уходит в «цену за голову» этого входа (0, если баунти выключено).
+  private bountyPerEntry(info: TournamentInfo): number {
+    if (!info.bountyEnabled || !info.bountyPercent) return 0;
+    return Math.floor((info.buyIn * info.bountyPercent) / 100);
+  }
+
+  // Баунти/PKO: баунти жертвы делится между всеми killerIds (поровну — split при тае на шоудауне)
+  // и зачисляется кэшем ПРЯМО в банкролл (не в турнирный стек — см. ROADMAP §10.19, гарантия реальных
+  // денег независимо от того, как убийца потом доиграет турнир). При progressive — остаток добавляется
+  // к собственному баунти убийцы (растёт по ходу турнира). Форфейт (killerIds=[]) — баунти сгорает,
+  // никто не выигрывал раздачу.
+  private applyBounty(t: TournamentRuntime, bustedEntry: TournamentEntry, killerIds: string[]): void {
+    if (!t.info.bountyEnabled) return;
+    const bounty = bustedEntry.bounty ?? 0;
+    if (bounty <= 0) return;
+    bustedEntry.bounty = 0;
+
+    const killers = killerIds.filter(id => id !== bustedEntry.userId);
+    if (killers.length === 0) return;
+    const share = Math.floor(bounty / killers.length);
+    if (share <= 0) return;
+
+    killers.forEach(killerId => {
+      const killerEntry = t.info.entries.find(e => e.userId === killerId && e.status === 'playing');
+      if (!killerEntry) return;
+      const { cash, addToOwnBounty } = computeBountySplit(t.info.bountyType ?? 'flat', share);
+      if (cash > 0) {
+        const bankroll = tournamentBankroll.getUserChips(killerId);
+        if (bankroll !== null) tournamentBankroll.persistChips(killerId, bankroll + cash);
+        killerEntry.bountyWon = (killerEntry.bountyWon ?? 0) + cash;
+      }
+      if (addToOwnBounty > 0) {
+        killerEntry.bounty = (killerEntry.bounty ?? 0) + addToOwnBounty;
+      }
+    });
+  }
+
   private leastFullTable(t: TournamentRuntime): string | null {
     const aliveEntries = t.info.entries.filter(e => e.status === 'playing');
     let best: string | null = null;
@@ -379,6 +469,14 @@ export class TournamentManager {
       winner.status = 'eliminated';
       winner.finishPlace = 1;
       winner.tableId = undefined;
+    }
+
+    if (t.info.type === 'mtt') {
+      const overlay = computeGuaranteeOverlay(t.info.prizePool, t.info.guaranteedPrizePool);
+      if (overlay > 0) {
+        t.info.prizePool += overlay;
+        t.info.overlayPaid = overlay;
+      }
     }
 
     const payout = t.info.type === 'mtt'

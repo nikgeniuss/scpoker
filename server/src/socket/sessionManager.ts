@@ -5,11 +5,15 @@ import type { SocketUser } from './types.js';
 // чтобы вторая вкладка не перехватывала события у первой. Это фича (CLAUDE.md §0.6).
 // Вызывается из io.use ДО завершения connection нового сокета — поэтому новый сокет
 // ещё не в io.sockets.sockets и под раздачу не попадает.
-export function forceDisconnectOtherSessions(io: Server, userId: string): void {
+export function forceDisconnectOtherSessions(
+  io: Server,
+  userId: string,
+  payload: { reason: string; until?: string } = { reason: 'another-session' },
+): void {
   for (const [, existing] of io.sockets.sockets) {
     const eu = existing.data?.user as SocketUser | undefined;
     if (eu && eu.id === userId) {
-      existing.emit('forceDisconnect', { reason: 'another-session' });
+      existing.emit('forceDisconnect', payload);
       existing.disconnect(true);
     }
   }
@@ -23,4 +27,16 @@ export function hasOtherActiveSocket(io: Server, userId: string, exceptSocketId:
     if (u && u.id === userId && s.id !== exceptSocketId) return true;
   }
   return false;
+}
+
+// Revoke конкретной сессии («Мои устройства», ROADMAP §10.15) — рвёт ТОЛЬКО сокеты с этим sid,
+// не трогая остальные активные сессии того же юзера (в отличие от forceDisconnectOtherSessions).
+export function disconnectSocketsBySid(io: Server, sid: string): void {
+  for (const [, existing] of io.sockets.sockets) {
+    const eu = existing.data?.user as SocketUser | undefined;
+    if (eu && eu.sid === sid) {
+      existing.emit('forceDisconnect', { reason: 'session-revoked' });
+      existing.disconnect(true);
+    }
+  }
 }

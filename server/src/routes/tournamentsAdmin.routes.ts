@@ -38,6 +38,12 @@ export function createTournamentsAdminRouter(tournamentManager: TournamentManage
       itmPercent: typeof body.itmPercent === 'number' ? body.itmPercent as CreateTournamentOptions['itmPercent'] : undefined,
       payoutMode: body.payoutMode === 'fixed' ? 'fixed' : body.payoutMode === 'itm' ? 'itm' : undefined,
       fixedPayoutPlaces: typeof body.fixedPayoutPlaces === 'number' ? body.fixedPayoutPlaces : undefined,
+      reEntryEnabled: typeof body.reEntryEnabled === 'boolean' ? body.reEntryEnabled : undefined,
+      maxReEntries: typeof body.maxReEntries === 'number' ? body.maxReEntries : undefined,
+      guaranteedPrizePool: typeof body.guaranteedPrizePool === 'number' ? body.guaranteedPrizePool : undefined,
+      bountyEnabled: typeof body.bountyEnabled === 'boolean' ? body.bountyEnabled : undefined,
+      bountyType: body.bountyType === 'progressive' ? 'progressive' : body.bountyType === 'flat' ? 'flat' : undefined,
+      bountyPercent: typeof body.bountyPercent === 'number' ? body.bountyPercent : undefined,
     };
     const result = tournamentManager.create(opts, admin.id);
     if ('error' in result) {

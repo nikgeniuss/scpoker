@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { ChevronLeft, Search } from 'lucide-react';
 import { API_URL } from '../config/api';
 import { formatMoney } from '../config/chipFormat';
@@ -15,23 +16,25 @@ interface Row {
 }
 
 type Metric = 'pnl' | 'hands';
-const METRICS: { id: Metric; label: string }[] = [
-  { id: 'pnl', label: 'По выигрышу' },
-  { id: 'hands', label: 'По раздачам' },
-];
-
 type Period = '1d' | '7d' | 'all';
-const PERIODS: { id: Period; label: string }[] = [
-  { id: '1d', label: 'День' },
-  { id: '7d', label: '7 дней' },
-  { id: 'all', label: 'Всё время' },
-];
 
 const rankColor = (i: number) =>
   i === 0 ? 'text-amber-300' : i === 1 ? 'text-gray-300' : i === 2 ? 'text-amber-600' : 'text-gray-500';
 
 export const Leaderboard = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
+
+  const METRICS: { id: Metric; label: string }[] = [
+    { id: 'pnl', label: t('leaderboard.metricPnl') },
+    { id: 'hands', label: t('leaderboard.metricHands') },
+  ];
+
+  const PERIODS: { id: Period; label: string }[] = [
+    { id: '1d', label: t('leaderboard.periodDay') },
+    { id: '7d', label: t('leaderboard.periodWeek') },
+    { id: 'all', label: t('leaderboard.periodAll') },
+  ];
 
   const [metric, setMetric] = useState<Metric>('pnl');
   const [period, setPeriod] = useState<Period>('all');
@@ -63,12 +66,12 @@ export const Leaderboard = () => {
         <div className="relative flex items-center justify-center mb-5">
           <button
             onClick={() => navigate('/lobby')}
-            aria-label="Назад"
+            aria-label={t('leaderboard.back')}
             className="absolute left-0 w-10 h-10 flex items-center justify-center rounded-full text-white/80 hover:bg-white/10"
           >
             <ChevronLeft size={26} />
           </button>
-          <h1 className="text-xl font-bold">Таблица лидеров</h1>
+          <h1 className="text-xl font-bold">{t('leaderboard.title')}</h1>
         </div>
 
         <div className="relative mb-3">
@@ -76,7 +79,7 @@ export const Leaderboard = () => {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Поиск по нику"
+            placeholder={t('leaderboard.searchPlaceholder')}
             className="w-full bg-gray-900 border border-white/10 rounded-2xl pl-9 pr-3 py-2.5 text-sm text-white outline-none focus:border-emerald-400 placeholder:text-gray-600"
           />
         </div>
@@ -112,9 +115,9 @@ export const Leaderboard = () => {
         </div>
 
         {rows === null ? (
-          <div className="text-center text-gray-600 py-16">Загрузка…</div>
+          <div className="text-center text-gray-600 py-16">{t('leaderboard.loading')}</div>
         ) : sorted.length === 0 ? (
-          <div className="text-center text-gray-600 py-16">Нет данных по игрокам.</div>
+          <div className="text-center text-gray-600 py-16">{t('leaderboard.noData')}</div>
         ) : (
           <div className="rounded-2xl border border-white/10 overflow-hidden">
             {sorted.map((r, i) => (
@@ -128,7 +131,7 @@ export const Leaderboard = () => {
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-semibold text-white truncate">{r.username}</div>
                   <div className="text-[11px] text-gray-500 tabular-nums">
-                    {metric === 'pnl' ? r.hands + ' разд.' : formatMoney(r.pnl) + ' PnL'}
+                    {metric === 'pnl' ? r.hands + ' ' + t('leaderboard.handsShort') : formatMoney(r.pnl) + ' PnL'}
                   </div>
                 </div>
                 <span
@@ -150,8 +153,7 @@ export const Leaderboard = () => {
           </div>
         )}
         <p className="text-[10px] text-gray-600 mt-3">
-          Рейтинг по игрокам-людям. «По выигрышу» — суммарный PnL, «По раздачам» — число сыгранных рук за
-          выбранный период.
+          {t('leaderboard.footnote')}
         </p>
       </div>
     </div>

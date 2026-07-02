@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { ChevronRight } from 'lucide-react';
 import { API_URL } from '../config/api';
 import { useAuthStore } from '../store/authStore';
@@ -9,11 +10,12 @@ interface ChartPoint { t: number; cumPnL: number; }
 
 // Простой SVG-график кумулятивного PnL (без recharts).
 function BankrollChart({ data }: { data: ChartPoint[] }) {
+  const { t } = useTranslation();
   const W = 320, H = 120, PAD = 12;
   if (data.length < 2) {
     return (
       <div className="h-[120px] flex items-center justify-center text-white/20 text-sm">
-        Недостаточно данных
+        {t('pokerCraft.notEnoughData')}
       </div>
     );
   }
@@ -51,6 +53,7 @@ function BankrollChart({ data }: { data: ChartPoint[] }) {
 }
 
 export function PokerCraft() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const token = useAuthStore(s => s.token);
   const [data, setData] = useState<ChartPoint[]>([]);
@@ -85,7 +88,7 @@ export function PokerCraft() {
       {/* Итоговые метрики */}
       <div className="px-4 grid grid-cols-2 gap-3 mb-4">
         <div className="rounded-2xl bg-white/5 p-4">
-          <div className="text-white/40 text-xs mb-1">Раздачи</div>
+          <div className="text-white/40 text-xs mb-1">{t('pokerCraft.hands')}</div>
           <div className="text-2xl font-black">{totalHands}</div>
         </div>
         <div className="rounded-2xl bg-white/5 p-4">
@@ -98,10 +101,10 @@ export function PokerCraft() {
 
       {/* График */}
       <div className="mx-4 rounded-2xl bg-white/5 p-4 mb-4">
-        <div className="text-white/40 text-xs mb-3">Динамика банкролла</div>
+        <div className="text-white/40 text-xs mb-3">{t('pokerCraft.bankrollDynamics')}</div>
         {loading ? (
           <div className="h-[120px] flex items-center justify-center text-white/20 text-sm">
-            Загрузка…
+            {t('pokerCraft.loading')}
           </div>
         ) : (
           <BankrollChart data={data} />

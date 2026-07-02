@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 import { ChevronDown } from 'lucide-react';
 import type { ReactNode } from 'react';
 
@@ -218,16 +219,19 @@ export const DualRangeSlider = ({
 };
 
 // Синяя инфо-кнопка «i» (открывает bottom-sheet).
-export const InfoButton = ({ onClick }: { onClick: () => void }) => (
-  <button
-    type="button"
-    onClick={onClick}
-    aria-label="Подробнее"
-    className="w-4 h-4 rounded-full bg-blue-500 hover:bg-blue-400 text-white text-[10px] font-bold leading-none flex items-center justify-center shrink-0"
-  >
-    i
-  </button>
-);
+export const InfoButton = ({ onClick }: { onClick: () => void }) => {
+  const { t } = useTranslation();
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={t('common.moreInfo')}
+      className="w-4 h-4 rounded-full bg-blue-500 hover:bg-blue-400 text-white text-[10px] font-bold leading-none flex items-center justify-center shrink-0"
+    >
+      i
+    </button>
+  );
+};
 
 // Строка настройки: label (+ инфо/«скоро») слева, контрол справа, нижний разделитель.
 export const SettingRow = ({
@@ -242,16 +246,19 @@ export const SettingRow = ({
   soon?: boolean;
   disabled?: boolean;
   children: ReactNode;
-}) => (
-  <div className={'flex items-center justify-between gap-3 py-3 border-b border-white/5 ' + (disabled ? 'opacity-50' : '')}>
-    <div className="flex items-center gap-2 min-w-0">
-      <span className="text-sm text-white truncate">{label}</span>
-      {onInfo && <InfoButton onClick={onInfo} />}
-      {soon && <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-700 text-gray-400 shrink-0">скоро</span>}
+}) => {
+  const { t } = useTranslation();
+  return (
+    <div className={'flex items-center justify-between gap-3 py-3 border-b border-white/5 ' + (disabled ? 'opacity-50' : '')}>
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="text-sm text-white truncate">{label}</span>
+        {onInfo && <InfoButton onClick={onInfo} />}
+        {soon && <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-700 text-gray-400 shrink-0">{t('lobby.soon')}</span>}
+      </div>
+      <div className="shrink-0">{children}</div>
     </div>
-    <div className="shrink-0">{children}</div>
-  </div>
-);
+  );
+};
 
 // Bottom-sheet с пояснением (для инфо-«i»).
 export const InfoSheet = ({

@@ -1,5 +1,6 @@
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import jwt from 'jsonwebtoken';
+import type { GameManager } from '../game/GameManager.js';
 import {
   registerUser,
   loginUser,
@@ -10,22 +11,37 @@ import {
   setAvatarSeed,
   updateUsername,
   updateEmail,
+  setupTwoFactor,
+  confirmTwoFactor,
+  disableTwoFactor,
+  completeTwoFactorLogin,
+  type DeviceInfo,
 } from '../auth/auth.js';
+import { listSessions, revokeSession } from '../auth/sessionStore.js';
 import { AVATAR_PRESETS } from '@poker-room/shared';
 import { TELEGRAM_BOT_TOKEN, JWT_SECRET } from '../config.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { readJSON } from '../auth/storage.js';
 
+// Device info логина («Мои устройства», §10.15) — из заголовков запроса, без доп. библиотек.
+function deviceInfoFrom(req: Request): DeviceInfo {
+  return { userAgent: req.headers['user-agent'] ?? '', ip: req.ip ?? '' };
+}
+
 // Роуты авторизации (/api/auth/*). Вынесено из index.ts (ROADMAP §9.3-C).
-export function createAuthRouter(): Router {
+export function createAuthRouter(gameManager: GameManager): Router {
   const router = Router();
 
   router.post('/register', (req, res) => {
-    const { username, password, email } = req.body;
+    const { username, password, email, tosAccepted } = req.body;
 
     // Проверяем, что все три поля пришли
     if (!username || !password || !email) {
       res.status(400).json({ error: 'Username, email and password required' });
+      return;
+    }
+    if (!tosAccepted) {
+      res.status(400).json({ error: 'Необходимо согласие с условиями использования' });
       return;
     }
 
@@ -38,7 +54,8 @@ export function createAuthRouter(): Router {
       return;
     }
 
-    const token = loginUser(username, password);
+    const result = loginUser(username, password, deviceInfoFrom(req));
+    const token = 'token' in result ? result.token : null;
 
     // Возвращаем email в ответе
     res.json({
@@ -55,8 +72,45 @@ export function createAuthRouter(): Router {
   router.post('/login', (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) { res.status(400).json({ error: 'Username and password required' }); return; }
-    const token = loginUser(username, password);
-    if (!token) { res.status(401).json({ error: 'Invalid credentials' }); return; }
+    const result = loginUser(username, password, deviceInfoFrom(req));
+    if ('twoFactorRequired' in result) {
+      res.json({ twoFactorRequired: true, pendingToken: result.pendingToken });
+      return;
+    }
+    if ('error' in result) {
+      if (result.error === 'self-excluded') {
+        res.status(403).json({ error: `Вы включили самоисключение до ${result.until}`, until: result.until });
+        return;
+      }
+      if (result.error === 'timeout') {
+        res.status(403).json({ error: `Вы включили тайм-аут до ${result.until}`, until: result.until });
+        return;
+      }
+      const status = result.error === 'banned' ? 403 : 401;
+      const error = result.error === 'banned' ? 'Аккаунт заблокирован' : 'Invalid credentials';
+      res.status(status).json({ error });
+      return;
+    }
+    const token = result.token;
+    const decoded = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+    res.json({ token, user: { id: decoded.id, username: decoded.username, role: decoded.role } });
+  });
+
+  // Шаг 2 логина при включённой 2FA: pendingToken из /login + код из приложения-аутентификатора (или backup-код).
+  router.post('/login/2fa', (req, res) => {
+    const { pendingToken, code } = req.body as { pendingToken?: string; code?: string };
+    if (typeof pendingToken !== 'string' || typeof code !== 'string') {
+      res.status(400).json({ error: 'pendingToken и code обязательны' });
+      return;
+    }
+    const result = completeTwoFactorLogin(pendingToken, code, deviceInfoFrom(req));
+    if ('error' in result) {
+      const status = result.error === 'invalid-token' ? 401 : 400;
+      const error = result.error === 'invalid-token' ? 'Сессия входа истекла, войдите заново' : 'Неверный код';
+      res.status(status).json({ error });
+      return;
+    }
+    const token = result.token;
     const decoded = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
     res.json({ token, user: { id: decoded.id, username: decoded.username, role: decoded.role } });
   });
@@ -79,7 +133,7 @@ export function createAuthRouter(): Router {
       res.status(401).json({ error: 'Невалидная подпись initData' });
       return;
     }
-    const result = loginOrRegisterTelegramUser(tgUser);
+    const result = loginOrRegisterTelegramUser(tgUser, deviceInfoFrom(req));
     if (!result) {
       res.status(403).json({ error: 'Аккаунт заблокирован' });
       return;
@@ -128,8 +182,13 @@ export function createAuthRouter(): Router {
       res.status(401).json({ error: 'Невалидная подпись initData' });
       return;
     }
-    const result = linkTelegramToAccount(code, tgUser);
+    const result = linkTelegramToAccount(code, tgUser, deviceInfoFrom(req));
     if ('error' in result) {
+      if (result.error === 'self-excluded' || result.error === 'timeout') {
+        const label = result.error === 'self-excluded' ? 'самоисключение' : 'тайм-аут';
+        res.status(403).json({ error: `Включён ${label} до ${result.until}`, until: result.until });
+        return;
+      }
       const map = {
         code: [400, 'Код привязки недействителен или истёк'],
         banned: [403, 'Аккаунт заблокирован'],
@@ -165,8 +224,9 @@ export function createAuthRouter(): Router {
     let email: string | undefined;
     let createdAt: string | undefined;
     let telegramId: number | undefined;
+    let twoFactorEnabled = false;
     try {
-      const users = readJSON('users.json') as Array<{ id: string; chips: number; publicId?: string; country?: string; avatarSeed?: string; email?: string; createdAt?: string; telegramId?: number }>;
+      const users = readJSON('users.json') as Array<{ id: string; chips: number; publicId?: string; country?: string; avatarSeed?: string; email?: string; createdAt?: string; telegramId?: number; twoFactorEnabled?: boolean }>;
       const u = users.find(x => x.id === jwtUser.id);
       if (u) {
         chips = u.chips;
@@ -176,23 +236,84 @@ export function createAuthRouter(): Router {
         email = u.email;
         createdAt = u.createdAt;
         telegramId = u.telegramId;
+        twoFactorEnabled = !!u.twoFactorEnabled;
       }
     } catch {
       // users.json временно недоступен (race с writeJSON-дебаунсом) — отдаём jwtUser без догрузки
     }
-    res.json({ user: { ...jwtUser, chips, publicId, country, avatarSeed, email, createdAt, telegramId } });
+    res.json({ user: { ...jwtUser, chips, publicId, country, avatarSeed, email, createdAt, telegramId, twoFactorEnabled } });
+  });
+
+  // Подключение 2FA — шаг 1: новый секрет (pending, не активен до /2fa/confirm).
+  router.post('/2fa/setup', authMiddleware, (req, res) => {
+    const userId = (req as unknown as { user: { id: string } }).user.id;
+    const result = setupTwoFactor(userId);
+    if ('error' in result) {
+      const map = {
+        'not-found': [404, 'Пользователь не найден'],
+        'already-enabled': [409, '2FA уже включена'],
+      } as const;
+      const [status, error] = map[result.error];
+      res.status(status).json({ error });
+      return;
+    }
+    res.json({ secret: result.secret });
+  });
+
+  // Подключение 2FA — шаг 2: код из приложения подтверждает pending-секрет, выдаём backup-коды.
+  router.post('/2fa/confirm', authMiddleware, (req, res) => {
+    const userId = (req as unknown as { user: { id: string } }).user.id;
+    const { code } = req.body as { code?: string };
+    if (typeof code !== 'string') {
+      res.status(400).json({ error: 'code обязателен' });
+      return;
+    }
+    const result = confirmTwoFactor(userId, code);
+    if ('error' in result) {
+      const map = {
+        'not-found': [404, 'Пользователь не найден'],
+        'no-pending': [400, 'Сначала запросите подключение 2FA'],
+        'invalid-code': [400, 'Неверный код'],
+      } as const;
+      const [status, error] = map[result.error];
+      res.status(status).json({ error });
+      return;
+    }
+    res.json({ backupCodes: result.backupCodes });
+  });
+
+  // Отключение 2FA самим игроком — требует текущий TOTP-код или backup-код.
+  router.post('/2fa/disable', authMiddleware, (req, res) => {
+    const userId = (req as unknown as { user: { id: string } }).user.id;
+    const { code } = req.body as { code?: string };
+    if (typeof code !== 'string') {
+      res.status(400).json({ error: 'code обязателен' });
+      return;
+    }
+    const result = disableTwoFactor(userId, code);
+    if ('error' in result) {
+      const map = {
+        'not-found': [404, 'Пользователь не найден'],
+        'not-enabled': [400, '2FA не включена'],
+        'invalid-code': [400, 'Неверный код'],
+      } as const;
+      const [status, error] = map[result.error];
+      res.status(status).json({ error });
+      return;
+    }
+    res.json({ success: true });
   });
 
   // Смена имени пользователя (профиль → «Данные аккаунта»). Перевыпускаем JWT — username
   // зашит в токен и используется напрямую при socket-авторизации (имя за столом).
   router.put('/username', authMiddleware, (req, res) => {
-    const userId = (req as unknown as { user: { id: string } }).user.id;
+    const jwtUser = (req as unknown as { user: { id: string; sid?: string } }).user;
     const { username } = req.body as { username?: string };
     if (typeof username !== 'string') {
       res.status(400).json({ error: 'username обязателен' });
       return;
     }
-    const result = updateUsername(userId, username);
+    const result = updateUsername(jwtUser.id, username);
     if ('error' in result) {
       const map = {
         invalid: [400, 'Имя пользователя должно быть от 3 до 32 символов'],
@@ -203,8 +324,29 @@ export function createAuthRouter(): Router {
       return;
     }
     const { user } = result;
-    const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+    // sid сохраняем как был — это переподпись токена той же сессии, не новый логин.
+    const token = jwt.sign({ id: user.id, username: user.username, role: user.role, sid: jwtUser.sid }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ token, user: { id: user.id, username: user.username, role: user.role } });
+  });
+
+  // Список устройств/сессий текущего юзера («Мои устройства», §10.15) — новые сверху, помечает текущую.
+  router.get('/sessions', authMiddleware, (req, res) => {
+    const jwtUser = (req as unknown as { user: { id: string; sid?: string } }).user;
+    const sessions = listSessions(jwtUser.id).map((s) => ({ ...s, current: s.sid === jwtUser.sid }));
+    res.json({ sessions });
+  });
+
+  // Отозвать конкретную сессию — удаляет запись и, если есть live-сокет с этим sid, рвёт его немедленно.
+  router.post('/sessions/:sid/revoke', authMiddleware, (req, res) => {
+    const jwtUser = (req as unknown as { user: { id: string } }).user;
+    const sid = String(req.params.sid);
+    const ok = revokeSession(jwtUser.id, sid);
+    if (!ok) {
+      res.status(404).json({ error: 'Сессия не найдена' });
+      return;
+    }
+    gameManager.revokeUserSession(sid);
+    res.json({ success: true });
   });
 
   // Смена email (профиль → «Данные аккаунта»).

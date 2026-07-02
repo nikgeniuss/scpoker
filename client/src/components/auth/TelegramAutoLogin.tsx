@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
 import { API_URL } from '../../config/api';
@@ -10,6 +11,7 @@ import { getTelegramInitData, getTelegramStartParam } from '../../lib/telegram';
 // Если initData пуст или сервер вернул ошибку — тоже ничего не делает (юзер увидит обычный MainMenu и сможет войти руками).
 // Mounted один раз в App.tsx; срабатывает один раз за загрузку страницы.
 export function TelegramAutoLogin() {
+  const { t } = useTranslation();
   const token = useAuthStore((s) => s.token);
   const login = useAuthStore((s) => s.login);
   const navigate = useNavigate();
@@ -36,14 +38,14 @@ export function TelegramAutoLogin() {
           });
           const data = await res.json().catch(() => ({}));
           if (!res.ok) {
-            toast.error(data.error || 'Не удалось привязать аккаунт');
+            toast.error(data.error || t('telegramAutoLogin.linkFailed'));
             return;
           }
           login(data.token, data.user);
-          toast.success('Telegram привязан, баланс объединён');
+          toast.success(t('telegramAutoLogin.linked'));
           navigate('/lobby', { replace: true });
         } catch {
-          toast.error('Ошибка привязки');
+          toast.error(t('telegramAutoLogin.linkError'));
         }
       })();
       return;
@@ -67,7 +69,7 @@ export function TelegramAutoLogin() {
         }
         const data = await res.json();
         login(data.token, data.user);
-        toast.success('Вход через Telegram');
+        toast.success(t('telegramAutoLogin.loggedIn'));
         // Если юзер на /login или /register — после auto-login сразу в лобби.
         if (location.pathname === '/login' || location.pathname === '/register') {
           navigate('/lobby', { replace: true });

@@ -5,7 +5,30 @@ import { paymentsBankroll } from './paymentsBankroll.js';
 import { notifyPaymentsInbox } from './paymentsInbox.js';
 import { usdtRawToChips, usdtRawToUsdt } from './exchange.js';
 import { sweepDeposit } from './sweepService.js';
-import type { DepositRecord, PaymentsSettings, WalletMapping } from '@poker-room/shared';
+import type { DepositRecord, PaymentsSettings, ResponsibleGamblingSettings, WalletMapping } from '@poker-room/shared';
+import { getResponsibleGamblingState, markResponsibleGamblingWarned } from '../auth/auth.js';
+import { periodRange, isLimitCrossed } from '../game/responsibleGamblingService.js';
+
+const NO_RG_SETTINGS: ResponsibleGamblingSettings = {
+  depositLimitEnabled: false,
+  lossLimitEnabled: false,
+  sessionTimeLimitEnabled: false,
+  selfExclusionEnabled: false,
+  timeoutEnabled: false,
+};
+
+// Сумма зачисленных депозитов юзера в периоде [sinceMs, untilMs] — для лимита на депозит.
+// Экспортируется — используется также в responsibleGambling.routes.ts для прогресс-бара.
+export function depositsTotalChips(deposits: DepositRecord[], userId: string, sinceMs: number, untilMs: number): number {
+  let total = 0;
+  for (const d of deposits) {
+    if (d.userId !== userId) continue;
+    const t = new Date(d.creditedAt).getTime();
+    if (t < sinceMs || t > untilMs) continue;
+    total += d.amountChipsCredited;
+  }
+  return total;
+}
 
 // Перенос реально пришедших USDT с депозитного адреса на хот-кошелёк — отдельно от кредита чипов,
 // чтобы сбой свипа (нет сети/нехватка газа) не откатывал уже начисленный баланс. Неудачный свип
@@ -37,7 +60,10 @@ let timer: NodeJS.Timeout | null = null;
 // Один проход опроса: все сконфигурированные сети × все известные депозитные адреса.
 // Ошибка на одном адресе/сети не должна прерывать остальные (try/catch внутри цикла) —
 // иначе один сбойный RPC-вызов остановил бы зачисление депозитов всем другим игрокам.
-export async function pollOnce(getSettings: () => PaymentsSettings): Promise<void> {
+export async function pollOnce(
+  getSettings: () => PaymentsSettings,
+  getRgSettings: () => ResponsibleGamblingSettings = () => NO_RG_SETTINGS,
+): Promise<void> {
   const settings = getSettings();
   if (!settings.enabled) return;
 
@@ -91,6 +117,19 @@ export async function pollOnce(getSettings: () => PaymentsSettings): Promise<voi
           deposits.push(deposit);
           changed = true;
           notifyPaymentsInbox(wallet.userId, 'deposit', `Депозит зачислен: ${usdtRawToUsdt(t.amountRaw).toFixed(2)} USDT`);
+
+          // Лимит на депозит (ROADMAP §11.2) — только предупреждение, кредит чипов уже применён выше.
+          if (getRgSettings().depositLimitEnabled) {
+            const rg = getResponsibleGamblingState(wallet.userId);
+            if (rg.depositLimitCents) {
+              const { sinceMs, untilMs, key } = periodRange(rg.depositLimitPeriod ?? 'day', new Date());
+              const totalChips = depositsTotalChips(deposits, wallet.userId, sinceMs, untilMs);
+              if (isLimitCrossed(totalChips, rg.depositLimitCents) && rg.depositWarnedPeriodKey !== key) {
+                notifyPaymentsInbox(wallet.userId, 'rg-warning', 'Вы превысили установленный лимит на депозит.');
+                markResponsibleGamblingWarned(wallet.userId, 'deposit', key);
+              }
+            }
+          }
         }
       } catch (err) {
         console.error(`⚠️ [payments] ошибка опроса ${chain} ${wallet.address}:`, err);
@@ -101,10 +140,14 @@ export async function pollOnce(getSettings: () => PaymentsSettings): Promise<voi
   if (changed) writeDeposits(deposits);
 }
 
-export function start(intervalMs: number, getSettings: () => PaymentsSettings): void {
+export function start(
+  intervalMs: number,
+  getSettings: () => PaymentsSettings,
+  getRgSettings?: () => ResponsibleGamblingSettings,
+): void {
   stop();
   timer = setInterval(() => {
-    pollOnce(getSettings).catch((err) => console.error('⚠️ [payments] depositPollingService tick упал:', err));
+    pollOnce(getSettings, getRgSettings).catch((err) => console.error('⚠️ [payments] depositPollingService tick упал:', err));
   }, intervalMs);
 }
 

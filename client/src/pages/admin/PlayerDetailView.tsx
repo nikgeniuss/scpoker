@@ -103,6 +103,17 @@ export const PlayerDetailView = ({ user, meId, api, onBack, onChanged, onDeleted
     patch({ chips: n }).then(() => setChipsDraft('')).catch(() => {});
   };
 
+  const disable2fa = async () => {
+    if (!window.confirm('Отключить 2FA у игрока «' + user.username + '»?')) return;
+    try {
+      await api.post('/admin/users/' + user.id + '/2fa/disable');
+      toast.success('2FA отключена');
+      onChanged({ ...user, twoFactorEnabled: false });
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  };
+
   const removeUser = async () => {
     if (isMe) return;
     if (!window.confirm('Удалить игрока «' + user.username + '»? Действие необратимо.')) return;
@@ -368,6 +379,17 @@ export const PlayerDetailView = ({ user, meId, api, onBack, onChanged, onDeleted
           </select>
           <span className="text-xs text-gray-500">{user.email}</span>
         </div>
+        {user.twoFactorEnabled && (
+          <div className="flex items-center justify-between gap-2 pt-1">
+            <span className="text-xs text-gray-400">2FA включена у игрока</span>
+            <button
+              onClick={disable2fa}
+              className="min-h-[36px] px-3 rounded-lg bg-amber-700 hover:bg-amber-600 text-white text-sm font-bold"
+            >
+              Отключить 2FA
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

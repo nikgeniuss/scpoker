@@ -10,7 +10,7 @@ const isNonNegInt = (v: unknown): v is number =>
 export function validateSettingsPatch(
   body: Record<string, unknown>,
 ): { patch: Record<string, unknown> } | { error: string } {
-  const { turnDurationMs, autostartDelayMs, defaultPlayerChips, timebank, botMode, paidFeatures, payments } = body;
+  const { turnDurationMs, autostartDelayMs, defaultPlayerChips, timebank, botMode, paidFeatures, payments, responsibleGambling } = body;
   const patch: Record<string, unknown> = {};
 
   if (turnDurationMs !== undefined) {
@@ -217,6 +217,29 @@ export function validateSettingsPatch(
       pmPatch.chains = chainsPatch;
     }
     patch.payments = pmPatch;
+  }
+  if (responsibleGambling !== undefined) {
+    if (!responsibleGambling || typeof responsibleGambling !== 'object') {
+      return { error: 'responsibleGambling: object' };
+    }
+    const rg = responsibleGambling as Record<string, unknown>;
+    const rgPatch: Record<string, unknown> = {};
+    for (const key of [
+      'depositLimitEnabled',
+      'lossLimitEnabled',
+      'sessionTimeLimitEnabled',
+      'selfExclusionEnabled',
+      'timeoutEnabled',
+    ] as const) {
+      const v = rg[key];
+      if (v !== undefined) {
+        if (typeof v !== 'boolean') {
+          return { error: `responsibleGambling.${key}: boolean` };
+        }
+        rgPatch[key] = v;
+      }
+    }
+    patch.responsibleGambling = rgPatch;
   }
 
   return { patch };

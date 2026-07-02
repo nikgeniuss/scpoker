@@ -89,7 +89,7 @@ export const RoomCard = ({ room, imIn, myQueuePos, onJoin, onQueue, onLeaveQueue
           {t('lobby.blinds')} <span className="text-white font-bold">{formatMoney(room.smallBlind)}/{formatMoney(room.bigBlind)}</span>
         </span>
         <span className="inline-flex items-center gap-1">
-          <Clock size={11} /> <span className="text-emerald-400 font-bold">{room.turnDurationSec}с</span>
+          <Clock size={11} /> <span className="text-emerald-400 font-bold">{room.turnDurationSec}{t('lobby.secShort')}</span>
         </span>
         <span className="inline-flex items-center gap-1">
           <Coins size={11} /> <span className="text-emerald-400 font-bold">{room.buyInMinBb}-{room.buyInMaxBb}BB</span>

@@ -24,6 +24,13 @@ function makeRoom(over: Partial<RoomInfo> = {}): RoomInfo {
     waitlistIds: [],
     format: 'nlh',
     rake: { percent: 0, capBb: 0 },
+    straddleEnabled: false,
+    bombPotEnabled: false,
+    doubleBoardEnabled: false,
+    rimtEnabled: false,
+    evCashoutEnabled: false,
+    noTurnNoShowEnabled: false,
+    antiCollusionEnabled: false,
     ...over,
   };
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 import { X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { API_URL } from '../../config/api';
 import { useAuthStore } from '../../store/authStore';
@@ -40,14 +41,6 @@ interface HistRecord {
   actions: HistAction[];
 }
 
-// Улицы для пошагового replay: сколько карт борда открыто к этому моменту.
-const STREETS: { key: string; label: string; boardCount: number }[] = [
-  { key: 'preflop', label: 'Префлоп', boardCount: 0 },
-  { key: 'flop', label: 'Флоп', boardCount: 3 },
-  { key: 'turn', label: 'Тёрн', boardCount: 4 },
-  { key: 'river', label: 'Ривер', boardCount: 5 },
-];
-
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -80,9 +73,17 @@ export const HandHistoryModal = ({
   cardDeck,
   cardBackStyle,
   fetchPath = '/hands',
-  title = 'История раздач',
+  title,
   focusIsSelf = true,
 }: Props) => {
+  const { t, i18n } = useTranslation();
+  const resolvedTitle = title ?? t('handHistoryModal.defaultTitle');
+  const STREETS: { key: string; label: string; boardCount: number }[] = [
+    { key: 'preflop', label: t('game.phasePreflop'), boardCount: 0 },
+    { key: 'flop', label: t('game.phaseFlop'), boardCount: 3 },
+    { key: 'turn', label: t('game.phaseTurn'), boardCount: 4 },
+    { key: 'river', label: t('game.phaseRiver'), boardCount: 5 },
+  ];
   const token = useAuthStore((s) => s.token);
   const [hands, setHands] = useState<HistRecord[]>([]);
   const [loading, setLoading] = useState(false);
@@ -119,7 +120,7 @@ export const HandHistoryModal = ({
   if (!open) return null;
 
   const fmt = (n: number, bb: number) => formatChips(n, bb, chipDisplay);
-  const time = (t: number) => new Date(t).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  const time = (ts: number) => new Date(ts).toLocaleTimeString(i18n.language === 'en' ? 'en-US' : 'ru-RU', { hour: '2-digit', minute: '2-digit' });
   const sel = hands.find((h) => h.id === selId) ?? null;
   const nameOf = (id: string) => {
     const p = sel?.players.find((x) => x.id === id);
@@ -128,21 +129,21 @@ export const HandHistoryModal = ({
   const actionLabel = (a: HistAction, bb: number): string => {
     switch (a.type) {
       case 'ante':
-        return 'анте ' + fmt(a.amount ?? 0, bb);
+        return t('handHistoryModal.actionAnte') + ' ' + fmt(a.amount ?? 0, bb);
       case 'sb':
-        return 'малый блайнд ' + fmt(a.amount ?? 0, bb);
+        return t('handHistoryModal.actionSb') + ' ' + fmt(a.amount ?? 0, bb);
       case 'bb':
-        return 'большой блайнд ' + fmt(a.amount ?? 0, bb);
+        return t('handHistoryModal.actionBb') + ' ' + fmt(a.amount ?? 0, bb);
       case 'fold':
-        return 'фолд';
+        return t('handHistoryModal.actionFold');
       case 'check':
-        return 'чек';
+        return t('handHistoryModal.actionCheck');
       case 'call':
-        return 'колл ' + fmt(a.amount ?? 0, bb);
+        return t('handHistoryModal.actionCall') + ' ' + fmt(a.amount ?? 0, bb);
       case 'raise':
-        return 'рейз до ' + fmt(a.amount ?? 0, bb);
+        return t('handHistoryModal.actionRaiseTo') + ' ' + fmt(a.amount ?? 0, bb);
       case 'all-in':
-        return 'олл-ин ' + fmt(a.amount ?? 0, bb);
+        return t('handHistoryModal.actionAllIn') + ' ' + fmt(a.amount ?? 0, bb);
       default:
         return a.type;
     }
@@ -172,29 +173,29 @@ export const HandHistoryModal = ({
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
           <div className="flex items-center gap-2">
             {sel && (
-              <button onClick={() => setSelId(null)} className="text-white/70 hover:text-white" aria-label="Назад к списку">
+              <button onClick={() => setSelId(null)} className="text-white/70 hover:text-white" aria-label={t('handHistoryModal.backToList')}>
                 <ChevronLeft size={20} />
               </button>
             )}
-            <span className="text-white font-bold">{sel ? 'Детали раздачи' : title}</span>
+            <span className="text-white font-bold">{sel ? t('handHistoryModal.detailsTitle') : resolvedTitle}</span>
           </div>
-          <button onClick={onClose} className="text-white/60 hover:text-white" aria-label="Закрыть">
+          <button onClick={onClose} className="text-white/60 hover:text-white" aria-label={t('handHistoryModal.close')}>
             <X size={20} />
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto">
           {loading ? (
-            <div className="p-8 text-center text-gray-400">Загрузка…</div>
+            <div className="p-8 text-center text-gray-400">{t('handHistoryModal.loading')}</div>
           ) : hands.length === 0 ? (
-            <div className="p-8 text-center text-gray-400">Пока нет сыгранных раздач</div>
+            <div className="p-8 text-center text-gray-400">{t('handHistoryModal.noHands')}</div>
           ) : sel ? (
             // === ДЕТАЛЬ ===
             <div className="p-4 space-y-4">
               <div className="text-center">
                 <div className="text-white font-bold">{sel.roomName}</div>
                 <div className="text-gray-400 text-xs">
-                  Блайнды {sel.smallBlind / 100}/{sel.bigBlind / 100} · {time(sel.t)}
+                  {t('handHistoryModal.blindsLabel')} {sel.smallBlind / 100}/{sel.bigBlind / 100} · {time(sel.t)}
                   {sel.handName ? ' · ' + sel.handName : ''}
                 </div>
               </div>
@@ -205,10 +206,10 @@ export const HandHistoryModal = ({
                     <Card key={i} card={c} faceStyle="classic" backStyle={cardBackStyle} deck={cardDeck} size="sm" />
                   ))
                 ) : (
-                  <span className="text-gray-500 text-xs italic">борд не открывался</span>
+                  <span className="text-gray-500 text-xs italic">{t('handHistoryModal.boardNotOpened')}</span>
                 )}
               </div>
-              <div className="text-center text-amber-300 text-sm font-bold">Банк {fmt(sel.pot, sel.bigBlind)}</div>
+              <div className="text-center text-amber-300 text-sm font-bold">{t('common.potLabel')} {fmt(sel.pot, sel.bigBlind)}</div>
               {/* Игроки */}
               <div className="space-y-2">
                 {sel.players.map((p) => {
@@ -226,12 +227,12 @@ export const HandHistoryModal = ({
                       <div className="flex-1 min-w-0">
                         <div className="text-white text-sm truncate">
                           {p.displayName || p.username}
-                          {p.id === myId && focusIsSelf ? ' (вы)' : ''}
-                          {p.folded ? <span className="text-gray-500 text-xs"> · фолд</span> : ''}
+                          {p.id === myId && focusIsSelf ? ' ' + t('handHistoryModal.youSuffix') : ''}
+                          {p.folded ? <span className="text-gray-500 text-xs"> · {t('handHistoryModal.foldedSuffix')}</span> : ''}
                         </div>
                         {isWinner && (
                           <div className="text-emerald-400 text-xs font-bold">
-                            выиграл +{fmt(sel.winAmounts[p.id] ?? 0, sel.bigBlind)}
+                            {t('handHistoryModal.won')} +{fmt(sel.winAmounts[p.id] ?? 0, sel.bigBlind)}
                           </div>
                         )}
                       </div>
@@ -255,13 +256,13 @@ export const HandHistoryModal = ({
                   return (
                     <div className="space-y-2 pt-1">
                       <div className="flex items-center justify-between">
-                        <span className="text-white/80 text-sm font-bold">Ход раздачи</span>
+                        <span className="text-white/80 text-sm font-bold">{t('handHistoryModal.handProgress')}</span>
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => setStep((v) => Math.max(0, v - 1))}
                             disabled={i === 0}
                             className="w-7 h-7 flex items-center justify-center rounded-lg bg-white/10 text-white/80 disabled:opacity-30 hover:bg-white/20"
-                            aria-label="Назад"
+                            aria-label={t('handHistoryModal.back')}
                           >
                             <ChevronLeft size={16} />
                           </button>
@@ -272,7 +273,7 @@ export const HandHistoryModal = ({
                             onClick={() => setStep((v) => Math.min(total - 1, v + 1))}
                             disabled={i === total - 1}
                             className="w-7 h-7 flex items-center justify-center rounded-lg bg-white/10 text-white/80 disabled:opacity-30 hover:bg-white/20"
-                            aria-label="Вперёд"
+                            aria-label={t('handHistoryModal.forward')}
                           >
                             <ChevronRight size={16} />
                           </button>
@@ -293,7 +294,7 @@ export const HandHistoryModal = ({
                               </motion.div>
                             ))
                           ) : (
-                            <span className="text-gray-500 text-xs italic">префлоп</span>
+                            <span className="text-gray-500 text-xs italic">{t('handHistoryModal.preflopLower')}</span>
                           )}
                         </AnimatePresence>
                       </div>

@@ -1,6 +1,8 @@
 // Пресеты бет-сайзов для ActionPanel (см. roadmap 10.2 в CLAUDE.md)
 // Хранение — localStorage, два контекста: open (префлоп без рейзов) и postflop (всё остальное)
 
+import i18n from '../i18n';
+
 export type OpenPreset =
   | { kind: 'bb'; value: number } // множитель ББ: 2BB, 2.5BB, ...
   | { kind: 'pot' };              // размер банка
@@ -114,10 +116,10 @@ export function calcPostflopAmount(preset: PostflopPreset, ctx: CalcCtx): number
 
 // Короткие подписи кнопок
 export function openPresetLabel(p: OpenPreset): string {
-  if (p.kind === 'pot') return 'Банк';
+  if (p.kind === 'pot') return i18n.t('common.potLabel');
   // 2 → "2 ББ", 2.5 → "2.5 ББ"
   const v = Number.isInteger(p.value) ? p.value.toString() : p.value.toString();
-  return v + ' ББ';
+  return v + ' ' + i18n.t('common.bbAbbrev');
 }
 
 export function postflopPresetLabel(p: PostflopPreset): string {

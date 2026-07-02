@@ -85,6 +85,12 @@ export interface GameState {
   // Турнирный стол (§10 «Турниры»): если задан — клиент рисует турнирный HUD вместо обычного
   // стола (нельзя выйти с забором фишек, блайнды растут по уровням — см. GET /api/tournaments/:id).
   tournamentId?: string;
+  // Double Board (доделка §10.6): второй независимый борд, только если room.doubleBoardEnabled.
+  // Также переиспользуется для отображения второго прогона RIMT (см. settlementMode).
+  communityCardsB?: Card[];
+  // Раздача решена досрочно (all-in до ривера) через RIMT или EV Cashout вместо обычной доигровки.
+  // Ставится только на хэнде, где это применилось; обычные раздачи — undefined.
+  settlementMode?: 'rimt' | 'evCashout';
 }
 
 export const SOCKET_EVENTS = {
@@ -128,7 +134,7 @@ export const SOCKET_EVENTS = {
 export interface InboxNotification {
   id: string;
   userId: string;
-  type: 'chips' | 'ban' | 'unban' | 'broadcast' | 'deposit' | 'withdrawal';
+  type: 'chips' | 'ban' | 'unban' | 'broadcast' | 'deposit' | 'withdrawal' | 'rg-warning';
   text: string;
   read: boolean;
   t: number; // epoch ms
@@ -154,6 +160,18 @@ export interface PaymentsSettings {
   minWithdrawalUsdt: number;
   maxWithdrawalUsdt: number;
   chains: Record<PaymentChain, PaymentsChainSettings>;
+}
+
+// Responsible Gambling (§11.2 ROADMAP) — какие пункты видны игроку в настройках аккаунта.
+// Выключение тоггла прячет соответствующий блок на /responsible-gambling целиком — общий
+// тип нужен и game-домену (loss-limit хук в GameManager), и payments-домену (deposit-limit
+// хук в depositPollingService), и клиентской админке.
+export interface ResponsibleGamblingSettings {
+  depositLimitEnabled: boolean;
+  lossLimitEnabled: boolean;
+  sessionTimeLimitEnabled: boolean;
+  selfExclusionEnabled: boolean;
+  timeoutEnabled: boolean;
 }
 
 export type WithdrawalStatus = 'pending' | 'approved' | 'sending' | 'paid' | 'rejected' | 'failed';
@@ -277,6 +295,14 @@ export interface RoomInfo {
   format: GameFormat; // 'nlh' | 'shortdeck' — формат стола
   clubId?: string;      // если задан — стол видим только членам клуба
   rake: RakeConfig;     // per-table рейк, чтобы игрок видел % и cap до посадки (percent=0 → выключен)
+  // Доделка §10.6 (2026-06-26): спец-режимы стола, показываются в TableInfoModal до посадки.
+  straddleEnabled: boolean;
+  bombPotEnabled: boolean;
+  doubleBoardEnabled: boolean;
+  rimtEnabled: boolean;
+  evCashoutEnabled: boolean;
+  noTurnNoShowEnabled: boolean;
+  antiCollusionEnabled: boolean;
 }
 
 // Per-table рейк (комиссия рума с банка). percent=0 → выключен. (см. server/src/game/rake.ts)
@@ -308,6 +334,15 @@ export interface CreateRoomOptions {
   clubId?: string;     // если задан — стол привязан к клубу (виден только членам)
   pinned?: boolean;    // закрепить стол сверху лобби (только админ; проверяется на сервере)
   autoExtendSession?: boolean; // по истечении sessionDurationHours продлевать сессию повторно вместо закрытия
+  // Доделка §10.6 (2026-06-26): спец-режимы стола — все автоматические, без согласия игрока на
+  // каждую раздачу (см. docs/ROADMAP.md §10.6 и план реализации). Дефолт всех — false/выключено.
+  straddleEnabled?: boolean;   // UTG обязательно стрэддлит (2×BB) каждую раздачу при ≥3 игроках
+  bombPotEnabled?: boolean;    // все вносят 3×BB форс-бет, флоп без префлоп-торгов
+  doubleBoardEnabled?: boolean; // каждая раздача — 2 независимых борда, банк 50/50
+  rimtEnabled?: boolean;       // ранний all-in до ривера — борд доигрывается дважды
+  evCashoutEnabled?: boolean;  // ранний all-in до ривера — банк делится по equity (приоритет над rimtEnabled)
+  noTurnNoShowEnabled?: boolean; // победитель без вскрытия автоматически показывает карты
+  antiCollusionEnabled?: boolean; // запрет второго места за столом с тем же IP/device
 }
 
 // Турниры (ROADMAP §10 «Турниры», SNG → MTT). 'mtt' зарезервирован под Фазу 2, сервер v1 принимает
@@ -339,6 +374,11 @@ export type MttItmPercent = 10 | 12 | 15 | 20;
 // 'fixed' — строго фиксированное число мест (fixedPayoutPlaces), независимо от числа участников.
 export type MttPayoutMode = 'itm' | 'fixed';
 
+// Баунти/PKO (ROADMAP §10.19): 'flat' — фикс. выплата убийце; 'progressive' (PKO) — половина
+// баунти жертвы уходит убийце наличными в банкролл, половина добавляется к собственному баунти
+// убийцы (баунти растёт по ходу турнира у выживших).
+export type BountyType = 'flat' | 'progressive';
+
 export interface TournamentEntry {
   userId: string;
   username: string;
@@ -346,6 +386,9 @@ export interface TournamentEntry {
   tableId?: string;     // id текущего стола (MTT, только пока status==='playing')
   finishPlace?: number; // присваивается при элиминации/завершении (1 = победитель)
   prize?: number;       // выплаченные фишки по результату (есть только у призовых мест после finished)
+  bounty?: number;      // текущая «цена за голову» этого игрока (только при tournament.bountyEnabled);
+                         // 0 после того, как игрока выбили — баунти уже отдано убийце
+  bountyWon?: number;   // суммарный кэш баунти, собранный ЭТИМ игроком за чужие головы (банкролл)
 }
 
 export interface TournamentInfo {
@@ -366,6 +409,20 @@ export interface TournamentInfo {
   itmPercent: MttItmPercent; // MTT: доля призовых мест от числа участников (используется при payoutMode==='itm')
   payoutMode: MttPayoutMode; // MTT: 'itm' (по умолчанию) или 'fixed' (строго fixedPayoutPlaces мест)
   fixedPayoutPlaces?: number; // MTT: число призовых мест при payoutMode==='fixed' (capped числом участников)
+  // Ре-энтри (MTT, доделка §10.6): можно зайти заново после баста, в том же окне lateRegMinutes —
+  // отдельная новая запись entries (прошлый бaст уже финализирован своим finishPlace), призовой
+  // фонд растёт с каждым входом. maxReEntries — сколько раз можно зайти заново (доп. к первому входу).
+  reEntryEnabled: boolean;
+  maxReEntries?: number; // задан только если reEntryEnabled
+  // Гарантированный приз (MTT): если бай-ины на финише не дотягивают до этой суммы, рум доплачивает
+  // разницу в prizePool (оверлей). overlayPaid — сколько фактически доплачено, задаётся при finish.
+  guaranteedPrizePool?: number;
+  overlayPaid?: number;
+  // Баунти/PKO (SNG+MTT): часть бай-ина (bountyPercent%) уходит в баунти-пул вместо prizePool —
+  // выплачивается ПРЯМО в банкролл убийце при элиминации жертвы (см. tournamentPayout.computeBountySplit).
+  bountyEnabled: boolean;
+  bountyType?: BountyType;   // задан только при bountyEnabled
+  bountyPercent?: number;    // % от buyIn в баунти-пул (1..90), задан только при bountyEnabled
   createdBy: string;
   createdAt: number;
   startedAt?: number;
@@ -385,6 +442,12 @@ export interface CreateTournamentOptions {
   itmPercent?: MttItmPercent; // MTT, по умолчанию 15 (используется при payoutMode==='itm', тоже по умолчанию)
   payoutMode?: MttPayoutMode; // MTT, по умолчанию 'itm'
   fixedPayoutPlaces?: number; // MTT, при payoutMode==='fixed' — целое 1..1000
+  reEntryEnabled?: boolean;   // MTT, по умолчанию false
+  maxReEntries?: number;      // MTT, при reEntryEnabled — целое 1..10, по умолчанию 1
+  guaranteedPrizePool?: number; // MTT, целое >=0, по умолчанию нет гарантии
+  bountyEnabled?: boolean;   // SNG+MTT, по умолчанию false
+  bountyType?: BountyType;   // при bountyEnabled, по умолчанию 'flat'
+  bountyPercent?: number;    // при bountyEnabled, целое 1..90, по умолчанию 50
 }
 
 export type JoinDeniedReason =
@@ -399,4 +462,5 @@ export type JoinDeniedReason =
   | 'no-chips'
   | 'insufficient-bankroll' // банкролл < bigBlind*buyInMinBb
   | 'invalid-buyin'         // запрошенная сумма вне [bigBlind*minBb, bigBlind*maxBb]
-  | 'club-members-only';    // стол только для членов клуба
+  | 'club-members-only'     // стол только для членов клуба
+  | 'anti-collusion';       // тот же IP/device уже сидит за этим столом (antiCollusionEnabled)

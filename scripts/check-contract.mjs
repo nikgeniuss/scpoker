@@ -137,6 +137,28 @@ for (const t of TYPES_TO_SYNC) {
   }
 }
 
+// --- Проверка 4: shared.Player → server.Player (ОДНОСТОРОННЕ, ROADMAP §9.3-A) ---
+// server.Player — намеренно более богатая внутренняя модель (socketId/таймеры/totalCommitted и
+// т.п., см. аудит 2026-06-18) — лишние server-only поля это НЕ дрейф, поэтому проверка не
+// двусторонняя как для RoomInfo/CreateRoomOptions выше. Но каждое поле shared.Player обязано
+// либо реально храниться в server.Player, либо (если оно считается только в сериализаторе —
+// как handHint/shownCards в gameStateSerializer.ts) попасть в список ниже.
+const COMPUTED_ONLY_PUBLIC_FIELDS = new Set(['handHint', 'shownCards']);
+const sharedPlayerFields = parseInterfaceFields(sharedSrc, 'Player');
+const serverPlayerFields = parseInterfaceFields(serverTypesSrc, 'Player');
+if (!sharedPlayerFields) errors.push('Тип Player не найден в shared/index.ts');
+else if (!serverPlayerFields) errors.push('Тип Player не найден в server-копии (GameManager.ts)');
+else {
+  for (const f of sharedPlayerFields) {
+    if (serverPlayerFields.has(f) || COMPUTED_ONLY_PUBLIC_FIELDS.has(f)) continue;
+    errors.push(
+      'Player.' + f + ' есть в shared/index.ts, но НЕТ ни в server.Player (GameManager.ts), ни в ' +
+      'COMPUTED_ONLY_PUBLIC_FIELDS (check-contract.mjs) — синхронизируй поле или добавь его в список, ' +
+      'если оно считается только при сериализации.'
+    );
+  }
+}
+
 // --- Отчёт ---
 const uniqWarnings = [...new Set(warnings)];
 if (uniqWarnings.length) {

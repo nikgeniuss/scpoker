@@ -5,7 +5,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useAdminApi } from '../../hooks/useAdminApi';
 import { parseMoney } from '../../config/chipFormat';
 import { useLobbyDesignStore } from '../../store/lobbyDesignStore';
-import type { GameSettings, TimebankSettings, BotModeSettings } from './types';
+import type { GameSettings, TimebankSettings, BotModeSettings, ResponsibleGamblingSettings } from './types';
 
 export const SettingsTab = () => {
   const { token } = useAuthStore();
@@ -161,6 +161,13 @@ export const SettingsTab = () => {
         }
       />
 
+      <ResponsibleGamblingSection
+        rg={settings.responsibleGambling}
+        onChange={(next) =>
+          setSettings((prev) => (prev ? { ...prev, responsibleGambling: next } : prev))
+        }
+      />
+
       <LobbyDesignSection />
 
       <motion.button
@@ -220,6 +227,49 @@ const LobbyDesignSection = () => {
           Редизайн
         </button>
       </div>
+    </div>
+  );
+};
+
+// Responsible Gambling (ROADMAP §11.2) — каждый тоггл прячет/показывает соответствующий блок
+// на /responsible-gambling целиком: админ решает, что игроку вообще можно настраивать,
+// не только значения лимитов. Сервер не доверяет клиенту — те же проверки на PUT/POST
+// в responsibleGambling.routes.ts, тут только UI.
+interface ResponsibleGamblingSectionProps {
+  rg: ResponsibleGamblingSettings;
+  onChange: (next: ResponsibleGamblingSettings) => void;
+}
+
+const ResponsibleGamblingSection = ({ rg, onChange }: ResponsibleGamblingSectionProps) => {
+  const update = <K extends keyof ResponsibleGamblingSettings>(key: K, value: ResponsibleGamblingSettings[K]) =>
+    onChange({ ...rg, [key]: value });
+
+  const toggle = (key: keyof ResponsibleGamblingSettings, label: string) => (
+    <label className="flex items-center gap-3 cursor-pointer">
+      <input
+        type="checkbox"
+        checked={rg[key]}
+        onChange={(e) => update(key, e.target.checked)}
+        className="accent-emerald-500 w-4 h-4"
+      />
+      <span className="text-white font-bold">{label}</span>
+    </label>
+  );
+
+  return (
+    <div className="bg-gray-800 rounded-2xl p-4 border border-white/10 space-y-4">
+      <div>
+        <h3 className="text-white font-bold text-lg mb-1">Responsible Gambling</h3>
+        <p className="text-sm text-gray-500">
+          Какие пункты доступны игроку в настройках аккаунта (/responsible-gambling). Выключение
+          тоггла прячет блок целиком — не просто блокирует значения.
+        </p>
+      </div>
+      {toggle('depositLimitEnabled', 'Лимит на депозит')}
+      {toggle('lossLimitEnabled', 'Лимит на потери')}
+      {toggle('sessionTimeLimitEnabled', 'Лимит времени сессии')}
+      {toggle('selfExclusionEnabled', 'Самоисключение')}
+      {toggle('timeoutEnabled', 'Тайм-аут')}
     </div>
   );
 };

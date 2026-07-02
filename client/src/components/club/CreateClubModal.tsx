@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 import { Shield, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export const CreateClubModal = ({ onClose, onCreated }: Props) => {
+  const { t } = useTranslation();
   const token = useAuthStore((s) => s.token);
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
@@ -30,17 +32,17 @@ export const CreateClubModal = ({ onClose, onCreated }: Props) => {
       const data = await res.json();
       if (!res.ok) {
         const msg =
-          data.error === 'already-owns-club' ? 'У вас уже есть клуб' :
-          data.error === 'name-taken' ? 'Название занято' :
-          data.error === 'invalid-name' ? 'Некорректное название' :
-          'Ошибка создания клуба';
+          data.error === 'already-owns-club' ? t('createClubModal.alreadyOwnsClub') :
+          data.error === 'name-taken' ? t('createClubModal.nameTaken') :
+          data.error === 'invalid-name' ? t('createClubModal.invalidName') :
+          t('createClubModal.createError');
         toast.error(msg);
         return;
       }
-      toast.success('Клуб создан!');
+      toast.success(t('createClubModal.created'));
       onCreated(data as MyClub);
     } catch {
-      toast.error('Ошибка сети');
+      toast.error(t('createClubModal.networkError'));
     } finally {
       setLoading(false);
     }
@@ -67,7 +69,7 @@ export const CreateClubModal = ({ onClose, onCreated }: Props) => {
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500/25 to-cyan-600/15 border border-emerald-500/30 flex items-center justify-center">
               <Shield size={20} className="text-emerald-400" />
             </div>
-            <h3 className="text-lg font-bold text-white">Создать клуб</h3>
+            <h3 className="text-lg font-bold text-white">{t('createClubModal.title')}</h3>
           </div>
           <button onClick={onClose} className="text-gray-500 hover:text-white transition-colors">
             <X size={20} />
@@ -76,12 +78,12 @@ export const CreateClubModal = ({ onClose, onCreated }: Props) => {
 
         <form onSubmit={submit} className="flex flex-col gap-4">
           <div>
-            <label className="text-xs text-gray-400 mb-1.5 block">Название клуба</label>
+            <label className="text-xs text-gray-400 mb-1.5 block">{t('createClubModal.nameLabel')}</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Например: Kings Poker Club"
+              placeholder={t('createClubModal.namePlaceholder')}
               maxLength={50}
               autoFocus
               className="w-full bg-gray-900 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-emerald-500/60 transition-colors"
@@ -95,14 +97,14 @@ export const CreateClubModal = ({ onClose, onCreated }: Props) => {
               onClick={onClose}
               className="flex-1 py-3 rounded-xl border border-white/10 text-gray-400 text-sm font-bold hover:bg-white/5 transition-colors"
             >
-              Отмена
+              {t('createClubModal.cancel')}
             </button>
             <button
               type="submit"
               disabled={!name.trim() || loading}
               className="flex-1 py-3 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
-              {loading ? 'Создаём…' : 'Создать'}
+              {loading ? t('createClubModal.creating') : t('createClubModal.create')}
             </button>
           </div>
         </form>

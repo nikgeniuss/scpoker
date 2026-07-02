@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { ChevronLeft, Gem } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { useRakebackStore } from '../store/rakebackStore';
@@ -9,15 +10,16 @@ import { TIER_DEFAULTS } from '../config/rakeback';
 // Игрок-view «Рейкбэк» — личный кабинет VIP-кэшбэка (по аналогии с BadBeatInfo, ROADMAP «Рейкбэк»).
 // Уровень определяется накопленным lifetime-рейком (без сброса). RequireAuth — нужен свой userId.
 
-function timeAgo(t: number): string {
+function timeAgo(t: number, lang: string, tr: (key: string, opts?: Record<string, unknown>) => string): string {
   const diff = (Date.now() - t) / 1000;
-  if (diff < 60) return 'только что';
-  if (diff < 3600) return Math.floor(diff / 60) + ' мин назад';
-  if (diff < 86400) return Math.floor(diff / 3600) + ' ч назад';
-  return new Date(t).toLocaleDateString('ru-RU');
+  if (diff < 60) return tr('common.time.justNow');
+  if (diff < 3600) return tr('common.time.minutesAgo', { count: Math.floor(diff / 60) });
+  if (diff < 86400) return tr('common.time.hoursAgo', { count: Math.floor(diff / 3600) });
+  return new Date(t).toLocaleDateString(lang === 'en' ? 'en-US' : 'ru-RU');
 }
 
 export const RakebackInfo = () => {
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const token = useAuthStore((s) => s.token);
   const { enabled, lifetimeRake, totalPaid, tier, nextTier, history, loadMine } = useRakebackStore();
@@ -38,17 +40,17 @@ export const RakebackInfo = () => {
         <div className="relative flex items-center justify-center mb-5">
           <button
             onClick={() => navigate('/profile')}
-            aria-label="Назад"
+            aria-label={t('rakebackInfo.back')}
             className="absolute left-0 w-10 h-10 flex items-center justify-center rounded-full text-white/80 hover:bg-white/10"
           >
             <ChevronLeft size={26} />
           </button>
-          <h1 className="text-xl font-bold">Рейкбэк</h1>
+          <h1 className="text-xl font-bold">{t('rakebackInfo.title')}</h1>
         </div>
 
         {!enabled && (
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-gray-400 mb-6">
-            Программа рейкбэка сейчас выключена.
+            {t('rakebackInfo.disabled')}
           </div>
         )}
 
@@ -59,11 +61,11 @@ export const RakebackInfo = () => {
               <Gem size={22} className="text-amber-400" />
             </div>
             <div>
-              <div className="text-xs text-gray-400">Ваш уровень</div>
+              <div className="text-xs text-gray-400">{t('rakebackInfo.yourLevel')}</div>
               <div className="text-2xl font-black text-amber-300">{tier?.name ?? '—'}</div>
             </div>
             <div className="ml-auto text-right">
-              <div className="text-xs text-gray-400">Кэшбэк</div>
+              <div className="text-xs text-gray-400">{t('rakebackInfo.cashback')}</div>
               <div className="text-2xl font-black text-emerald-400">{tier?.percent ?? 0}%</div>
             </div>
           </div>
@@ -77,35 +79,35 @@ export const RakebackInfo = () => {
                 />
               </div>
               <div className="text-xs text-gray-400">
-                {formatMoney(lifetimeRake)} / {formatMoney(nextTier.minRakeCents)} рейка до уровня{' '}
+                {formatMoney(lifetimeRake)} / {formatMoney(nextTier.minRakeCents)} {t('rakebackInfo.toLevel')}{' '}
                 <span className="text-white font-semibold">{nextTier.name}</span> ({nextTier.percent}%)
               </div>
             </>
           )}
           {!nextTier && tier && (
-            <div className="text-xs text-emerald-400">Максимальный уровень достигнут.</div>
+            <div className="text-xs text-emerald-400">{t('rakebackInfo.maxLevelReached')}</div>
           )}
         </div>
 
         {/* Сводка */}
         <div className="grid grid-cols-2 gap-3 mb-6">
           <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-            <div className="text-xs text-gray-400 mb-1">Уплачено рейка (всего)</div>
+            <div className="text-xs text-gray-400 mb-1">{t('rakebackInfo.totalRakePaid')}</div>
             <div className="text-lg font-bold tabular-nums">{formatMoney(lifetimeRake)}</div>
           </div>
           <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-            <div className="text-xs text-gray-400 mb-1">Получено кэшбэка</div>
+            <div className="text-xs text-gray-400 mb-1">{t('rakebackInfo.totalCashbackReceived')}</div>
             <div className="text-lg font-bold tabular-nums text-emerald-400">{formatMoney(totalPaid)}</div>
           </div>
         </div>
 
         {/* Таблица уровней */}
-        <h2 className="text-sm font-bold text-emerald-400 mb-2">Уровни рейкбэка</h2>
+        <h2 className="text-sm font-bold text-emerald-400 mb-2">{t('rakebackInfo.levelsTitle')}</h2>
         <div className="rounded-2xl border border-white/10 overflow-hidden text-sm mb-6">
           <div className="grid grid-cols-[1fr_1fr_0.6fr] gap-1 px-3 py-2 bg-gray-800 font-bold text-gray-400 text-xs">
-            <span>Уровень</span>
-            <span className="text-right">Порог рейка</span>
-            <span className="text-right">Кэшбэк</span>
+            <span>{t('rakebackInfo.colLevel')}</span>
+            <span className="text-right">{t('rakebackInfo.colThreshold')}</span>
+            <span className="text-right">{t('rakebackInfo.colCashback')}</span>
           </div>
           {tiers.map((t) => (
             <div
@@ -123,18 +125,18 @@ export const RakebackInfo = () => {
         </div>
 
         {/* История начислений */}
-        <h2 className="text-sm font-bold text-emerald-400 mb-2">История начислений</h2>
+        <h2 className="text-sm font-bold text-emerald-400 mb-2">{t('rakebackInfo.historyTitle')}</h2>
         {history.length === 0 ? (
-          <div className="text-sm text-gray-500">Пока нет начислений.</div>
+          <div className="text-sm text-gray-500">{t('rakebackInfo.noHistory')}</div>
         ) : (
           <div className="rounded-2xl border border-white/10 divide-y divide-white/5 overflow-hidden">
             {history.map((h, i) => (
               <div key={i} className="flex items-center justify-between px-3 py-2.5 text-sm">
                 <div>
                   <div className="text-white">+{formatMoney(h.payout)}</div>
-                  <div className="text-xs text-gray-500">{h.tierName} · {timeAgo(h.t)}</div>
+                  <div className="text-xs text-gray-500">{h.tierName} · {timeAgo(h.t, i18n.language, t)}</div>
                 </div>
-                <div className="text-xs text-gray-500">рейк {formatMoney(h.rakeAmount)}</div>
+                <div className="text-xs text-gray-500">{t('rakebackInfo.rakeLabel')} {formatMoney(h.rakeAmount)}</div>
               </div>
             ))}
           </div>

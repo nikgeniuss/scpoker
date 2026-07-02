@@ -165,13 +165,13 @@ export const LobbyRedesign = () => {
               onClick={() => setView('list')}
               className={'px-3 py-1.5 rounded-lg text-xs font-bold ' + (view === 'list' ? 'bg-white/15 text-white' : 'text-gray-500')}
             >
-              Список
+              {t('lobby.viewList')}
             </button>
             <button
               onClick={() => setView('grid')}
               className={'px-3 py-1.5 rounded-lg text-xs font-bold ' + (view === 'grid' ? 'bg-white/15 text-white' : 'text-gray-500')}
             >
-              Карточки
+              {t('lobby.viewGrid')}
             </button>
           </div>
         </div>
@@ -428,13 +428,13 @@ function FeaturedRoom({ room, imIn, myQueuePos, onJoin, onQueue, onLeaveQueue, o
 
       <div className="min-w-0 flex-1 text-center sm:text-left">
         <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
-          <span className="px-2 py-0.5 rounded-md bg-amber-500 text-black text-[10px] font-black uppercase tracking-wider">Самый оживлённый стол</span>
+          <span className="px-2 py-0.5 rounded-md bg-amber-500 text-black text-[10px] font-black uppercase tracking-wider">{t('lobby.mostActiveTable')}</span>
           <h3 className="text-xl font-black text-white">{room.name}</h3>
           <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300">{room.format === 'shortdeck' ? t('lobby.formatShortdeck') : 'NLH'}</span>
         </div>
         <div className="text-2xl font-black text-amber-300 tabular-nums mt-1">{formatMoney(room.smallBlind)} / {formatMoney(room.bigBlind)}</div>
         <div className="flex flex-wrap items-center justify-center sm:justify-start gap-x-4 gap-y-1 text-xs text-gray-400 mt-2">
-          <span>{room.currentPlayers}/{room.maxPlayers} игроков</span>
+          <span>{t('lobby.playersShort', { current: room.currentPlayers, max: room.maxPlayers })}</span>
           <span>{room.buyInMinBb}-{room.buyInMaxBb}BB</span>
         </div>
       </div>

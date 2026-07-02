@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import ReactNiceAvatar from 'react-nice-avatar';
 import { avatarConfig } from '../../utils/avatar';
@@ -16,6 +17,7 @@ interface PlayerInfoPopupProps {
 }
 
 export const PlayerInfoPopup = ({ player, note, onNoteChange, onClose }: PlayerInfoPopupProps) => {
+  const { t } = useTranslation();
   // Локальный draft — синхронизируется при смене игрока, сохраняется по blur (не на каждый keystroke).
   const [draft, setDraft] = useState(note);
   useEffect(() => setDraft(note), [note, player?.id]);
@@ -77,7 +79,7 @@ export const PlayerInfoPopup = ({ player, note, onNoteChange, onClose }: PlayerI
               {player.hudStats && player.hudStats.hands >= 10 ? (
                 <div className="w-full bg-black/40 rounded-xl p-3 space-y-2">
                   <div className="text-xs text-gray-400 text-center font-bold uppercase tracking-wide mb-1">
-                    HUD ({player.hudStats.hands} рук)
+                    HUD ({t('playerInfoPopup.hudHands', { count: player.hudStats.hands })})
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="text-center">
@@ -93,8 +95,8 @@ export const PlayerInfoPopup = ({ player, note, onNoteChange, onClose }: PlayerI
               ) : (
                 <div className="w-full bg-black/40 rounded-xl p-3 text-center text-gray-500 text-xs">
                   {player.hudStats
-                    ? `Недостаточно данных (${player.hudStats.hands} рук)`
-                    : 'Нет данных HUD'}
+                    ? t('playerInfoPopup.notEnoughData', { count: player.hudStats.hands })
+                    : t('playerInfoPopup.noHudData')}
                 </div>
               )}
 
@@ -106,7 +108,7 @@ export const PlayerInfoPopup = ({ player, note, onNoteChange, onClose }: PlayerI
                   onBlur={() => {
                     if (draft !== note) onNoteChange(draft);
                   }}
-                  placeholder="Заметка (видна только вам)"
+                  placeholder={t('playerInfoPopup.notePlaceholder')}
                   rows={2}
                   maxLength={NOTE_MAX_LEN}
                   className="w-full bg-black/40 rounded-xl p-3 text-sm text-white placeholder:text-gray-500 resize-none outline-none focus:ring-1 focus:ring-poker-gold/60"

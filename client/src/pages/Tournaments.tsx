@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Plus, Trophy } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../store/authStore';
@@ -13,6 +14,7 @@ import type { CreateTournamentOptions } from '@poker-room/shared';
 // Турниры (ROADMAP §10 «Турниры», SNG v1). Создаёт ТОЛЬКО админ — реальный призовой фонд
 // (решение пользователя); регистрация открыта всем. Список — REST-поллинг (см. tournamentStore).
 export const Tournaments = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const token = useAuthStore((s) => s.token);
   const myId = useAuthStore((s) => s.user?.id ?? null);
@@ -51,14 +53,14 @@ export const Tournaments = () => {
       <div className="container mx-auto px-4 pt-0 pb-12 relative z-10">
         <div className="flex flex-wrap justify-between items-center gap-3 mb-5">
           <h1 className="text-xl font-bold text-white flex items-center gap-2">
-            <Trophy size={20} className="text-amber-400" /> Турниры
+            <Trophy size={20} className="text-amber-400" /> {t('tournaments.title')}
           </h1>
           {isAdmin && (
             <button
               onClick={() => setShowCreate(true)}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-gradient-to-r from-amber-500 to-orange-600 font-bold text-white text-sm shadow-lg shadow-amber-500/30"
             >
-              <Plus size={14} /> Создать турнир
+              <Plus size={14} /> {t('tournaments.create')}
             </button>
           )}
         </div>
@@ -66,7 +68,7 @@ export const Tournaments = () => {
         {active.length === 0 ? (
           <div className="text-center text-gray-500 mt-20">
             <p className="text-6xl mb-4">🏆</p>
-            <p>Турниров пока нет</p>
+            <p>{t('tournaments.empty')}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

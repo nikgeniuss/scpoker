@@ -42,6 +42,13 @@ export function toRoomInfo(room: Room): RoomInfo {
     format: room.format,
     clubId: room.clubId,
     rake: room.rake,
+    straddleEnabled: room.straddleEnabled,
+    bombPotEnabled: room.bombPotEnabled,
+    doubleBoardEnabled: room.doubleBoardEnabled,
+    rimtEnabled: room.rimtEnabled,
+    evCashoutEnabled: room.evCashoutEnabled,
+    noTurnNoShowEnabled: room.noTurnNoShowEnabled,
+    antiCollusionEnabled: room.antiCollusionEnabled,
   };
 }
 

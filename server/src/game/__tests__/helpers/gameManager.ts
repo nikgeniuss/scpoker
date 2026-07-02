@@ -96,7 +96,8 @@ export async function createTestGameManager(): Promise<{
 // Все методы — public в GameManager.ts; типы any для простоты (TS-strictness в тестах не цель).
 export interface GameManagerLike {
   createRoom(opts: unknown, createdBy: string): { roomId: string } | { error: string };
-  addPlayer(roomId: string, userId: string, socketId: string, username: string, buyInAmount?: number): boolean;
+  addPlayer(roomId: string, userId: string, socketId: string, username: string, buyInAmount?: number, networkInfo?: { ip: string; deviceId: string }): boolean;
+  canJoinRoom(roomId: string, userId: string, password?: string, buyInAmount?: number, networkInfo?: { ip: string; deviceId: string }): string | null;
   removePlayer(roomId: string, userId: string): void;
   handleDisconnect(userId: string): void;
   startGame(roomId: string, testDeck?: unknown[]): void;
@@ -122,6 +123,7 @@ export function seatPlayer(
     username: string;
     bankroll: number;
     buyIn?: number;
+    networkInfo?: { ip: string; deviceId: string };
   },
 ): { socket: MockSocket; success: boolean } {
   // Обновить users.json
@@ -136,6 +138,6 @@ export function seatPlayer(
   const sock = io.addSocket(opts.userId, opts.username, opts.roomId);
 
   // Посадка
-  const success = gm.addPlayer(opts.roomId, opts.userId, sock.id, opts.username, opts.buyIn);
+  const success = gm.addPlayer(opts.roomId, opts.userId, sock.id, opts.username, opts.buyIn, opts.networkInfo);
   return { socket: sock, success };
 }

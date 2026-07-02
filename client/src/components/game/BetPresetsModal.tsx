@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight, X, RotateCcw } from 'lucide-react';
 import {
   DEFAULT_BET_PRESETS,
@@ -56,6 +57,7 @@ export const BetPresetsModal = ({
   onClose,
   onSave,
 }: Props) => {
+  const { t } = useTranslation();
   const [draft, setDraft] = useState<BetPresets>(initial);
   const [chipDisplayDraft, setChipDisplayDraft] = useState<ChipDisplay>(initialChipDisplay);
   const [cardColorsDraft, setCardColorsDraft] = useState<CardColorScheme>(initialCardColors);
@@ -114,7 +116,7 @@ export const BetPresetsModal = ({
             className="w-full max-w-md bg-gradient-to-b from-gray-900 to-black border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
           >
             <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-              <h2 className="text-white font-bold text-base">Настроить кнопки ставок</h2>
+              <h2 className="text-white font-bold text-base">{t('betPresetsModal.title')}</h2>
               <button
                 onClick={onClose}
                 className="text-white/60 hover:text-white p-1 rounded-lg hover:bg-white/10"
@@ -124,7 +126,7 @@ export const BetPresetsModal = ({
             </div>
 
             <div className="p-4 space-y-5">
-              <Section title="Открытие (префлоп)" hint="Когда никто ещё не повышал">
+              <Section title={t('betPresetsModal.openSection')} hint={t('betPresetsModal.openHint')}>
                 {draft.open.map((p, i) => (
                   <PresetRow
                     key={'open-' + i}
@@ -137,7 +139,7 @@ export const BetPresetsModal = ({
                 ))}
               </Section>
 
-              <Section title="После флопа / ре-рейз" hint="% от размера банка">
+              <Section title={t('betPresetsModal.postflopSection')} hint={t('betPresetsModal.postflopHint')}>
                 {draft.postflop.map((p, i) => (
                   <PresetRow
                     key={'pf-' + i}
@@ -151,7 +153,7 @@ export const BetPresetsModal = ({
               </Section>
 
               <label className="flex items-center justify-between gap-3 px-1 cursor-pointer select-none">
-                <span className="text-white/80 text-sm">Не округлять до ближайшего блайнда</span>
+                <span className="text-white/80 text-sm">{t('betPresetsModal.noRoundLabel')}</span>
                 <input
                   type="checkbox"
                   checked={!draft.roundToBigBlind}
@@ -163,9 +165,9 @@ export const BetPresetsModal = ({
               <div>
                 <div className="flex items-baseline justify-between mb-2">
                   <h3 className="text-white text-sm font-bold uppercase tracking-wide">
-                    Отражение фишек
+                    {t('betPresetsModal.chipDisplayTitle')}
                   </h3>
-                  <span className="text-white/40 text-xs">формат стека</span>
+                  <span className="text-white/40 text-xs">{t('betPresetsModal.stackFormatHint')}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   {(['chips', 'bb'] as ChipDisplay[]).map((mode) => {
@@ -181,7 +183,7 @@ export const BetPresetsModal = ({
                             : 'bg-white/5 text-white/80 ring-1 ring-white/10 hover:bg-white/10')
                         }
                       >
-                        {mode === 'chips' ? 'В фишках' : 'В ББ'}
+                        {mode === 'chips' ? t('betPresetsModal.modeChips') : t('betPresetsModal.modeBb')}
                       </button>
                     );
                   })}
@@ -191,9 +193,9 @@ export const BetPresetsModal = ({
               <div>
                 <div className="flex items-baseline justify-between mb-2">
                   <h3 className="text-white text-sm font-bold uppercase tracking-wide">
-                    Колода
+                    {t('betPresetsModal.deckTitle')}
                   </h3>
-                  <span className="text-white/40 text-xs">цвет мастей</span>
+                  <span className="text-white/40 text-xs">{t('betPresetsModal.suitColorHint')}</span>
                 </div>
                 <div className="grid grid-cols-3 gap-2">
                   {CARD_COLOR_SCHEMES.map((s) => {
@@ -229,13 +231,13 @@ export const BetPresetsModal = ({
                 onClick={reset}
                 className="flex items-center gap-1.5 min-h-[44px] px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 text-sm font-bold"
               >
-                <RotateCcw size={14} /> По умолчанию
+                <RotateCcw size={14} /> {t('betPresetsModal.resetDefault')}
               </button>
               <button
                 onClick={apply}
                 className="flex-1 min-h-[44px] px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 text-white font-bold shadow-lg"
               >
-                Применить
+                {t('betPresetsModal.apply')}
               </button>
             </div>
           </motion.div>

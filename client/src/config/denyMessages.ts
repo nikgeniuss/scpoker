@@ -16,6 +16,7 @@ export const DENY_MESSAGES: Record<string, string> = {
   'invalid-buyin': 'Сумма бай-ина вне допустимого диапазона',
   'too-many-tables': 'Открыто максимум столов (3) — закройте один',
   'club-members-only': 'Стол только для членов клуба',
+  'anti-collusion': 'Вход запрещён: с этого IP/устройства уже занято место за этим столом',
 };
 
 export function denyMessage(reason: string, fallback: string, retryAfterSec?: number): string {

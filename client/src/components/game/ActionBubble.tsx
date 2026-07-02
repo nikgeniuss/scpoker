@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 import { formatChips } from '../../config/chipFormat';
 import type { ChipDisplay } from '../../config/chipFormat';
 
@@ -9,35 +10,36 @@ interface Props {
   displayMode: ChipDisplay;
 }
 
-const STYLE: Record<string, { bg: string; ring: string; label: string }> = {
+const STYLE: Record<string, { bg: string; ring: string; labelKey: string }> = {
   fold: {
     bg: 'bg-gradient-to-r from-red-600 to-rose-700',
     ring: 'ring-red-900/40',
-    label: 'Фолд',
+    labelKey: 'game.actionFold',
   },
   check: {
     bg: 'bg-gradient-to-r from-gray-600 to-gray-700',
     ring: 'ring-gray-900/40',
-    label: 'Чек',
+    labelKey: 'game.actionCheck',
   },
   call: {
     bg: 'bg-gradient-to-r from-blue-600 to-indigo-700',
     ring: 'ring-blue-900/40',
-    label: 'Колл',
+    labelKey: 'game.actionCall',
   },
   raise: {
     bg: 'bg-gradient-to-r from-emerald-500 to-green-600',
     ring: 'ring-emerald-900/40',
-    label: 'Рейз',
+    labelKey: 'game.actionRaise',
   },
   'all-in': {
     bg: 'bg-gradient-to-r from-yellow-500 to-red-600',
     ring: 'ring-orange-900/40',
-    label: 'Олл-ин',
+    labelKey: 'game.actionAllIn',
   },
 };
 
 export const ActionBubble = ({ action, amount, bigBlind, displayMode }: Props) => {
+  const { t } = useTranslation();
   const s = STYLE[action] || STYLE.fold;
   const showAmount = (action === 'call' || action === 'raise' || action === 'all-in') && amount != null && amount > 0;
   return (
@@ -53,7 +55,7 @@ export const ActionBubble = ({ action, amount, bigBlind, displayMode }: Props) =
         s.ring
       }
     >
-      <span>{s.label}</span>
+      <span>{t(s.labelKey)}</span>
       {showAmount && <span className="font-black">{formatChips(amount!, bigBlind, displayMode)}</span>}
     </motion.div>
   );

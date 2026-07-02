@@ -1,5 +1,5 @@
 // Конфиг первым импортом — он сам грузит .env. Иначе другие модули прочитают process.env слишком рано.
-import { ALLOWED_ORIGINS } from './config.js';
+import { ALLOWED_ORIGINS, TELEGRAM_BOT_TOKEN } from './config.js';
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
@@ -30,6 +30,8 @@ import { setTournamentBankrollNotifier } from './game/tournament/tournamentBankr
 import { createTournamentsRouter } from './routes/tournaments.routes.js';
 import { createTournamentsAdminRouter } from './routes/tournamentsAdmin.routes.js';
 import { createRakebackRouter } from './routes/rakeback.routes.js';
+import { createResponsibleGamblingRouter } from './routes/responsibleGambling.routes.js';
+import { startBot } from './bot/bot.js';
 
 // CORS:
 // - В dev (ALLOWED_ORIGINS не задан) — origin: '*', credentials: false.
@@ -79,13 +81,15 @@ gameManager.frozenTableRecorder = recordFrozenTable;
 gameManager.restoreActiveHands();
 // Watchdog зависших столов: проверка каждые 15с, мягкое восстановление (ROADMAP).
 gameManager.startTableWatchdog();
+// Лимит времени сессии (ROADMAP §11.2): проверка каждые 60с, только предупреждение.
+gameManager.startSessionTimeWatchdog();
 
 // Платежи (ROADMAP §11.1): депозиты/выводы используют отдельный BankrollService-инстанс
 // (paymentsBankroll), но нотификации (онлайн-обновление баланса, инбокс) идут через тот же
 // GameManager/io, что и игра — колбэки, чтобы payments-домен не зависел от GameManager напрямую (§0.11).
 setBankrollNotifier((userId, chips) => gameManager.notifyBankroll(userId, chips));
 setPaymentsInboxNotifier((userId, type, text) => gameManager.sendInboxNotification(userId, type, text));
-startDepositPolling(30_000, () => gameManager.getSettings().payments);
+startDepositPolling(30_000, () => gameManager.getSettings().payments, () => gameManager.getSettings().responsibleGambling);
 
 // Турниры (ROADMAP §10 «Турниры», SNG v1) — оркестрация поверх GameManager (createTournamentTable/
 // seatTournamentPlayer/setTableBlinds/closeTournamentTable + onTournamentBust колбэк).
@@ -95,7 +99,7 @@ tournamentManager.restoreTournaments();
 
 // Роуты по доменам (ROADMAP §9.3-C). Публичные пути — на '/', auth/admin — под своими префиксами.
 app.use('/', createPublicRouter(gameManager));
-app.use('/api/auth', createAuthRouter());
+app.use('/api/auth', createAuthRouter(gameManager));
 app.use('/api/admin', createAdminRouter(gameManager));
 app.use('/api/templates', createTemplatesRouter());
 app.use('/api/notes', createNotesRouter());
@@ -107,12 +111,18 @@ app.use('/api/admin/payments', createPaymentsAdminRouter());
 app.use('/api/tournaments', createTournamentsRouter(tournamentManager));
 app.use('/api/admin/tournaments', createTournamentsAdminRouter(tournamentManager));
 app.use('/api/rakeback', createRakebackRouter());
+app.use('/api/responsible-gambling', createResponsibleGamblingRouter(gameManager));
 
 // Весь socket-слой (handshake JWT + single-session + обработчики событий).
 registerSocketHandlers(io, gameManager);
 
 // Одноразовая миграция: проставить publicId старым юзерам без него (см. 10.8)
 migratePublicIds();
+
+// Меню бота (инлайн-кнопки) — опционально, как и TG MiniApp-авторизация: без токена просто не запускается.
+if (TELEGRAM_BOT_TOKEN) {
+  void startBot();
+}
 
 const PORT = Number(process.env.PORT) || 3001;
 httpServer.listen(PORT, '0.0.0.0', () => {

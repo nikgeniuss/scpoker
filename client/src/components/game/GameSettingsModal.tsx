@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react';
 import {
   DEFAULT_BET_PRESETS,
@@ -10,7 +11,6 @@ import {
 } from '../../config/betPresets';
 import type { BetPresets, OpenPreset, PostflopPreset } from '../../config/betPresets';
 import type { ChipDisplay } from '../../config/chipFormat';
-import { CARD_DECKS } from '../../config/cardDeck';
 import type { CardDeck } from '../../config/cardDeck';
 import type { AutoTopUpSettings, GameSettings } from '../../config/gameSettings';
 import { Card } from './Card';
@@ -74,6 +74,7 @@ export const GameSettingsModal = ({
   onClose,
   onSave,
 }: Props) => {
+  const { t } = useTranslation();
   const [view, setView] = useState<View>('main');
   const [presets, setPresets] = useState<BetPresets>(initialPresets);
   const [chipDisplay, setChipDisplay] = useState<ChipDisplay>(initialChipDisplay);
@@ -116,7 +117,7 @@ export const GameSettingsModal = ({
 
   const back = () => (view === 'main' ? onClose() : setView('main'));
   const title =
-    view === 'presets' ? 'Кнопки ставок' : view === 'autotopup' ? 'Авто-дополнение' : 'Настройки Игры';
+    view === 'presets' ? t('gameSettingsModal.titlePresets') : view === 'autotopup' ? t('gameSettingsModal.titleAutoTopUp') : t('gameSettingsModal.titleMain');
 
   return (
     <AnimatePresence>
@@ -140,7 +141,7 @@ export const GameSettingsModal = ({
             <div className="relative flex items-center justify-center px-4 py-3.5 border-b border-white/10">
               <button
                 onClick={back}
-                aria-label="Назад"
+                aria-label={t('gameSettingsModal.back')}
                 className="absolute left-3 flex items-center justify-center w-9 h-9 rounded-xl text-white/70 hover:text-white hover:bg-white/10"
               >
                 <ChevronLeft size={22} />
@@ -152,35 +153,35 @@ export const GameSettingsModal = ({
               {view === 'main' && (
                 <div className="divide-y divide-white/10">
                   <ToggleRow
-                    label="Звуковые эффекты"
+                    label={t('gameSettingsModal.soundEffects')}
                     on={settings.soundEnabled}
                     onChange={(v) => setSettings({ ...settings, soundEnabled: v })}
                   />
                   <ToggleRow
-                    label="Вибрация"
+                    label={t('gameSettingsModal.vibration')}
                     on={settings.vibrationEnabled}
                     onChange={(v) => setSettings({ ...settings, vibrationEnabled: v })}
                   />
                   <ToggleRow
-                    label="Отражение фишек (ББ)"
+                    label={t('gameSettingsModal.chipDisplayBb')}
                     on={chipDisplay === 'bb'}
                     onChange={(v) => setChipDisplay(v ? 'bb' : 'chips')}
                   />
                   <ToggleRow
-                    label="Умный фокус"
+                    label={t('gameSettingsModal.smartFocus')}
                     on={settings.smartFocusEnabled}
                     onChange={(v) => setSettings({ ...settings, smartFocusEnabled: v })}
                   />
                   <ToggleRow
-                    label="Подсказка комбинации"
+                    label={t('gameSettingsModal.handHint')}
                     on={settings.handHintEnabled}
                     onChange={(v) => setSettings({ ...settings, handHintEnabled: v })}
                   />
-                  <NavRow label="Автоматическое дополнение" onClick={() => setView('autotopup')} />
-                  <NavRow label="Настроить кнопки ставок" onClick={() => setView('presets')} />
+                  <NavRow label={t('gameSettingsModal.autoTopUpNav')} onClick={() => setView('autotopup')} />
+                  <NavRow label={t('gameSettingsModal.configureBetButtons')} onClick={() => setView('presets')} />
 
                   <div className="py-4">
-                    <div className="text-white/50 text-xs font-semibold mb-3">Карты</div>
+                    <div className="text-white/50 text-xs font-semibold mb-3">{t('gameSettingsModal.cardsSection')}</div>
                     <DeckCarousel deck={deck} onChange={setDeck} />
                   </div>
                 </div>
@@ -188,7 +189,7 @@ export const GameSettingsModal = ({
 
               {view === 'presets' && (
                 <div className="py-3 space-y-5">
-                  <Section title="Открытие (префлоп)" hint="Когда никто ещё не повышал">
+                  <Section title={t('betPresetsModal.openSection')} hint={t('betPresetsModal.openHint')}>
                     {presets.open.map((p, i) => (
                       <PresetRow
                         key={'open-' + i}
@@ -201,7 +202,7 @@ export const GameSettingsModal = ({
                     ))}
                   </Section>
 
-                  <Section title="После флопа / ре-рейз" hint="% от размера банка">
+                  <Section title={t('betPresetsModal.postflopSection')} hint={t('betPresetsModal.postflopHint')}>
                     {presets.postflop.map((p, i) => (
                       <PresetRow
                         key={'pf-' + i}
@@ -215,7 +216,7 @@ export const GameSettingsModal = ({
                   </Section>
 
                   <label className="flex items-center justify-between gap-3 px-1 cursor-pointer select-none">
-                    <span className="text-white/80 text-sm">Не округлять до ближайшего блайнда</span>
+                    <span className="text-white/80 text-sm">{t('betPresetsModal.noRoundLabel')}</span>
                     <input
                       type="checkbox"
                       checked={!presets.roundToBigBlind}
@@ -228,7 +229,7 @@ export const GameSettingsModal = ({
                     onClick={resetPresets}
                     className="flex items-center gap-1.5 min-h-[44px] px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 text-sm font-bold"
                   >
-                    <RotateCcw size={14} /> По умолчанию
+                    <RotateCcw size={14} /> {t('betPresetsModal.resetDefault')}
                   </button>
                 </div>
               )}
@@ -246,7 +247,7 @@ export const GameSettingsModal = ({
                 onClick={apply}
                 className="w-full min-h-[48px] px-4 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 text-white font-bold text-base shadow-lg"
               >
-                Подтвердить
+                {t('gameSettingsModal.confirm')}
               </button>
             </div>
           </motion.div>
@@ -319,8 +320,13 @@ const CircleBtn = ({ onClick, children }: { onClick: () => void; children: React
 );
 
 const DeckCarousel = ({ deck, onChange }: { deck: CardDeck; onChange: (d: CardDeck) => void }) => {
+  const { t } = useTranslation();
   const idx = DECK_ORDER.indexOf(deck);
-  const cur = CARD_DECKS.find((d) => d.id === deck) ?? CARD_DECKS[0];
+  const DECK_LABELS: Record<CardDeck, { label: string; hint: string }> = {
+    classic: { label: t('gameSettingsModal.deckClassicLabel'), hint: t('gameSettingsModal.deckClassicHint') },
+    colored: { label: t('gameSettingsModal.deckColoredLabel'), hint: t('gameSettingsModal.deckColoredHint') },
+  };
+  const cur = DECK_LABELS[deck] ?? DECK_LABELS.classic;
   const go = (dir: -1 | 1) => onChange(DECK_ORDER[(idx + dir + DECK_ORDER.length) % DECK_ORDER.length]);
   return (
     <div className="flex items-center justify-center gap-3">
@@ -352,41 +358,43 @@ const AutoTopUpView = ({
 }: {
   value: AutoTopUpSettings;
   onChange: (v: AutoTopUpSettings) => void;
-}) => (
-  <div className="py-3 space-y-4">
-    <div className="divide-y divide-white/10">
-      <ToggleRow
-        label="Включить авто-дополнение"
-        on={value.enabled}
-        onChange={(enabled) => onChange({ ...value, enabled })}
+}) => {
+  const { t } = useTranslation();
+  return (
+    <div className="py-3 space-y-4">
+      <div className="divide-y divide-white/10">
+        <ToggleRow
+          label={t('gameSettingsModal.enableAutoTopUp')}
+          on={value.enabled}
+          onChange={(enabled) => onChange({ ...value, enabled })}
+        />
+      </div>
+      <Stepper
+        label={t('gameSettingsModal.topUpBelow')}
+        suffix={t('common.bbAbbrev')}
+        value={value.thresholdBB}
+        min={5}
+        max={500}
+        step={5}
+        disabled={!value.enabled}
+        onChange={(thresholdBB) => onChange({ ...value, thresholdBB })}
       />
+      <Stepper
+        label={t('gameSettingsModal.topUpTo')}
+        suffix={t('common.bbAbbrev')}
+        value={value.targetBB}
+        min={20}
+        max={500}
+        step={5}
+        disabled={!value.enabled}
+        onChange={(targetBB) => onChange({ ...value, targetBB })}
+      />
+      <p className="text-white/40 text-xs leading-relaxed px-1">
+        {t('gameSettingsModal.autoTopUpHint')}
+      </p>
     </div>
-    <Stepper
-      label="Докупать, когда стек ниже"
-      suffix="ББ"
-      value={value.thresholdBB}
-      min={5}
-      max={500}
-      step={5}
-      disabled={!value.enabled}
-      onChange={(thresholdBB) => onChange({ ...value, thresholdBB })}
-    />
-    <Stepper
-      label="Докупать до"
-      suffix="ББ"
-      value={value.targetBB}
-      min={20}
-      max={500}
-      step={5}
-      disabled={!value.enabled}
-      onChange={(targetBB) => onChange({ ...value, targetBB })}
-    />
-    <p className="text-white/40 text-xs leading-relaxed px-1">
-      Между раздачами стек автоматически пополняется до выбранного уровня, если опустился ниже порога.
-      Списывается из свободного банкролла и ограничено максимальным бай-ином стола.
-    </p>
-  </div>
-);
+  );
+};
 
 const Stepper = ({
   label,

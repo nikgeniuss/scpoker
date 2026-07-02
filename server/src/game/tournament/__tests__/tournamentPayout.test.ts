@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { getSngPayoutTiers, computeSngPayout, getMttPayoutTiers, computeMttPayout } from '../tournamentPayout.js';
+import {
+  getSngPayoutTiers, computeSngPayout, getMttPayoutTiers, computeMttPayout, computeGuaranteeOverlay,
+  computeBountySplit,
+} from '../tournamentPayout.js';
 
 describe('tournamentPayout — SNG-выплаты', () => {
   it('heads-up (2): победителю 100%', () => {
@@ -96,5 +99,38 @@ describe('tournamentPayout — MTT-выплаты (фиксированное ч
     expect(Object.keys(payout)).toHaveLength(3);
     const total = Object.values(payout).reduce((a, b) => a + b, 0);
     expect(total).toBe(10_000);
+  });
+});
+
+describe('tournamentPayout — гарантированный приз (overlay)', () => {
+  it('бай-инов меньше гарантии — рум доплачивает разницу', () => {
+    expect(computeGuaranteeOverlay(6000, 10000)).toBe(4000);
+  });
+
+  it('бай-инов хватает или больше гарантии — оверлей не нужен', () => {
+    expect(computeGuaranteeOverlay(10000, 10000)).toBe(0);
+    expect(computeGuaranteeOverlay(15000, 10000)).toBe(0);
+  });
+
+  it('гарантия не задана — оверлей 0', () => {
+    expect(computeGuaranteeOverlay(6000, undefined)).toBe(0);
+    expect(computeGuaranteeOverlay(6000, 0)).toBe(0);
+  });
+});
+
+describe('tournamentPayout — баунти/PKO (computeBountySplit)', () => {
+  it('flat: весь баунти кэшем убийце, ничего не растёт', () => {
+    expect(computeBountySplit('flat', 500)).toEqual({ cash: 500, addToOwnBounty: 0 });
+  });
+
+  it('progressive: половина кэшем, половина в собственный баунти убийцы', () => {
+    expect(computeBountySplit('progressive', 500)).toEqual({ cash: 250, addToOwnBounty: 250 });
+  });
+
+  it('progressive: нечётная сумма — округление вниз в addToOwnBounty, остаток в кэш (без потерь)', () => {
+    const { cash, addToOwnBounty } = computeBountySplit('progressive', 501);
+    expect(cash + addToOwnBounty).toBe(501);
+    expect(addToOwnBounty).toBe(250);
+    expect(cash).toBe(251);
   });
 });

@@ -17,6 +17,7 @@ import { Login } from './pages/Login';
 import { Profile } from './pages/Profile';
 import { Wallet } from './pages/Wallet';
 import { AccountData } from './pages/AccountData';
+import { MyDevices } from './pages/MyDevices';
 import { Language } from './pages/Language';
 import { Help } from './pages/Help';
 import { PokerCraft } from './pages/PokerCraft';
@@ -27,6 +28,9 @@ import { SeatingPreview } from './pages/SeatingPreview';
 import { RedesignPreview } from './pages/RedesignPreview';
 import { Tournaments } from './pages/Tournaments';
 import { RakebackInfo } from './pages/RakebackInfo';
+import { ResponsibleGambling } from './pages/ResponsibleGambling';
+import { Terms } from './pages/Terms';
+import { Privacy } from './pages/Privacy';
 
 // Админка — отдельный lazy-чанк: код админ-панели (управление юзерами/комнатами/ботами/настройками)
 // НЕ попадает в основной бандл игрока. Загружается только когда админ заходит на /admin (за RequireAdmin).
@@ -53,6 +57,7 @@ function App() {
           <Route path="/game/:roomId" element={<ErrorBoundary><RequireAuth><GameRoom /></RequireAuth></ErrorBoundary>} />
           <Route path="/profile" element={<ErrorBoundary><RequireAuth><Profile /></RequireAuth></ErrorBoundary>} />
           <Route path="/account" element={<ErrorBoundary><RequireAuth><AccountData /></RequireAuth></ErrorBoundary>} />
+          <Route path="/devices" element={<ErrorBoundary><RequireAuth><MyDevices /></RequireAuth></ErrorBoundary>} />
           <Route path="/wallet" element={<ErrorBoundary><RequireAuth><Wallet /></RequireAuth></ErrorBoundary>} />
           <Route path="/language" element={<ErrorBoundary><RequireAuth><Language /></RequireAuth></ErrorBoundary>} />
           <Route path="/help" element={<ErrorBoundary><RequireAuth><Help /></RequireAuth></ErrorBoundary>} />
@@ -60,6 +65,9 @@ function App() {
           <Route path="/inbox" element={<ErrorBoundary><RequireAuth><Inbox /></RequireAuth></ErrorBoundary>} />
           <Route path="/leaderboard" element={<ErrorBoundary><RequireAuth><Leaderboard /></RequireAuth></ErrorBoundary>} />
           <Route path="/rakeback" element={<ErrorBoundary><RequireAuth><RakebackInfo /></RequireAuth></ErrorBoundary>} />
+          <Route path="/responsible-gambling" element={<ErrorBoundary><RequireAuth><ResponsibleGambling /></RequireAuth></ErrorBoundary>} />
+          <Route path="/terms" element={<ErrorBoundary><Terms /></ErrorBoundary>} />
+          <Route path="/privacy" element={<ErrorBoundary><Privacy /></ErrorBoundary>} />
           <Route path="/deck-preview" element={<ErrorBoundary><DeckPreview /></ErrorBoundary>} />
           <Route path="/seating-preview" element={<ErrorBoundary><SeatingPreview /></ErrorBoundary>} />
           <Route path="/redesign-preview" element={<ErrorBoundary><RedesignPreview /></ErrorBoundary>} />

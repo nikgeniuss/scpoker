@@ -365,7 +365,7 @@ export const GameRoom = () => {
           </button>
           <button
             onClick={leave}
-            title={state.tournamentId ? 'Покинуть турнир — фишки не возвращаются' : t('game.leaveTable')}
+            title={state.tournamentId ? t('game.leaveTournamentTitle') : t('game.leaveTable')}
             className="flex items-center gap-1 md:px-3 md:py-1.5 justify-center w-9 h-9 md:w-auto md:h-auto rounded-xl bg-red-600/80 hover:bg-red-700 text-white text-sm font-bold"
           >
             <LogOut size={14} />
@@ -425,7 +425,7 @@ export const GameRoom = () => {
           {state.tournamentId && (
             <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 text-[10px] font-bold uppercase tracking-widest -mt-0.5">
               <Trophy size={9} />
-              Турнирный стол
+              {t('game.tournamentTable')}
             </div>
           )}
           {state.badBeatEligible && (
@@ -476,6 +476,20 @@ export const GameRoom = () => {
               <div className="text-white/30 text-sm italic">{t('game.cardsNotRevealed')}</div>
             )}
           </div>
+          {/* Double Board / RIMT (доделка §10.6): второй борд, если стол его дилит. */}
+          {state.communityCardsB && state.communityCardsB.length > 0 && (
+            <div className="flex gap-1.5 mt-1.5">
+              {state.communityCardsB.map((c, i) => (
+                <Card key={'b-' + i} card={c} faceStyle="classic" backStyle={design.cardBackStyle} deck={cardDeck} size="md" delay={i * 0.1} />
+              ))}
+            </div>
+          )}
+          {state.settlementMode === 'rimt' && (
+            <div className="text-emerald-400/90 text-[10px] font-bold uppercase tracking-widest mt-1">{t('game.settlementRimt')}</div>
+          )}
+          {state.settlementMode === 'evCashout' && (
+            <div className="text-emerald-400/90 text-[10px] font-bold uppercase tracking-widest mt-1">{t('game.settlementEvCashout')}</div>
+          )}
           {peekOn && (
             <div className="text-red-400/80 text-[10px] font-bold uppercase tracking-widest mt-1">
               🔮 admin-peek
@@ -691,7 +705,7 @@ export const GameRoom = () => {
             {state.tournamentId && (
               <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 text-[9px] font-bold uppercase tracking-widest">
                 <Trophy size={8} />
-                Турнирный стол
+                {t('game.tournamentTable')}
               </div>
             )}
             {state.badBeatEligible && (
@@ -739,6 +753,19 @@ export const GameRoom = () => {
             ) : state.phase !== 'waiting' ? (
               <div className="text-white/30 text-[10px] italic mt-1">{t('game.cardsNotRevealed')}</div>
             ) : null}
+            {state.communityCardsB && state.communityCardsB.length > 0 && (
+              <div className="flex gap-1 flex-wrap justify-center max-w-full mt-1">
+                {state.communityCardsB.map((c, i) => (
+                  <Card key={'b-' + i} card={c} faceStyle="classic" backStyle={design.cardBackStyle} deck={cardDeck} size="sm" delay={i * 0.1} />
+                ))}
+              </div>
+            )}
+            {state.settlementMode === 'rimt' && (
+              <div className="text-emerald-400/90 text-[9px] font-bold uppercase tracking-widest mt-0.5">{t('game.settlementRimt')}</div>
+            )}
+            {state.settlementMode === 'evCashout' && (
+              <div className="text-emerald-400/90 text-[9px] font-bold uppercase tracking-widest mt-0.5">{t('game.settlementEvCashout')}</div>
+            )}
             {state.observers && state.observers.length > 0 && (
               <div className="flex items-center gap-1 mt-1">
                 <span className="text-white/30 text-[8px]">👁</span>

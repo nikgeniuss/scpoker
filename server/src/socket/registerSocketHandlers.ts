@@ -1,8 +1,10 @@
 import type { Server } from 'socket.io';
 import type { GameManager } from '../game/GameManager.js';
 import { verifyToken } from '../auth/verifyToken.js';
+import { isSessionValid } from '../auth/sessionStore.js';
 import { forceDisconnectOtherSessions, hasOtherActiveSocket } from './sessionManager.js';
 import type { SocketUser } from './types.js';
+import { SOCKET_EVENTS } from '@poker-room/shared';
 
 // Emoji-реакции: список разрешённых + кулдаун 2 сек на пользователя (см. roadmap 10.12)
 const ALLOWED_EMOJI = ['👍', '❤️', '😂', '😮', '😢', '👏', '🔥', '🤔', '😎', '🤑', '😠', '🎲'];
@@ -19,6 +21,11 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
     if (!decoded) {
       return next(new Error(token ? 'Invalid token' : 'No token'));
     }
+    // sid отсутствует у токенов, выпущенных до «Мои устройства» (§10.15) — таким даём пройти.
+    // Если sid есть — сессия должна существовать в sessions.json (иначе её отозвали).
+    if (decoded.sid && !isSessionValid(decoded.sid)) {
+      return next(new Error('Session revoked'));
+    }
     socket.data.user = decoded;
     // Single-session: отрубаем старые сокеты этого юзера (см. sessionManager).
     forceDisconnectOtherSessions(io, decoded.id);
@@ -29,20 +36,27 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
     const user = socket.data.user as SocketUser;
     console.log('User connected:', socket.id, user.username);
 
+    // Anti-collusion (доделка §10.6): IP из handshake + device-id, который клиент генерирует
+    // и хранит в localStorage (см. client/src/lib/deviceId.ts), присылает в auth при подключении.
+    const networkInfo = { ip: socket.handshake.address, deviceId: String(socket.handshake.auth?.deviceId ?? '') };
+
     // Мультитейблинг: восстановить столы, где игрок ещё сидит (sit-out), на (ре)коннекте/reload.
     // Сервер сам вернёт сокет в комнаты + разошлёт состояние → пилюли восстановятся. Не пере-сажает.
     gameManager.reconnectUserTables(user.id, socket);
 
-    socket.on('lobby:subscribe', () => {
+    // Лимит времени сессии (ROADMAP §11.2) — один отсчёт на userId, не на socketId.
+    gameManager.trackUserConnected(user.id);
+
+    socket.on(SOCKET_EVENTS.LOBBY_SUBSCRIBE, () => {
       socket.join('lobby');
-      socket.emit('roomList', gameManager.getRoomList());
+      socket.emit(SOCKET_EVENTS.ROOM_LIST, gameManager.getRoomList());
     });
 
-    socket.on('lobby:unsubscribe', () => {
+    socket.on(SOCKET_EVENTS.LOBBY_UNSUBSCRIBE, () => {
       socket.leave('lobby');
     });
 
-    socket.on('createRoom', (data: { name: string; description?: string; smallBlind: number; bigBlind: number; maxPlayers: number; password?: string; turnDurationSec?: number; buyInMinBb?: number; buyInMaxBb?: number; timebank?: { enabled: boolean; startSec: number; bonusSec: number; bonusEveryHands: number; capSec: number }; sitOutTimeoutMin?: number; waitlistDelayMin?: number; format?: 'nlh' | 'shortdeck'; rake?: { percent: number; capBb: number }; ante?: number; sessionDurationHours?: number; autoStartPlayers?: number; pinned?: boolean; autoExtendSession?: boolean; clubId?: string }) => {
+    socket.on(SOCKET_EVENTS.CREATE_ROOM, (data: { name: string; description?: string; smallBlind: number; bigBlind: number; maxPlayers: number; password?: string; turnDurationSec?: number; buyInMinBb?: number; buyInMaxBb?: number; timebank?: { enabled: boolean; startSec: number; bonusSec: number; bonusEveryHands: number; capSec: number }; sitOutTimeoutMin?: number; waitlistDelayMin?: number; format?: 'nlh' | 'shortdeck'; rake?: { percent: number; capBb: number }; ante?: number; sessionDurationHours?: number; autoStartPlayers?: number; pinned?: boolean; autoExtendSession?: boolean; clubId?: string; straddleEnabled?: boolean; bombPotEnabled?: boolean; doubleBoardEnabled?: boolean; rimtEnabled?: boolean; evCashoutEnabled?: boolean; noTurnNoShowEnabled?: boolean; antiCollusionEnabled?: boolean }) => {
       // Если клиент не прислал turnDurationSec — берём глобальный settings (legacy-клиенты)
       const defaultTurnSec = Math.round(gameManager.getSettings().turnDurationMs / 1000);
       const result = gameManager.createRoom(
@@ -72,41 +86,48 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
           // «Закрепить сверху» — только админ; роль проверяем здесь, не доверяем клиенту (§0.13)
           pinned: user.role === 'admin' ? data.pinned : false,
           clubId: data.clubId,
+          straddleEnabled: data.straddleEnabled,
+          bombPotEnabled: data.bombPotEnabled,
+          doubleBoardEnabled: data.doubleBoardEnabled,
+          rimtEnabled: data.rimtEnabled,
+          evCashoutEnabled: data.evCashoutEnabled,
+          noTurnNoShowEnabled: data.noTurnNoShowEnabled,
+          antiCollusionEnabled: data.antiCollusionEnabled,
         },
         user.username,
       );
       if ('error' in result) {
-        socket.emit('error', { message: result.error });
+        socket.emit(SOCKET_EVENTS.ERROR, { message: result.error });
         return;
       }
       // Создатель автоматически входит в свою комнату с максимальным доступным бай-ином.
       // addPlayer без buyInAmount сам возьмёт min(bankroll, bigBlind*maxBb).
       socket.join(result.roomId);
-      const added = gameManager.addPlayer(result.roomId, user.id, socket.id, user.username);
+      const added = gameManager.addPlayer(result.roomId, user.id, socket.id, user.username, undefined, networkInfo);
       if (!added) {
         // Чаще всего — банкролл меньше минимального бай-ина; откатываем созданную комнату
         gameManager.adminForceCloseRoom(result.roomId);
-        socket.emit('error', { message: 'Недостаточно фишек для входа за стол. Обратитесь к админу.' });
+        socket.emit(SOCKET_EVENTS.ERROR, { message: 'Недостаточно фишек для входа за стол. Обратитесь к админу.' });
         return;
       }
-      socket.emit('roomCreated', { roomId: result.roomId });
+      socket.emit(SOCKET_EVENTS.ROOM_CREATED, { roomId: result.roomId });
     });
 
-    socket.on('leaveRoom', (data: { roomId: string }) => {
+    socket.on(SOCKET_EVENTS.LEAVE_ROOM, (data: { roomId: string }) => {
       socket.leave(data.roomId);
       gameManager.removePlayer(data.roomId, user.id);
     });
 
-    socket.on('requestGameState', (data: { roomId: string }) => {
+    socket.on(SOCKET_EVENTS.REQUEST_GAME_STATE, (data: { roomId: string }) => {
       // Базовая проверка — комната существует и юзер в ней
       const baseState = gameManager.getGameState(data.roomId);
       if (!baseState) {
-        socket.emit('joinDenied', { reason: 'not-found' });
+        socket.emit(SOCKET_EVENTS.JOIN_DENIED, { reason: 'not-found' });
         return;
       }
       const isInRoom = baseState.players.some(p => p.id === user.id);
       if (!isInRoom) {
-        socket.emit('joinDenied', { reason: 'not-found' });
+        socket.emit(SOCKET_EVENTS.JOIN_DENIED, { reason: 'not-found' });
         return;
       }
       socket.join(data.roomId);
@@ -114,9 +135,9 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
       // Персональный state с учётом viewer + admin-peek (если включён)
       const withPeek = gameManager.isAdminPeekSocket(socket.id);
       const personalState = gameManager.getGameState(data.roomId, user.id, withPeek);
-      if (personalState) socket.emit('gameUpdate', personalState);
+      if (personalState) socket.emit(SOCKET_EVENTS.GAME_UPDATE, personalState);
       const endsAt = gameManager.getCountdownEndsAt(data.roomId);
-      socket.emit('startCountdown', { endsAt });
+      socket.emit(SOCKET_EVENTS.START_COUNTDOWN, { endsAt });
     });
 
     // Наблюдатель: войти в комнату БЕЗ посадки (можно даже на полный стол). Сокет
@@ -124,10 +145,10 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
     // шлёт ему base-state без карт соперников (§0.1). Админ-наблюдатель видит открытые карты —
     // peek включается автоматически (решение пользователя 2026-06-12). Реального места не занимает,
     // на счётчики/автостарт/раздачу не влияет (он не игрок).
-    socket.on('observeRoom', (data: { roomId: string }) => {
+    socket.on(SOCKET_EVENTS.OBSERVE_ROOM, (data: { roomId: string }) => {
       const baseState = gameManager.getGameState(data.roomId);
       if (!baseState) {
-        socket.emit('joinDenied', { reason: 'not-found' });
+        socket.emit(SOCKET_EVENTS.JOIN_DENIED, { reason: 'not-found' });
         return;
       }
       socket.join(data.roomId);
@@ -136,16 +157,16 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
       const withPeek = gameManager.isAdminPeekSocket(socket.id);
       // viewer=user.id: наблюдатель не среди игроков → своих карт нет; админ-peek отдаёт все.
       const personalState = gameManager.getGameState(data.roomId, user.id, withPeek);
-      if (personalState) socket.emit('gameUpdate', personalState);
+      if (personalState) socket.emit(SOCKET_EVENTS.GAME_UPDATE, personalState);
       const endsAt = gameManager.getCountdownEndsAt(data.roomId);
-      socket.emit('startCountdown', { endsAt });
+      socket.emit(SOCKET_EVENTS.START_COUNTDOWN, { endsAt });
     });
 
     // Admin-peek: «глаз админа» — карты всех игроков + следующие 5 карт колоды.
     // Серверная проверка роли — обязательна (нельзя доверять клиенту).
-    socket.on('adminPeekToggle', (data: { enabled: boolean; roomId?: string }) => {
+    socket.on(SOCKET_EVENTS.ADMIN_PEEK_TOGGLE, (data: { enabled: boolean; roomId?: string }) => {
       if (user.role !== 'admin') {
-        socket.emit('error', { message: 'Только для админа' });
+        socket.emit(SOCKET_EVENTS.ERROR, { message: 'Только для админа' });
         return;
       }
       gameManager.setAdminPeek(socket.id, !!data?.enabled);
@@ -153,54 +174,54 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
       if (data?.roomId) {
         const withPeek = gameManager.isAdminPeekSocket(socket.id);
         const state = gameManager.getGameState(data.roomId, user.id, withPeek);
-        if (state) socket.emit('gameUpdate', state);
+        if (state) socket.emit(SOCKET_EVENTS.GAME_UPDATE, state);
       }
     });
 
-    socket.on('joinRoom', (data: { roomId: string; password?: string; buyInAmount?: number }) => {
-      const denyReason = gameManager.canJoinRoom(data.roomId, user.id, data.password, data.buyInAmount);
+    socket.on(SOCKET_EVENTS.JOIN_ROOM, (data: { roomId: string; password?: string; buyInAmount?: number }) => {
+      const denyReason = gameManager.canJoinRoom(data.roomId, user.id, data.password, data.buyInAmount, networkInfo);
       if (denyReason) {
         // Для временного кика добавляем остаток в секундах — клиент покажет «через N мин».
         const retryAfterSec = denyReason === 'on-cooldown'
           ? Math.ceil(gameManager.kickCooldownRemainingMs(data.roomId, user.id) / 1000)
           : undefined;
-        socket.emit('joinDenied', { reason: denyReason, retryAfterSec });
+        socket.emit(SOCKET_EVENTS.JOIN_DENIED, { reason: denyReason, retryAfterSec });
         return;
       }
       socket.join(data.roomId);
-      const added = gameManager.addPlayer(data.roomId, user.id, socket.id, user.username, data.buyInAmount);
+      const added = gameManager.addPlayer(data.roomId, user.id, socket.id, user.username, data.buyInAmount, networkInfo);
       if (!added) {
-        socket.emit('joinDenied', { reason: 'invalid-buyin' });
+        socket.emit(SOCKET_EVENTS.JOIN_DENIED, { reason: 'invalid-buyin' });
         return;
       }
-      socket.emit('roomJoined', { roomId: data.roomId });
+      socket.emit(SOCKET_EVENTS.ROOM_JOINED, { roomId: data.roomId });
     });
 
     // Встать в очередь на полный стол (авто-посадка при освобождении места через задержку стола).
-    socket.on('joinWaitlist', (data: { roomId: string; password?: string; buyInAmount?: number }) => {
+    socket.on(SOCKET_EVENTS.JOIN_WAITLIST, (data: { roomId: string; password?: string; buyInAmount?: number }) => {
       const result = gameManager.joinWaitlist(data.roomId, user.id, user.username, socket, data.password, data.buyInAmount);
       if ('error' in result) {
-        socket.emit('joinDenied', { reason: result.error });
+        socket.emit(SOCKET_EVENTS.JOIN_DENIED, { reason: result.error });
         return;
       }
       if ('seated' in result) {
         // Место освободилось к моменту запроса — сели сразу
-        socket.emit('roomJoined', { roomId: data.roomId });
+        socket.emit(SOCKET_EVENTS.ROOM_JOINED, { roomId: data.roomId });
       }
       // queued — обратная связь через обновлённый roomList (карточка покажет позицию)
     });
 
-    socket.on('leaveWaitlist', (data: { roomId: string }) => {
+    socket.on(SOCKET_EVENTS.LEAVE_WAITLIST, (data: { roomId: string }) => {
       gameManager.leaveWaitlist(data.roomId, user.id);
     });
 
-    socket.on('playerAction', (data: { roomId: string; action: string; amount?: number }) => {
+    socket.on(SOCKET_EVENTS.PLAYER_ACTION, (data: { roomId: string; action: string; amount?: number }) => {
       gameManager.handlePlayerAction(data.roomId, user.id, data.action, data.amount);
     });
 
     // Авто-докупка стека: клиент присылает свою преференцию (живёт в localStorage), сервер
     // применяет её между раздачами в cleanupHand. Санитизация диапазона — в setAutoTopUp.
-    socket.on('setAutoTopUp', (data: { roomId: string; enabled: boolean; thresholdBb: number; targetBb: number }) => {
+    socket.on(SOCKET_EVENTS.SET_AUTO_TOPUP, (data: { roomId: string; enabled: boolean; thresholdBb: number; targetBb: number }) => {
       if (!data || typeof data.roomId !== 'string') return;
       gameManager.setAutoTopUp(data.roomId, user.id, {
         enabled: !!data.enabled,
@@ -211,30 +232,30 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
 
     // Тумблер «Подсказка комбинации/шансов» (настройки игры). Сервер считает equity только
     // для включивших → шлёт персонально (своё место, без утечки чужих карт, §0.1).
-    socket.on('setHandHint', (data: { roomId: string; enabled: boolean }) => {
+    socket.on(SOCKET_EVENTS.SET_HAND_HINT, (data: { roomId: string; enabled: boolean }) => {
       if (!data || typeof data.roomId !== 'string') return;
       gameManager.setHandHint(data.roomId, user.id, !!data.enabled);
     });
 
     // Добровольный показ своей карты после раздачи (тап по карте в окне showdown). Видно всем.
-    socket.on('showCard', (data: { roomId: string; index: number }) => {
+    socket.on(SOCKET_EVENTS.SHOW_CARD, (data: { roomId: string; index: number }) => {
       if (!data || typeof data.roomId !== 'string') return;
       gameManager.showCard(data.roomId, user.id, Number(data.index));
     });
 
     // Rabbit Hunting (§10.12, платная фича): заплатить и увидеть карты, которые пришли бы.
-    socket.on('rabbitHunt', (data: { roomId: string }) => {
+    socket.on(SOCKET_EVENTS.RABBIT_HUNT, (data: { roomId: string }) => {
       if (!data || typeof data.roomId !== 'string') return;
       gameManager.requestRabbitHunt(data.roomId, user.id);
     });
 
-    socket.on('startGame', (data: { roomId: string }) => {
+    socket.on(SOCKET_EVENTS.START_GAME, (data: { roomId: string }) => {
       gameManager.startGame(data.roomId);
     });
 
     // Emoji-реакция: клиент шлёт {roomId, emoji}; сервер валидирует и broadcast'ит всем в комнате.
     // Rate-limit: 1 реакция в EMOJI_COOLDOWN_MS на пользователя.
-    socket.on('sendEmoji', (data: { roomId: string; emoji: string }) => {
+    socket.on(SOCKET_EVENTS.SEND_EMOJI, (data: { roomId: string; emoji: string }) => {
       if (!data || typeof data.roomId !== 'string' || typeof data.emoji !== 'string') return;
       if (!ALLOWED_EMOJI.includes(data.emoji)) return;
       if (!socket.rooms.has(data.roomId)) return;
@@ -242,7 +263,7 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
       const last = lastEmojiAt.get(user.id) || 0;
       if (now - last < EMOJI_COOLDOWN_MS) return;
       lastEmojiAt.set(user.id, now);
-      io.to(data.roomId).emit('emojiBroadcast', { playerId: user.id, emoji: data.emoji });
+      io.to(data.roomId).emit(SOCKET_EVENTS.EMOJI_BROADCAST, { playerId: user.id, emoji: data.emoji });
     });
 
     socket.on('disconnect', () => {
@@ -261,6 +282,7 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
           return;
         }
         gameManager.handleDisconnect(user.id);
+        gameManager.trackUserDisconnected(user.id);
       }, 1000);
     });
   });
