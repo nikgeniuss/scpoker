@@ -32,6 +32,7 @@ export interface User {
   roomTemplates?: RoomTemplate[]; // сохранённые шаблоны создания стола (per-user)
   opponentNotes?: Record<string, string>; // приватные заметки на оппонентов: targetUserId → текст (≤300 симв.)
   avatarSeed?: string; // выбранный seed аватара (из AVATAR_PRESETS); не задан = фоллбэк на id
+  dateOfBirth?: string; // ISO-дата 'YYYY-MM-DD', обязательна при регистрации email/паролем (KYC-basic, §11.2); TG-регистрация её не собирает
   responsibleGambling?: ResponsibleGamblingState;
   tosAcceptedAt?: string; // ISO-время согласия с ToS/Privacy при регистрации
   twoFactorEnabled?: boolean; // 2FA (TOTP) включена и подтверждена
@@ -153,17 +154,46 @@ function loginBlockReason(
   return null;
 }
 
-export function registerUser(username: string, password: string, email: string): User | null {
+const DOB_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+// Формат + разумные границы (не будущее, не >120 лет назад). Чистая функция — тестируется отдельно.
+export function isValidDateOfBirth(dob: string, now: Date = new Date()): boolean {
+  if (!DOB_REGEX.test(dob)) return false;
+  const d = new Date(`${dob}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return false;
+  if (d.getTime() > now.getTime()) return false;
+  const minDate = new Date(Date.UTC(now.getUTCFullYear() - 120, now.getUTCMonth(), now.getUTCDate()));
+  return d.getTime() >= minDate.getTime();
+}
+
+// 18+ на текущую дату (учитывает месяц/день, не просто разницу годов). Чистая функция — тестируется отдельно.
+export function isAdult(dob: string, now: Date = new Date()): boolean {
+  const d = new Date(`${dob}T00:00:00Z`);
+  let age = now.getUTCFullYear() - d.getUTCFullYear();
+  const monthDiff = now.getUTCMonth() - d.getUTCMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && now.getUTCDate() < d.getUTCDate())) age--;
+  return age >= 18;
+}
+
+export function registerUser(
+  username: string,
+  password: string,
+  email: string,
+  dateOfBirth: string,
+): { user: User } | { error: 'username-taken' | 'email-taken' | 'invalid-dob' | 'underage' } {
+  if (!isValidDateOfBirth(dateOfBirth)) return { error: 'invalid-dob' };
+  if (!isAdult(dateOfBirth)) return { error: 'underage' };
+
   const users = readJSON('users.json') as User[];
 
   // Проверка на уникальность username
   if (users.find(u => u.username === username)) {
-    return null; // username уже существует
+    return { error: 'username-taken' };
   }
 
   // Проверка на уникальность email
   if (users.find(u => u.email === email)) {
-    return null; // email уже используется
+    return { error: 'email-taken' };
   }
 
   const existingPublicIds = new Set<string>();
@@ -179,11 +209,12 @@ export function registerUser(username: string, password: string, email: string):
     createdAt: new Date().toISOString(),
     publicId: generatePublicId(existingPublicIds),
     tosAcceptedAt: new Date().toISOString(),
+    dateOfBirth,
   };
 
   users.push(newUser);
   writeJSON('users.json', users);
-  return newUser;
+  return { user: newUser };
 }
 
 export function loginUser(

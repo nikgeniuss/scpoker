@@ -2,7 +2,7 @@
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../store/authStore';
-import { Eye, EyeOff, Lock, Mail, User, Check } from 'lucide-react';
+import { Eye, EyeOff, Lock, Mail, User, Check, Calendar } from 'lucide-react';
 import { z } from 'zod';
 import toast, { Toaster } from 'react-hot-toast';
 import { useTelegram } from '../hooks/useTelegram';
@@ -13,11 +13,23 @@ import { API_URL } from '../config/api';
 
 const emailSchema = z.string().email('invalid email');
 
+// Клиентская проверка 18+ (мгновенный фидбек до сабмита) — реальная проверка на сервере (auth.ts isAdult).
+function isAdult(dob: string): boolean {
+  const d = new Date(dob);
+  if (Number.isNaN(d.getTime())) return false;
+  const now = new Date();
+  let age = now.getFullYear() - d.getFullYear();
+  const monthDiff = now.getMonth() - d.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < d.getDate())) age--;
+  return age >= 18;
+}
+
 interface RegisterForm {
   username: string;
   email: string;
   password: string;
   confirmPassword: string;
+  dateOfBirth: string;
 }
 
 interface PremiumCardTableProps {
@@ -134,6 +146,17 @@ const PremiumCardTable = ({
                 </div>
 
                 <div className="relative">
+                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" size={16} />
+                  <input
+                    type="date"
+                    aria-label={t('auth.register.dobLabel')}
+                    value={form.dateOfBirth}
+                    onChange={(e) => setForm({ ...form, dateOfBirth: e.target.value })}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 text-white outline-none [color-scheme:dark]"
+                  />
+                </div>
+
+                <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" size={16} />
 
                   <input
@@ -246,6 +269,7 @@ const RegisterPage = () => {
     email: '',
     password: '',
     confirmPassword: '',
+    dateOfBirth: '',
   });
 
   const [showPassword, setShowPassword] = useState(false);
@@ -260,6 +284,15 @@ const RegisterPage = () => {
 
     if (form.password !== form.confirmPassword) {
       toast.error(t('auth.register.passwordMismatch'));
+      return false;
+    }
+
+    if (!form.dateOfBirth) {
+      toast.error(t('auth.register.dobRequired'));
+      return false;
+    }
+    if (!isAdult(form.dateOfBirth)) {
+      toast.error(t('auth.register.underage'));
       return false;
     }
 
@@ -285,6 +318,7 @@ const RegisterPage = () => {
           username: form.username,
           email: form.email,
           password: form.password,
+          dateOfBirth: form.dateOfBirth,
           tosAccepted: agree,
         }),
       });

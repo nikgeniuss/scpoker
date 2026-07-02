@@ -13,6 +13,7 @@ interface AccountInfo {
   createdAt?: string;
   telegramId?: number;
   twoFactorEnabled?: boolean;
+  dateOfBirth?: string;
 }
 
 // Строка профиля с инлайн-редактированием (имя пользователя / email). Карандаш → инпут → сохранить/отмена.
@@ -167,7 +168,9 @@ export function AccountData() {
           </div>
           <div className="flex items-center justify-between px-4 py-3.5">
             <span className="text-sm text-white/40">{t('accountData.kyc')}</span>
-            <span className="text-sm font-medium text-white/50">{t('accountData.kycNotVerified')}</span>
+            <span className="text-sm font-medium text-white/50">
+              {info?.dateOfBirth ? t('accountData.kycVerifiedAdult') : t('accountData.kycNotVerified')}
+            </span>
           </div>
           <div className="flex items-center justify-between px-4 py-3.5">
             <span className="text-sm text-white/40">{t('accountData.twoFactor')}</span>

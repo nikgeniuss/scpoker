@@ -33,11 +33,11 @@ export function createAuthRouter(gameManager: GameManager): Router {
   const router = Router();
 
   router.post('/register', (req, res) => {
-    const { username, password, email, tosAccepted } = req.body;
+    const { username, password, email, tosAccepted, dateOfBirth } = req.body;
 
-    // Проверяем, что все три поля пришли
-    if (!username || !password || !email) {
-      res.status(400).json({ error: 'Username, email and password required' });
+    // Проверяем, что все поля пришли
+    if (!username || !password || !email || !dateOfBirth) {
+      res.status(400).json({ error: 'Username, email, password and date of birth required' });
       return;
     }
     if (!tosAccepted) {
@@ -45,17 +45,24 @@ export function createAuthRouter(gameManager: GameManager): Router {
       return;
     }
 
-    // Передаём email в registerUser
-    const user = registerUser(username, password, email);
+    // Передаём email и дату рождения в registerUser (возраст 18+ проверяется там)
+    const result = registerUser(username, password, email, dateOfBirth);
 
-    if (!user) {
-      // Ошибка может быть и из-за email тоже
-      res.status(409).json({ error: 'Username or email already exists' });
+    if ('error' in result) {
+      const messages: Record<typeof result.error, string> = {
+        'username-taken': 'Username or email already exists',
+        'email-taken': 'Username or email already exists',
+        'invalid-dob': 'Некорректная дата рождения',
+        underage: 'Регистрация доступна только для лиц старше 18 лет',
+      };
+      const status = result.error === 'underage' ? 403 : result.error === 'invalid-dob' ? 400 : 409;
+      res.status(status).json({ error: messages[result.error] });
       return;
     }
+    const user = result.user;
 
-    const result = loginUser(username, password, deviceInfoFrom(req));
-    const token = 'token' in result ? result.token : null;
+    const loginResult = loginUser(username, password, deviceInfoFrom(req));
+    const token = 'token' in loginResult ? loginResult.token : null;
 
     // Возвращаем email в ответе
     res.json({
@@ -225,8 +232,9 @@ export function createAuthRouter(gameManager: GameManager): Router {
     let createdAt: string | undefined;
     let telegramId: number | undefined;
     let twoFactorEnabled = false;
+    let dateOfBirth: string | undefined;
     try {
-      const users = readJSON('users.json') as Array<{ id: string; chips: number; publicId?: string; country?: string; avatarSeed?: string; email?: string; createdAt?: string; telegramId?: number; twoFactorEnabled?: boolean }>;
+      const users = readJSON('users.json') as Array<{ id: string; chips: number; publicId?: string; country?: string; avatarSeed?: string; email?: string; createdAt?: string; telegramId?: number; twoFactorEnabled?: boolean; dateOfBirth?: string }>;
       const u = users.find(x => x.id === jwtUser.id);
       if (u) {
         chips = u.chips;
@@ -237,11 +245,12 @@ export function createAuthRouter(gameManager: GameManager): Router {
         createdAt = u.createdAt;
         telegramId = u.telegramId;
         twoFactorEnabled = !!u.twoFactorEnabled;
+        dateOfBirth = u.dateOfBirth;
       }
     } catch {
       // users.json временно недоступен (race с writeJSON-дебаунсом) — отдаём jwtUser без догрузки
     }
-    res.json({ user: { ...jwtUser, chips, publicId, country, avatarSeed, email, createdAt, telegramId, twoFactorEnabled } });
+    res.json({ user: { ...jwtUser, chips, publicId, country, avatarSeed, email, createdAt, telegramId, twoFactorEnabled, dateOfBirth } });
   });
 
   // Подключение 2FA — шаг 1: новый секрет (pending, не активен до /2fa/confirm).
