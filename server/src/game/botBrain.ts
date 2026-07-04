@@ -53,6 +53,9 @@ export interface BotDecisionContext {
   currentBet: number;
   phase: GamePhase;
   bigBlind: number;
+  // Incomplete all-in (§5.2 POKER_RULES): бот уже сходил call'ом и теперь заперт — может
+  // только call/fold, re-raise сервер молча отклонит (GameManager.handlePlayerAction).
+  isLockedCaller: boolean;
 
   // Оппоненты: cards содержат реальные карты (с сервера) — botBrain сам решит использовать или нет
   activeOpponents: Array<{
@@ -669,6 +672,16 @@ const POST_VARIANCE_RULES: Array<(s: DecisionState) => BotDecision | null> = [
 // ===== Главная функция: принять решение =====
 // Оркестратор пайплайна. Порядок rng-вызовов идентичен прежней монолитной версии.
 export function decideAction(ctx: BotDecisionContext): BotDecision {
+  const decision = decideActionRaw(ctx);
+  // Locked caller не может re-raise (§5.2) — сервер такой raise молча отклонит и стол
+  // провисит до safety-net таймера. Понижаем до call, чтобы бот не терял ход впустую.
+  if (ctx.isLockedCaller && decision.action === 'raise') {
+    return { ...decision, action: 'call', amount: undefined };
+  }
+  return decision;
+}
+
+function decideActionRaw(ctx: BotDecisionContext): BotDecision {
   const s = initDecisionState(ctx);
 
   for (const rule of PRE_VARIANCE_RULES) {

@@ -129,6 +129,13 @@ export class BotRepository {
     this.save();
   }
 
+  // Добавляет новую персону "на лету" (не из DEFAULT_BOT_PERSONAS) — например тестовые боты турнира.
+  add(bot: BotInfo): void {
+    this.bots.set(bot.id, bot);
+    this.runtimes.set(bot.id, createBotRuntime(bot.chips));
+    this.save();
+  }
+
   updateTarget(botId: string, target: BotPnLTarget): boolean {
     const bot = this.bots.get(botId);
     if (!bot) return false;

@@ -5,6 +5,16 @@ import { Stepper, Segmented, SettingRow, Toggle } from './createControls';
 import { parseMoney, formatMoney } from '../../config/chipFormat';
 import type { CreateTournamentOptions, BlindSpeed, GameFormat, TournamentType, MttItmPercent, MttPayoutMode, BountyType } from '@poker-room/shared';
 
+// Та же лестница, что и в server/src/game/tournament/tournamentSchedule.ts (BLIND_LADDER) —
+// держать в синхроне при правке. Дублируется, а не импортируется из shared: это просто список
+// «круглых» пар для степпера, сервер сам находит ближайший НЕ НИЖЕ уровень при старте турнира.
+const BLIND_LADDER: ReadonlyArray<readonly [number, number]> = [
+  [10, 20], [15, 30], [25, 50], [50, 100], [75, 150], [100, 200], [150, 300],
+  [200, 400], [300, 600], [400, 800], [500, 1000], [600, 1200], [800, 1600],
+  [1000, 2000], [1500, 3000], [2000, 4000], [3000, 6000], [4000, 8000],
+  [5000, 10000], [6000, 12000], [8000, 16000], [10000, 20000],
+];
+
 const SPEED_OPTIONS: Array<{ value: BlindSpeed; label: string }> = [
   { value: 'slow', label: 'Медленно' },
   { value: 'regular', label: 'Стандартная' },
@@ -50,7 +60,8 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
   const [type, setType] = useState<TournamentType>('sng');
   const [format, setFormat] = useState<GameFormat>('nlh');
   const [buyIn, setBuyIn] = useState(1000); // в центах (как везде в проекте)
-  const [startingStack, setStartingStack] = useState(1000);
+  const [blindIdx, setBlindIdx] = useState(2); // индекс в BLIND_LADDER — стартовый уровень блайндов, по умолчанию 25/50
+  const [stackBb, setStackBb] = useState(100); // стартовый стек в BB (не в фишках — админу так понятнее)
   const [tableSize, setTableSize] = useState(6);
   const [blindSpeed, setBlindSpeed] = useState<BlindSpeed>('regular');
   const [levelUpMinutes, setLevelUpMinutes] = useState(12);
@@ -60,24 +71,28 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
   const [fixedPayoutPlaces, setFixedPayoutPlaces] = useState(9);
   const [reEntryEnabled, setReEntryEnabled] = useState(false);
   const [maxReEntries, setMaxReEntries] = useState(1);
+  const [reEntryFee, setReEntryFee] = useState(1000);
   const [guaranteeEnabled, setGuaranteeEnabled] = useState(false);
   const [guaranteedPrizePool, setGuaranteedPrizePool] = useState(10000);
   const [bountyEnabled, setBountyEnabled] = useState(false);
   const [bountyType, setBountyType] = useState<BountyType>('flat');
   const [bountyPercent, setBountyPercent] = useState(50);
 
+  const [startingSmallBlind, startingBigBlind] = BLIND_LADDER[blindIdx];
+  const startingStack = startingBigBlind * stackBb;
+
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
     onSubmit({
-      name: name.trim(), type, format, buyIn, startingStack, tableSize, blindSpeed, levelUpMinutes,
+      name: name.trim(), type, format, buyIn, startingStack, startingBigBlind, tableSize, blindSpeed, levelUpMinutes,
       ...(type === 'mtt'
         ? {
             lateRegMinutes,
             payoutMode,
             ...(payoutMode === 'fixed' ? { fixedPayoutPlaces } : { itmPercent }),
             reEntryEnabled,
-            ...(reEntryEnabled ? { maxReEntries } : {}),
+            ...(reEntryEnabled ? { maxReEntries, reEntryFee } : {}),
             ...(guaranteeEnabled ? { guaranteedPrizePool } : {}),
           }
         : {}),
@@ -135,21 +150,36 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
             />
           </SettingRow>
 
-          <SettingRow label="Бай-ин">
+          <SettingRow label="Бай-ин (0 — бесплатно)">
             <input
-              value={formatMoney(buyIn)}
-              onChange={(e) => setBuyIn(Math.max(1, parseMoney(e.target.value)))}
+              type="number"
+              min="0"
+              step="0.01"
+              value={buyIn / 100}
+              onChange={(e) => setBuyIn(parseMoney(e.target.value))}
               className="w-24 text-right bg-gray-800 border border-white/10 rounded-lg px-2 py-1.5 text-white text-sm outline-none focus:border-amber-500"
             />
           </SettingRow>
 
-          <SettingRow label="Стартовый стек">
-            <input
-              value={formatMoney(startingStack)}
-              onChange={(e) => setStartingStack(Math.max(1, parseMoney(e.target.value)))}
-              className="w-24 text-right bg-gray-800 border border-white/10 rounded-lg px-2 py-1.5 text-white text-sm outline-none focus:border-amber-500"
+          <SettingRow label="Начальный блайнд">
+            <Stepper
+              display={formatMoney(startingSmallBlind) + ' / ' + formatMoney(startingBigBlind)}
+              onDec={() => setBlindIdx((v) => Math.max(0, v - 1))}
+              onInc={() => setBlindIdx((v) => Math.min(BLIND_LADDER.length - 1, v + 1))}
             />
           </SettingRow>
+
+          <SettingRow label="Стартовый стек, BB">
+            <Stepper
+              display={stackBb}
+              onDec={() => setStackBb((v) => Math.max(10, v - 10))}
+              onInc={() => setStackBb((v) => Math.min(1000, v + 10))}
+            />
+          </SettingRow>
+
+          <div className="text-xs text-gray-500 text-right -mt-2 mb-1">
+            = {formatMoney(startingStack)} фишек на старте
+          </div>
 
           <SettingRow label="Скорость блайндов">
             <Segmented options={SPEED_OPTIONS} value={blindSpeed} onChange={setBlindSpeed} />
@@ -215,13 +245,25 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
               </SettingRow>
 
               {reEntryEnabled && (
-                <SettingRow label="Макс. ре-энтри на игрока">
-                  <Stepper
-                    display={maxReEntries}
-                    onDec={() => setMaxReEntries((v) => Math.max(1, v - 1))}
-                    onInc={() => setMaxReEntries((v) => Math.min(10, v + 1))}
-                  />
-                </SettingRow>
+                <>
+                  <SettingRow label="Макс. ре-энтри на игрока">
+                    <Stepper
+                      display={maxReEntries}
+                      onDec={() => setMaxReEntries((v) => Math.max(1, v - 1))}
+                      onInc={() => setMaxReEntries((v) => Math.min(10, v + 1))}
+                    />
+                  </SettingRow>
+                  <SettingRow label="Цена ре-энтри">
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={reEntryFee / 100}
+                      onChange={(e) => setReEntryFee(parseMoney(e.target.value))}
+                      className="w-24 text-right bg-gray-800 border border-white/10 rounded-lg px-2 py-1.5 text-white text-sm outline-none focus:border-amber-500"
+                    />
+                  </SettingRow>
+                </>
               )}
 
               <SettingRow label="Гарантированный приз">
@@ -231,8 +273,11 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
               {guaranteeEnabled && (
                 <SettingRow label="Сумма гарантии">
                   <input
-                    value={formatMoney(guaranteedPrizePool)}
-                    onChange={(e) => setGuaranteedPrizePool(Math.max(0, parseMoney(e.target.value)))}
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={guaranteedPrizePool / 100}
+                    onChange={(e) => setGuaranteedPrizePool(parseMoney(e.target.value))}
                     className="w-24 text-right bg-gray-800 border border-white/10 rounded-lg px-2 py-1.5 text-white text-sm outline-none focus:border-amber-500"
                   />
                 </SettingRow>

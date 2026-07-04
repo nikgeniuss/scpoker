@@ -13,6 +13,7 @@ interface TournamentState {
   createTournament: (token: string, opts: CreateTournamentOptions) => Promise<{ ok: true } | { ok: false; error: string }>;
   cancelTournament: (token: string, id: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   forceStartTournament: (token: string, id: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  addBots: (token: string, id: string, count: number) => Promise<{ ok: true } | { ok: false; error: string }>;
 }
 
 async function postJson<T>(url: string, token: string, body?: unknown): Promise<ApiResult<T>> {
@@ -72,6 +73,13 @@ export const useTournamentStore = create<TournamentState>((set, get) => ({
 
   forceStartTournament: async (token, id) => {
     const result = await postJson<TournamentInfo>(`${API_URL}/admin/tournaments/${id}/force-start`, token);
+    if ('error' in result) return { ok: false, error: result.error };
+    set({ tournaments: get().tournaments.map((t) => (t.id === id ? result : t)) });
+    return { ok: true };
+  },
+
+  addBots: async (token, id, count) => {
+    const result = await postJson<TournamentInfo>(`${API_URL}/admin/tournaments/${id}/add-bots`, token, { count });
     if ('error' in result) return { ok: false, error: result.error };
     set({ tournaments: get().tournaments.map((t) => (t.id === id ? result : t)) });
     return { ok: true };

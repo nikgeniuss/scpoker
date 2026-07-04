@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { Coins, Users, Zap, Trophy } from 'lucide-react';
@@ -18,12 +19,14 @@ interface TournamentCardProps {
   onForceStart: () => void;
   onCancel: () => void;
   onGoToTable: () => void;
+  onAddBots: (count: number) => void;
 }
 
 export const TournamentCard = ({
-  tournament: trn, myId, isAdmin, onRegister, onUnregister, onForceStart, onCancel, onGoToTable,
+  tournament: trn, myId, isAdmin, onRegister, onUnregister, onForceStart, onCancel, onGoToTable, onAddBots,
 }: TournamentCardProps) => {
   const { t } = useTranslation();
+  const [botCount, setBotCount] = useState(3);
   const SPEED_LABEL: Record<TournamentInfo['blindSpeed'], string> = {
     slow: t('tournamentCard.speedSlow'),
     regular: t('tournamentCard.speedRegular'),
@@ -180,21 +183,39 @@ export const TournamentCard = ({
       )}
 
       {isAdmin && trn.status === 'registering' && (
-        <div className="flex gap-2 mt-2">
-          <button
-            onClick={onForceStart}
-            disabled={trn.entries.length < 2}
-            className="flex-1 py-1.5 rounded-lg text-xs font-bold text-gray-300 bg-white/5 hover:bg-white/10 border border-white/10 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {t('tournamentCard.startNow')}
-          </button>
-          <button
-            onClick={onCancel}
-            className="flex-1 py-1.5 rounded-lg text-xs font-bold text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20"
-          >
-            {t('tournamentCard.cancelTournament')}
-          </button>
-        </div>
+        <>
+          <div className="flex gap-2 mt-2">
+            <button
+              onClick={onForceStart}
+              disabled={trn.entries.length < 2}
+              className="flex-1 py-1.5 rounded-lg text-xs font-bold text-gray-300 bg-white/5 hover:bg-white/10 border border-white/10 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {t('tournamentCard.startNow')}
+            </button>
+            <button
+              onClick={onCancel}
+              className="flex-1 py-1.5 rounded-lg text-xs font-bold text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20"
+            >
+              {t('tournamentCard.cancelTournament')}
+            </button>
+          </div>
+          <div className="flex gap-2 mt-2 items-center">
+            <input
+              type="number"
+              min="1"
+              max="50"
+              value={botCount}
+              onChange={(e) => setBotCount(parseInt(e.target.value, 10) || 1)}
+              className="w-14 text-center bg-gray-800 border border-white/10 rounded-lg px-1 py-1.5 text-white text-xs outline-none focus:border-amber-500"
+            />
+            <button
+              onClick={() => onAddBots(botCount)}
+              className="flex-1 py-1.5 rounded-lg text-xs font-bold text-sky-300 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/20"
+            >
+              🤖 Добавить тестовых ботов (сливают стек)
+            </button>
+          </div>
+        </>
       )}
     </motion.div>
   );

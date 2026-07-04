@@ -19,7 +19,7 @@ export const Tournaments = () => {
   const token = useAuthStore((s) => s.token);
   const myId = useAuthStore((s) => s.user?.id ?? null);
   const isAdmin = useAuthStore((s) => s.isAdmin);
-  const { tournaments, fetchTournaments, register, unregister, createTournament, cancelTournament, forceStartTournament } = useTournamentStore();
+  const { tournaments, fetchTournaments, register, unregister, createTournament, cancelTournament, forceStartTournament, addBots } = useTournamentStore();
   const [showCreate, setShowCreate] = useState(false);
 
   useEffect(() => {
@@ -44,6 +44,12 @@ export const Tournaments = () => {
   const withToken = (fn: (token: string, id: string) => Promise<{ ok: true } | { ok: false; error: string }>, id: string) => async () => {
     if (!token) return;
     const result = await fn(token, id);
+    if (!result.ok) toast.error(result.error);
+  };
+
+  const handleAddBots = async (id: string, count: number) => {
+    if (!token) return;
+    const result = await addBots(token, id, count);
     if (!result.ok) toast.error(result.error);
   };
 
@@ -82,6 +88,7 @@ export const Tournaments = () => {
                 onUnregister={withToken(unregister, t.id)}
                 onForceStart={withToken(forceStartTournament, t.id)}
                 onCancel={withToken(cancelTournament, t.id)}
+                onAddBots={(count) => handleAddBots(t.id, count)}
                 onGoToTable={() => {
                   const myTableId = t.entries.find((e) => e.userId === myId)?.tableId ?? t.tableIds[0];
                   if (myTableId) navigate('/game/' + myTableId);

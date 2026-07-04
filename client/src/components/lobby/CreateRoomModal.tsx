@@ -545,10 +545,6 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
                 }}
               />
             </div>
-            <SettingRow label={t('createRoomModal.buyInAuth')} soon disabled>
-              <Toggle checked={false} onChange={noop} disabled />
-            </SettingRow>
-
             {/* Рейк (функционально) — два дропдауна: процент + Cap. 0% = выключен. */}
             <div className="py-3 border-b border-white/5 flex items-center justify-between gap-2">
               <span className="text-sm text-white shrink-0">{t('createRoomModal.rake')}</span>
@@ -579,30 +575,6 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
             <SettingRow label={t('createRoomModal.bombPot')} onInfo={openInfo('bombpot')}>
               <Toggle checked={bombPotEnabled} onChange={setBombPotEnabled} />
             </SettingRow>
-            {/* Вложенная группа Bomb Pot (визуально, disabled) */}
-            <div className="pl-3 border-l-2 border-white/5 ml-1">
-              <SettingRow label={t('createRoomModal.bombPotAnte')} soon disabled>
-                <span className="text-sm text-gray-500">3× BB</span>
-              </SettingRow>
-              <div className="py-3 border-b border-white/5 opacity-40">
-                <div className="text-sm text-white mb-2">{t('createRoomModal.bombPotFrequency')}</div>
-                <Segmented
-                  options={[
-                    { value: 'hands', label: t('createRoomModal.optHands') },
-                    { value: 'min', label: t('createRoomModal.optMinute') },
-                  ]}
-                  value={'hands'}
-                  onChange={noop}
-                  disabled
-                />
-                <div className="mt-2">
-                  <RangeSlider min={1} max={20} step={1} value={5} onChange={noop} disabled />
-                </div>
-              </div>
-              <SettingRow label={t('createRoomModal.bombPotDoubleBoard')} soon disabled>
-                <Toggle checked={false} onChange={noop} disabled />
-              </SettingRow>
-            </div>
             <SettingRow label={t('createRoomModal.doubleBoard')}>
               <Toggle checked={doubleBoardEnabled} onChange={setDoubleBoardEnabled} />
             </SettingRow>
@@ -611,9 +583,6 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
             </SettingRow>
             <SettingRow label={t('createRoomModal.evCashout')} onInfo={openInfo('ev')}>
               <Toggle checked={evCashoutEnabled} onChange={setEvCashoutEnabled} />
-            </SettingRow>
-            <SettingRow label={t('createRoomModal.runItMultiple')}>
-              <Toggle checked={rimtEnabled} onChange={setRimtEnabled} />
             </SettingRow>
             <SettingRow label={t('createRoomModal.noTurnNoShow')} onInfo={openInfo('noturn')}>
               <Toggle checked={noTurnNoShowEnabled} onChange={setNoTurnNoShowEnabled} />

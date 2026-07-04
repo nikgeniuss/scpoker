@@ -85,6 +85,10 @@ export interface GameState {
   // Турнирный стол (§10 «Турниры»): если задан — клиент рисует турнирный HUD вместо обычного
   // стола (нельзя выйти с забором фишек, блайнды растут по уровням — см. GET /api/tournaments/:id).
   tournamentId?: string;
+  // Когда вырастут блайнды и какими станут (турнирный HUD под общими картами) — undefined у обоих,
+  // если лестница блайндов уже кончилась (роста больше не будет, см. tournamentSchedule.ts).
+  tournamentNextLevelAt?: number;
+  tournamentNextBigBlind?: number;
   // Double Board (доделка §10.6): второй независимый борд, только если room.doubleBoardEnabled.
   // Также переиспользуется для отображения второго прогона RIMT (см. settlementMode).
   communityCardsB?: Card[];
@@ -128,7 +132,20 @@ export const SOCKET_EVENTS = {
   INBOX_NOTIFICATION: 'inboxNotification',          // сервер → клиент: {notification} — новое уведомление во «Входящих»
   RABBIT_HUNT: 'rabbitHunt',                        // клиент → сервер: {roomId} — заплатить и увидеть карты, которые пришли бы (Rabbit Hunting)
   TOURNAMENT_TABLE_ASSIGNED: 'tournamentTableAssigned', // сервер → клиент: {tournamentId, roomId} — турнир стартовал/пересадка, переход на стол
+  TOURNAMENT_RESULT: 'tournamentResult',             // сервер → клиент: TournamentResultPayload — игрок выбыл/победил, до закрытия стола
 } as const;
+
+// Результат участия игрока в турнире (выбыл или победил) — шлётся ДО того, как стол закрывается
+// (иначе клиент узнаёт о завершении только через requestGameState → not-found, «стол висит»).
+export interface TournamentResultPayload {
+  tournamentId: string;
+  tournamentName: string;
+  place: number;
+  totalEntries: number;
+  prize?: number; // не задан — место вне призовых (на момент отправки)
+  isWinner: boolean;
+  reEntryFee?: number; // задан — можно зайти заново ПРЯМО СЕЙЧАС (окно позднего рега открыто, лимит не исчерпан)
+}
 
 // Уведомление во «Входящих» игрока (§10.13).
 export interface InboxNotification {
@@ -397,8 +414,9 @@ export interface TournamentInfo {
   type: TournamentType;
   format: GameFormat;
   status: TournamentStatus;
-  buyIn: number;          // фишки за вход
+  buyIn: number;          // фишки за вход, >=0 (0 — бесплатный турнир)
   startingStack: number;
+  startingBigBlind: number; // стартовый большой блайнд (степпер по стандартной лестнице в CreateTournamentModal.tsx) — с него начинается расписание уровней
   tableSize: number;      // мест за ОДНИМ столом (SNG = общее число участников турнира, т.к. стол один)
   blindSpeed: BlindSpeed;
   levelUpMinutes: number;
@@ -414,6 +432,7 @@ export interface TournamentInfo {
   // фонд растёт с каждым входом. maxReEntries — сколько раз можно зайти заново (доп. к первому входу).
   reEntryEnabled: boolean;
   maxReEntries?: number; // задан только если reEntryEnabled
+  reEntryFee?: number;   // цена одного ре-энтри, если отличается от buyIn (напр. бесплатный вход + платное ре-энтри); задан только если reEntryEnabled
   // Гарантированный приз (MTT): если бай-ины на финише не дотягивают до этой суммы, рум доплачивает
   // разницу в prizePool (оверлей). overlayPaid — сколько фактически доплачено, задаётся при finish.
   guaranteedPrizePool?: number;
@@ -433,8 +452,9 @@ export interface CreateTournamentOptions {
   name: string;
   type: TournamentType;
   format: GameFormat;
-  buyIn: number;         // целые фишки, >0
+  buyIn: number;         // целые фишки, >=0 (0 — бесплатный турнир)
   startingStack: number; // целые фишки, >0
+  startingBigBlind?: number; // опционально: стартовый большой блайнд явно (степпер по лестнице); если не задан — выводится из startingStack (~75bb, старое поведение)
   tableSize: number;     // 2..9
   blindSpeed: BlindSpeed;
   levelUpMinutes: number; // 1..60
@@ -444,6 +464,7 @@ export interface CreateTournamentOptions {
   fixedPayoutPlaces?: number; // MTT, при payoutMode==='fixed' — целое 1..1000
   reEntryEnabled?: boolean;   // MTT, по умолчанию false
   maxReEntries?: number;      // MTT, при reEntryEnabled — целое 1..10, по умолчанию 1
+  reEntryFee?: number;        // MTT, при reEntryEnabled — целое >=0, по умолчанию = buyIn
   guaranteedPrizePool?: number; // MTT, целое >=0, по умолчанию нет гарантии
   bountyEnabled?: boolean;   // SNG+MTT, по умолчанию false
   bountyType?: BountyType;   // при bountyEnabled, по умолчанию 'flat'

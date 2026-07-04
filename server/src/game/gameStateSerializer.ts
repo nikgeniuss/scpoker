@@ -102,6 +102,8 @@ export function serializeGameState(room: Room, viewerId?: string, withPeek = fal
     // с дна колоды, которые никогда не выйдут.
     futureBoard: withPeek ? getFutureBoardCards(room.deck, room.communityCards.length) : undefined,
     tournamentId: room.tournamentId,
+    tournamentNextLevelAt: room.tournamentNextLevelAt,
+    tournamentNextBigBlind: room.tournamentNextBigBlind,
     // Double Board (доделка §10.6): второй борд, либо второй прогон RIMT. Публичный — те же
     // правила приватности неприменимы (борд общий для всех, в отличие от карманных карт).
     communityCardsB: room.communityCardsB ?? undefined,

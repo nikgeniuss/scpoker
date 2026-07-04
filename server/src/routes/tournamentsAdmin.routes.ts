@@ -31,6 +31,7 @@ export function createTournamentsAdminRouter(tournamentManager: TournamentManage
       format: body.format === 'shortdeck' ? 'shortdeck' : 'nlh',
       buyIn: body.buyIn,
       startingStack: body.startingStack,
+      startingBigBlind: typeof body.startingBigBlind === 'number' ? body.startingBigBlind : undefined,
       tableSize: body.tableSize,
       blindSpeed: body.blindSpeed as CreateTournamentOptions['blindSpeed'],
       levelUpMinutes: body.levelUpMinutes,
@@ -40,6 +41,7 @@ export function createTournamentsAdminRouter(tournamentManager: TournamentManage
       fixedPayoutPlaces: typeof body.fixedPayoutPlaces === 'number' ? body.fixedPayoutPlaces : undefined,
       reEntryEnabled: typeof body.reEntryEnabled === 'boolean' ? body.reEntryEnabled : undefined,
       maxReEntries: typeof body.maxReEntries === 'number' ? body.maxReEntries : undefined,
+      reEntryFee: typeof body.reEntryFee === 'number' ? body.reEntryFee : undefined,
       guaranteedPrizePool: typeof body.guaranteedPrizePool === 'number' ? body.guaranteedPrizePool : undefined,
       bountyEnabled: typeof body.bountyEnabled === 'boolean' ? body.bountyEnabled : undefined,
       bountyType: body.bountyType === 'progressive' ? 'progressive' : body.bountyType === 'flat' ? 'flat' : undefined,
@@ -55,6 +57,20 @@ export function createTournamentsAdminRouter(tournamentManager: TournamentManage
 
   router.post('/:id/cancel', (req, res) => {
     const result = tournamentManager.cancel(req.params.id);
+    if ('error' in result) {
+      res.status(400).json(result);
+      return;
+    }
+    res.json(result);
+  });
+
+  router.post('/:id/add-bots', (req, res) => {
+    const count = Number((req.body as { count?: unknown }).count);
+    if (!Number.isInteger(count) || count < 1) {
+      res.status(400).json({ error: 'invalid-body' });
+      return;
+    }
+    const result = tournamentManager.addBots(req.params.id, count);
     if ('error' in result) {
       res.status(400).json(result);
       return;

@@ -1,12 +1,24 @@
 // BotManager: оркестрация ботов — создание автостолов, ротация, lifecycle.
 // Хранилище (bots.json, runtimes) → BotRepository. Планирование решений → BotDecisionScheduler.
+import { nanoid } from 'nanoid';
 import { isBot as isBotId } from './botIdentity.js';
-import { makeSeededRng, hashStr, type BotDecisionContext, type BotDecision } from './botBrain.js';
-import { BotRepository } from './botRepository.js';
+import { makeSeededRng, hashStr, type BotDecisionContext, type BotDecision, type BotPersona } from './botBrain.js';
+import { BotRepository, type BotInfo } from './botRepository.js';
 import { BotDecisionScheduler } from './botDecisionScheduler.js';
 
 // Re-export для обратной совместимости (GameManager и admin-роуты импортируют отсюда).
 export type { BotInfo, BotPnLTarget } from './botRepository.js';
+
+// Тестовые боты турнира (createTestBots) — id с этим префиксом ИСКЛЮЧЕНЫ из pickBotsForTable
+// (иначе их подобрал бы обычный auto-fill кэш-столов, пока они сидят в турнире).
+const TEST_BOT_ID_PREFIX = 'bot:tt-';
+
+// Loose-passive профиль (как Fish в defaultBotPersonas) + targetPnL='minus' — играет много слабых
+// рук, редко блефует, редко делает hero fold → вместе с риск-шифтом 'minus' стек сливается стабильно.
+const TEST_BLEED_PERSONA: BotPersona = {
+  aggression: 0.30, bluffRate: 0.03, heroFoldRate: 0.05, slowplayRate: 0.15, vpip: 0.55,
+  reactionFast: [900, 2000], reactionSlow: [3200, 5800], fastBias: 0.6,
+};
 
 export interface BotModeSettings {
   enabled: boolean;
@@ -139,6 +151,28 @@ export class BotManager {
 
   resetAllTotalPnL(): number { return this.repo.resetAllTotalPnL(); }
   refillAllBankrolls(chips: number): number { return this.repo.refillAllBankrolls(chips); }
+
+  // Создаёт N тестовых ботов для турнира (loose-passive + target='minus' — стабильно сливают
+  // стек). Не трогает cash-пул: id с префиксом bot:tt- исключён из pickBotsForTable.
+  createTestBots(count: number, chips: number): BotInfo[] {
+    const now = new Date().toISOString();
+    const created: BotInfo[] = [];
+    for (let i = 0; i < count; i++) {
+      const suffix = nanoid(5);
+      const bot: BotInfo = {
+        id: `${TEST_BOT_ID_PREFIX}${suffix}`,
+        username: `Тестбот-${suffix}`,
+        chips,
+        targetPnL: 'minus',
+        persona: { ...TEST_BLEED_PERSONA },
+        createdAt: now,
+        totalPnL: 0,
+      };
+      this.repo.add(bot);
+      created.push(bot);
+    }
+    return created;
+  }
 
   // ===== Включить / выключить режим =====
 
@@ -314,7 +348,7 @@ export class BotManager {
   }
 
   private pickBotsForTable(n: number, buyIn: number): import('./botRepository.js').BotInfo[] {
-    const free = this.repo.getAll().filter((b) => !this.botTable.has(b.id) && b.chips >= buyIn);
+    const free = this.repo.getAll().filter((b) => !this.botTable.has(b.id) && b.chips >= buyIn && !b.id.startsWith(TEST_BOT_ID_PREFIX));
     const minus = free.filter((b) => b.targetPnL === 'minus');
     const others = free.filter((b) => b.targetPnL !== 'minus');
     this.shuffleArray(minus);

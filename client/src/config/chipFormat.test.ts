@@ -8,11 +8,15 @@ import {
 } from './chipFormat';
 
 describe('formatMoney (центы → строка)', () => {
-  it('форматирует центы с двумя знаками и разделителем тысяч', () => {
+  it('дробная сумма — два знака и разделитель тысяч', () => {
     expect(formatMoney(1)).toBe('0.01');
-    expect(formatMoney(1000)).toBe('10.00');
     expect(formatMoney(2080874)).toBe('20,808.74');
-    expect(formatMoney(0)).toBe('0.00');
+  });
+
+  it('целая сумма — без ".00" (бленды/стеки/ставки, как правило целые)', () => {
+    expect(formatMoney(1000)).toBe('10');
+    expect(formatMoney(0)).toBe('0');
+    expect(formatMoney(2000000)).toBe('20,000');
   });
 });
 
@@ -31,7 +35,7 @@ describe('parseMoney (строка долларов → центы)', () => {
 
 describe('formatChips (режим chips/bb)', () => {
   it('режим chips отдаёт деньги в центах', () => {
-    expect(formatChips(1000, 200, 'chips')).toBe('10.00');
+    expect(formatChips(1000, 200, 'chips')).toBe('10');
   });
 
   it('режим bb делит на большой блайнд', () => {
@@ -40,7 +44,7 @@ describe('formatChips (режим chips/bb)', () => {
   });
 
   it('режим bb с bigBlind=0 откатывается к деньгам', () => {
-    expect(formatChips(1000, 0, 'bb')).toBe('10.00');
+    expect(formatChips(1000, 0, 'bb')).toBe('10');
   });
 });
 

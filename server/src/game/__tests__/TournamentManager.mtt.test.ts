@@ -139,6 +139,36 @@ describe('TournamentManager — MTT, мультистол', () => {
     expect(usersChips()).toMatchObject({ A: 5000, B: 5000 });
   });
 
+  it('принудительная отмена УЖЕ ЗАПУЩЕННОГО турнира: возврат бай-инов всем entries (включая выбывших), столы закрываются', async () => {
+    const { gm } = await createTestGameManager();
+    const tm = new TournamentManager(gm as unknown as GameManager);
+    const created = tm.create(
+      { name: 'Abort Running MTT', type: 'mtt', format: 'nlh', buyIn: 500, startingStack: 1000, tableSize: 2, blindSpeed: 'regular', levelUpMinutes: 10 },
+      'admin1',
+    );
+    if ('error' in created) throw new Error(created.error);
+    const id = created.id;
+    ['A', 'B', 'C'].forEach((u) => tm.register(id, u, u));
+    const started = tm.forceStart(id);
+    if ('error' in started) throw new Error(started.error);
+    expect(started.status).toBe('running');
+    // Рассадка по столам случайна (Fisher-Yates в startMtt) — берём РЕАЛЬНЫЙ стол A, а не tableIds[0].
+    const tableId = started.entries.find((e) => e.userId === 'A')!.tableId!;
+
+    // A уже выбыл до аборта — при void-турнире всё равно возвращаем бай-ин (турнир аннулирован целиком).
+    gm.removePlayer(tableId, 'A');
+    expect(tm.get(id)!.entries.find((e) => e.userId === 'A')!.status).toBe('eliminated');
+    expect(usersChips()).toMatchObject({ A: 4500, B: 4500, C: 4500 });
+
+    const aborted = tm.cancel(id);
+    if ('error' in aborted) throw new Error(aborted.error);
+    expect(aborted.status).toBe('cancelled');
+    expect(aborted.tableIds).toHaveLength(0);
+    expect(usersChips()).toMatchObject({ A: 5000, B: 5000, C: 5000 });
+    // Стол реально закрыт в GameManager.
+    expect(gm.getGameState(tableId)).toBeNull();
+  });
+
   it('поздняя регистрация в неровный сплит реально стартует раздачу (живой прогон нашёл баг 2026-06-23)', async () => {
     const { gm } = await createTestGameManager();
     const tm = new TournamentManager(gm as unknown as GameManager);
@@ -295,7 +325,7 @@ describe('TournamentManager — MTT, мультистол', () => {
   });
 
   it('ре-энтри после баста: новая отдельная запись, призовой фонд растёт, банкролл дебетуется повторно', async () => {
-    const { gm } = await createTestGameManager();
+    const { gm, io } = await createTestGameManager();
     const tm = new TournamentManager(gm as unknown as GameManager);
     const created = tm.create(
       {
@@ -314,6 +344,7 @@ describe('TournamentManager — MTT, мультистол', () => {
       const r = tm.register(id, u, u);
       if ('error' in r) throw new Error(r.error);
     });
+    const sockA = io.addSocket('A', 'A');
     const started = tm.forceStart(id);
     if ('error' in started) throw new Error(started.error);
     expect(started.tableIds).toHaveLength(1); // ceil(3/3)=1 стол
@@ -324,6 +355,11 @@ describe('TournamentManager — MTT, мультистол', () => {
     const aOld = afterBust.entries.find((e) => e.userId === 'A')!;
     expect(aOld.status).toBe('eliminated');
     expect(aOld.finishPlace).toBe(3); // 3 игрока играли в момент баста
+
+    // Уведомление о вылете предлагает зайти заново ПРЯМО СЕЙЧАС (окно позднего рега открыто,
+    // лимит не исчерпан) — как в PokerStars/GGPoker, см. GameManager.notifyTournamentResult.
+    const bustResult = sockA.emitted.find((e) => e.event === 'tournamentResult')?.payload as { reEntryFee?: number };
+    expect(bustResult.reEntryFee).toBe(1000); // = buyIn (reEntryFee не задан отдельно)
 
     const reentered = tm.register(id, 'A', 'A');
     if ('error' in reentered) throw new Error(reentered.error);
@@ -338,7 +374,7 @@ describe('TournamentManager — MTT, мультистол', () => {
   });
 
   it('ре-энтри запрещён без reEntryEnabled', async () => {
-    const { gm } = await createTestGameManager();
+    const { gm, io } = await createTestGameManager();
     const tm = new TournamentManager(gm as unknown as GameManager);
     const created = tm.create(
       {
@@ -352,11 +388,16 @@ describe('TournamentManager — MTT, мультистол', () => {
     expect(tm.get(id)!.reEntryEnabled).toBe(false);
 
     ['A', 'B', 'C'].forEach((u) => tm.register(id, u, u));
+    const sockA = io.addSocket('A', 'A');
     const started = tm.forceStart(id);
     if ('error' in started) throw new Error(started.error);
 
     gm.removePlayer(started.tableIds[0], 'A');
     expect(tm.register(id, 'A', 'A')).toEqual({ error: 'reentry-disabled' });
+
+    // Уведомление о вылете НЕ предлагает ре-энтри — фича выключена для этого турнира.
+    const bustResult = sockA.emitted.find((e) => e.event === 'tournamentResult')?.payload as { reEntryFee?: number };
+    expect(bustResult.reEntryFee).toBeUndefined();
   });
 
   it('лимит ре-энтри исчерпан блокирует следующий вход; повторный бaст после ре-энтри попадает в НОВУЮ запись', async () => {
@@ -405,6 +446,42 @@ describe('TournamentManager — MTT, мультистол', () => {
     expect(finished.prizePool).toBe(4000);
     expect(winner.prize).toBe(4000);
     expect(finished.entries.filter((e) => e.prize)).toHaveLength(1);
+  });
+
+  it('бесплатный вход (buyIn=0) + платное ре-энтри по отдельной цене reEntryFee', async () => {
+    const { gm } = await createTestGameManager();
+    const tm = new TournamentManager(gm as unknown as GameManager);
+    const created = tm.create(
+      {
+        name: 'Free Entry MTT', type: 'mtt', format: 'nlh', buyIn: 0, startingStack: 1000,
+        tableSize: 3, blindSpeed: 'turbo', levelUpMinutes: 10, lateRegMinutes: 15,
+        reEntryEnabled: true, maxReEntries: 2, reEntryFee: 100,
+      },
+      'admin1',
+    );
+    if ('error' in created) throw new Error(created.error);
+    const id = created.id;
+    expect(tm.get(id)!.buyIn).toBe(0);
+    expect(tm.get(id)!.reEntryFee).toBe(100);
+
+    // Вход бесплатный — банкролл не дебетуется, prizePool не растёт.
+    ['A', 'B', 'C'].forEach((u) => {
+      const r = tm.register(id, u, u);
+      if ('error' in r) throw new Error(r.error);
+    });
+    expect(tm.get(id)!.prizePool).toBe(0);
+    expect(usersChips()).toMatchObject({ A: 5000, B: 5000, C: 5000 });
+
+    const started = tm.forceStart(id);
+    if ('error' in started) throw new Error(started.error);
+    const tableId = started.tableIds[0];
+
+    // Ре-энтри после баста — стоит reEntryFee (100), не buyIn (0).
+    gm.removePlayer(tableId, 'A');
+    const reentered = tm.register(id, 'A', 'A');
+    if ('error' in reentered) throw new Error(reentered.error);
+    expect(reentered.prizePool).toBe(100);
+    expect(usersChips()).toMatchObject({ A: 5000 - 100 });
   });
 
   it('поздняя регистрация закрыта вне окна lateRegMinutes', async () => {

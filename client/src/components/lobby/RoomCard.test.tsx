@@ -44,7 +44,7 @@ describe('<RoomCard />', () => {
     );
     expect(screen.getByText('High Stakes')).toBeInTheDocument();
     expect(screen.getByText('от alice')).toBeInTheDocument();
-    expect(screen.getByText('1.00/2.00')).toBeInTheDocument();
+    expect(screen.getByText('1/2')).toBeInTheDocument();
   });
 
   it('рейк выключен (percent=0) — бейдж «Рейк» не показывается', () => {

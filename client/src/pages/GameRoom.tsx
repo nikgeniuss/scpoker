@@ -44,6 +44,7 @@ import { useOpponentNotesStore } from '../store/opponentNotesStore';
 import { useTableSwipe } from '../hooks/useTableSwipe';
 import { useEphemeralBubbles } from '../hooks/useEphemeralBubbles';
 import { useTableClock } from '../hooks/useTableClock';
+import { useBlindLevelCountdown } from '../hooks/useBlindLevelCountdown';
 import { useTableGeometry } from '../hooks/useTableGeometry';
 import { computeBlindSeats } from '../utils/blinds';
 
@@ -126,6 +127,8 @@ export const GameRoom = () => {
   // Производные секунды/проценты таймеров (единый тикер now)
   const { turnSecondsLeft, timebankSecondsLeft, turnPercent, timebankPercent } =
     useTableClock(state, countdownEndsAt);
+  // Турнирный HUD под общими картами: через сколько вырастут блайнды и на сколько.
+  const blindsRiseIn = useBlindLevelCountdown(state?.tournamentNextLevelAt);
 
   const myId = userId;
   const me = useMemo(() => state?.players.find((p) => p.id === myId) ?? null, [state, myId]);
@@ -476,6 +479,11 @@ export const GameRoom = () => {
               <div className="text-white/30 text-sm italic">{t('game.cardsNotRevealed')}</div>
             )}
           </div>
+          {state.tournamentId && blindsRiseIn && state.tournamentNextBigBlind !== undefined && (
+            <div className="text-amber-400/80 text-[11px] font-bold mt-1">
+              {t('game.blindsRiseIn', { time: blindsRiseIn, bb: formatMoney(state.tournamentNextBigBlind) })}
+            </div>
+          )}
           {/* Double Board / RIMT (доделка §10.6): второй борд, если стол его дилит. */}
           {state.communityCardsB && state.communityCardsB.length > 0 && (
             <div className="flex gap-1.5 mt-1.5">
@@ -753,6 +761,11 @@ export const GameRoom = () => {
             ) : state.phase !== 'waiting' ? (
               <div className="text-white/30 text-[10px] italic mt-1">{t('game.cardsNotRevealed')}</div>
             ) : null}
+            {state.tournamentId && blindsRiseIn && state.tournamentNextBigBlind !== undefined && (
+              <div className="text-amber-400/80 text-[10px] font-bold mt-1 text-center">
+                {t('game.blindsRiseIn', { time: blindsRiseIn, bb: formatMoney(state.tournamentNextBigBlind) })}
+              </div>
+            )}
             {state.communityCardsB && state.communityCardsB.length > 0 && (
               <div className="flex gap-1 flex-wrap justify-center max-w-full mt-1">
                 {state.communityCardsB.map((c, i) => (

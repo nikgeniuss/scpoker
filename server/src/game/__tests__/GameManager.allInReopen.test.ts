@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../auth/storage.js', () => import('./helpers/storage.js'));
 
@@ -255,5 +255,42 @@ describe('GameManager — incomplete all-in re-opens action (POKER_RULES §5.2, 
     gm.handlePlayerAction(roomId, 'D', 'all-in');
     const afterBet = getState(gm, roomId).currentBet;
     expect(afterBet).toBe(90); // не bumped — short call
+  });
+});
+
+// Постмортем "зависшие боты" 2026-07-03: handlePlayerAction тушил safety-net таймер
+// (clearTurnTimers) ДО валидации действия. Невалидный re-raise locked caller'а получал
+// молчаливый return после этого — таймер уже потушен, nextPlayer() не вызывался, стол
+// подвисал навсегда. Фикс — валидация переехала перед clearTurnTimers.
+describe('GameManager — невалидное действие locked caller не тушит safety-net таймер (freeze fix 2026-07-03)', () => {
+  beforeEach(() => {
+    resetStorage();
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('B re-raise будучи locked caller → отклонено, но таймер жив и сам фолдит B по таймауту', async () => {
+    const { gm, roomId } = await setup();
+    await setupFlopScenario(gm, roomId);
+    if (currentTurnId(getState(gm, roomId)) === 'A') {
+      gm.handlePlayerAction(roomId, 'A', 'fold');
+    }
+    expect(currentTurnId(getState(gm, roomId))).toBe('B');
+
+    // Невалидная попытка: B — locked caller после incomplete all-in от D, re-raise запрещён.
+    gm.handlePlayerAction(roomId, 'B', 'raise', 200);
+    const rejected = getState(gm, roomId);
+    expect(rejected.currentBet).toBe(100); // действие не прошло
+    expect(currentTurnId(rejected)).toBe('B'); // ход всё ещё у B — nextPlayer НЕ вызывался
+
+    // Раньше (баг): таймер уже был потушен внутри handlePlayerAction ДО этой проверки,
+    // поэтому B оставался в подвешенном состоянии навсегда. Проверяем, что таймер (turn +
+    // возможный timebank) всё ещё тикает и сам приводит B к auto-fold/check.
+    vi.advanceTimersByTime(120_001);
+    const s = getState(gm, roomId);
+    expect(s.players.find((p) => p.id === 'B')!.isFolded).toBe(true);
   });
 });

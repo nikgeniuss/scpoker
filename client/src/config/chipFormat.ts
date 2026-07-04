@@ -22,9 +22,13 @@ export function saveChipDisplay(v: ChipDisplay): void {
 }
 
 // Деньги в проекте — целые ЦЕНТЫ (1 единица = 1 цент). Отображение — дробное до центов,
-// без знака валюты (как в эталоне): 1 → "0.01", 1000 → "10.00", 2080874 → "20,808.74".
+// без знака валюты: 1 → "0.01", 2080874 → "20,808.74". Целые суммы (бленды/стеки/ставки —
+// как правило целочисленные) — без ".00" (1000 → "10", не "10.00"): нули там не несут
+// информации, только шум в UI за столом.
 export function formatMoney(cents: number): string {
-  return (cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const value = cents / 100;
+  if (Number.isInteger(value)) return value.toLocaleString('en-US');
+  return value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 // Разбор введённой пользователем суммы в долларах → целые центы (для money-input'ов).

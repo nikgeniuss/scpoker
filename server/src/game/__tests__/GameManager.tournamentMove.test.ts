@@ -19,8 +19,8 @@ describe('GameManager — movePlayerToTable / isTableSafeToRebalance', () => {
     const { gm } = await createTestGameManager();
     const realGm = gm as unknown as GameManager;
 
-    const tableA = realGm.createTournamentTable({ tournamentId: 't1', name: 'A', maxPlayers: 2, smallBlind: 10, bigBlind: 20, format: 'nlh' });
-    const tableB = realGm.createTournamentTable({ tournamentId: 't1', name: 'B', maxPlayers: 2, smallBlind: 10, bigBlind: 20, format: 'nlh' });
+    const tableA = realGm.createTournamentTable({ tournamentId: 't1', name: 'A', maxPlayers: 2, smallBlind: 10, bigBlind: 20, ante: 0, format: 'nlh' });
+    const tableB = realGm.createTournamentTable({ tournamentId: 't1', name: 'B', maxPlayers: 2, smallBlind: 10, bigBlind: 20, ante: 0, format: 'nlh' });
     realGm.seatTournamentPlayer(tableA, 'A', 'Alice', 1000);
     realGm.seatTournamentPlayer(tableB, 'B', 'Bob', 1000);
 
@@ -45,8 +45,8 @@ describe('GameManager — movePlayerToTable / isTableSafeToRebalance', () => {
     const { gm } = await createTestGameManager();
     const realGm = gm as unknown as GameManager;
 
-    const tableA = realGm.createTournamentTable({ tournamentId: 't1', name: 'A', maxPlayers: 2, smallBlind: 10, bigBlind: 20, format: 'nlh' });
-    const tableB = realGm.createTournamentTable({ tournamentId: 't1', name: 'B', maxPlayers: 2, smallBlind: 10, bigBlind: 20, format: 'nlh' });
+    const tableA = realGm.createTournamentTable({ tournamentId: 't1', name: 'A', maxPlayers: 2, smallBlind: 10, bigBlind: 20, ante: 0, format: 'nlh' });
+    const tableB = realGm.createTournamentTable({ tournamentId: 't1', name: 'B', maxPlayers: 2, smallBlind: 10, bigBlind: 20, ante: 0, format: 'nlh' });
     realGm.seatTournamentPlayer(tableA, 'A', 'Alice', 1000);
     realGm.seatTournamentPlayer(tableA, 'B', 'Bob', 1000);
     gm.startGame(tableA); // раздача стартовала — стол теперь mid-hand
@@ -62,8 +62,8 @@ describe('GameManager — movePlayerToTable / isTableSafeToRebalance', () => {
     const { gm } = await createTestGameManager();
     const realGm = gm as unknown as GameManager;
 
-    const tableA = realGm.createTournamentTable({ tournamentId: 't1', name: 'A', maxPlayers: 2, smallBlind: 10, bigBlind: 20, format: 'nlh' });
-    const tableB = realGm.createTournamentTable({ tournamentId: 't1', name: 'B', maxPlayers: 1, smallBlind: 10, bigBlind: 20, format: 'nlh' });
+    const tableA = realGm.createTournamentTable({ tournamentId: 't1', name: 'A', maxPlayers: 2, smallBlind: 10, bigBlind: 20, ante: 0, format: 'nlh' });
+    const tableB = realGm.createTournamentTable({ tournamentId: 't1', name: 'B', maxPlayers: 1, smallBlind: 10, bigBlind: 20, ante: 0, format: 'nlh' });
     realGm.seatTournamentPlayer(tableA, 'A', 'Alice', 1000);
     realGm.seatTournamentPlayer(tableB, 'B', 'Bob', 1000); // tableB уже полон (maxPlayers=1)
 
@@ -75,7 +75,7 @@ describe('GameManager — movePlayerToTable / isTableSafeToRebalance', () => {
     const realGm = gm as unknown as GameManager;
 
     // Неровный сплит MTT: стол с 1 игроком, ждём второго (status остаётся 'waiting').
-    const tableA = realGm.createTournamentTable({ tournamentId: 't1', name: 'A', maxPlayers: 2, smallBlind: 10, bigBlind: 20, format: 'nlh' });
+    const tableA = realGm.createTournamentTable({ tournamentId: 't1', name: 'A', maxPlayers: 2, smallBlind: 10, bigBlind: 20, ante: 0, format: 'nlh' });
     realGm.seatTournamentPlayer(tableA, 'A', 'Alice', 1000);
 
     realGm.handleDisconnect('A');

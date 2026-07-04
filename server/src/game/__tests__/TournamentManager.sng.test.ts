@@ -8,6 +8,7 @@ import { card, buildDeck } from './helpers/cards.js';
 import { TournamentManager } from '../tournament/TournamentManager.js';
 import { computeSngPayout } from '../tournament/tournamentPayout.js';
 import type { GameManager } from '../GameManager.js';
+import { SOCKET_EVENTS, type TournamentResultPayload } from '@poker-room/shared';
 
 // Полный цикл SNG: регистрация (дебет бай-ина) → старт (посадка турнирными фишками, не банкроллом)
 // → раздача до элиминации одного из двух игроков → выплата по результату → закрытие стола.
@@ -148,7 +149,7 @@ describe('TournamentManager — SNG, полный цикл', () => {
   });
 
   it('добровольный leaveRoom на турнирном столе — форфейт, НЕ кэш-аут (банкролл не растёт)', async () => {
-    const { gm } = await createTestGameManager();
+    const { gm, io } = await createTestGameManager();
     const tm = new TournamentManager(gm as unknown as GameManager);
     const created = tm.create(
       { name: 'Forfeit Test', type: 'sng', format: 'nlh', buyIn: 1000, startingStack: 1000, tableSize: 3, blindSpeed: 'turbo', levelUpMinutes: 10 },
@@ -157,6 +158,9 @@ describe('TournamentManager — SNG, полный цикл', () => {
     if ('error' in created) throw new Error(created.error);
     tm.register(created.id, 'A', 'Alice');
     tm.register(created.id, 'B', 'Bob');
+    // Сокеты для проверки TOURNAMENT_RESULT (стол закрывается молча иначе — см. GameManager.notifyTournamentResult).
+    const sockA = io.addSocket('A', 'Alice');
+    const sockB = io.addSocket('B', 'Bob');
     const started = tm.forceStart(created.id);
     if ('error' in started) throw new Error(started.error);
     const roomId = tm.get(created.id)!.tableIds[0];
@@ -180,5 +184,48 @@ describe('TournamentManager — SNG, полный цикл', () => {
 
     // Призовые кредитованы поверх дебетованного бай-ина каждому по своему месту.
     expect(usersChips()).toEqual({ A: 4000 + a.prize!, B: 4000 + b.prize! });
+
+    // B (выбывший) получил результат ДО закрытия стола — иначе клиент узнаёт об этом только
+    // через ошибку not-found (см. GameManager.notifyTournamentResult).
+    const bResult = sockB.emitted.find((e) => e.event === SOCKET_EVENTS.TOURNAMENT_RESULT)?.payload as TournamentResultPayload;
+    expect(bResult).toMatchObject({ place: 2, isWinner: false, prize: b.prize, totalEntries: 2 });
+
+    // A (победитель) — тоже уведомлён, отдельно от B, синхронно в finish().
+    const aResult = sockA.emitted.find((e) => e.event === SOCKET_EVENTS.TOURNAMENT_RESULT)?.payload as TournamentResultPayload;
+    expect(aResult).toMatchObject({ place: 1, isWinner: true, prize: a.prize, totalEntries: 2 });
+  });
+
+  it('HUD «через сколько вырастут блайнды и на сколько» — обновляется на каждом уровне', async () => {
+    const { gm } = await createTestGameManager();
+    const tm = new TournamentManager(gm as unknown as GameManager);
+    const created = tm.create(
+      {
+        name: 'Blind HUD Test', type: 'sng', format: 'nlh', buyIn: 0, startingStack: 1000, tableSize: 2,
+        blindSpeed: 'turbo', levelUpMinutes: 1, startingBigBlind: 20,
+      },
+      'admin1',
+    );
+    if ('error' in created) throw new Error(created.error);
+    const id = created.id;
+
+    tm.register(id, 'A', 'Alice');
+    const started = tm.register(id, 'B', 'Bob'); // tableSize=2 — авто-старт на второй регистрации
+    if ('error' in started) throw new Error(started.error);
+    const roomId = started.tableIds[0];
+
+    type HudView = { smallBlind: number; bigBlind: number; tournamentNextLevelAt?: number; tournamentNextBigBlind?: number };
+    const before = gm.getGameState(roomId) as unknown as HudView;
+    expect(before.smallBlind).toBe(10);
+    expect(before.bigBlind).toBe(20);
+    expect(before.tournamentNextBigBlind).toBe(30); // следующий уровень лестницы после 10/20 — 15/30
+    expect(before.tournamentNextLevelAt).toBe(Date.now() + 60_000); // levelUpMinutes=1
+
+    vi.advanceTimersByTime(60_000); // ровно граница уровня — таймер срабатывает и Date.now() совпадает с моментом апа
+
+    const after = gm.getGameState(roomId) as unknown as HudView;
+    expect(after.smallBlind).toBe(15);
+    expect(after.bigBlind).toBe(30);
+    expect(after.tournamentNextBigBlind).toBe(50); // следующий после 15/30 — 25/50
+    expect(after.tournamentNextLevelAt).toBe(Date.now() + 60_000);
   });
 });

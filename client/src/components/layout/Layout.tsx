@@ -1,21 +1,23 @@
 ﻿import { motion } from 'framer-motion';
-import { useEffect, useRef, useCallback, lazy, Suspense } from 'react';
+import { useEffect, useRef, useState, useCallback, lazy, Suspense } from 'react';
 import type { ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import { Coins, Home, LayoutGrid, UserCircle, LogOut, Trophy, Crown, Shield } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
+import { useTournamentStore } from '../../store/tournamentStore';
 import { useMyClub } from '../../hooks/useMyClub';
 import { useDecksStore } from '../../store/decksStore';
 import { useInboxStore } from '../../store/inboxStore';
 import { disconnectSocket } from '../../lib/socket';
-import { SOCKET_EVENTS, type InboxNotification } from '@poker-room/shared';
+import { SOCKET_EVENTS, type InboxNotification, type TournamentResultPayload } from '@poker-room/shared';
 import { API_URL } from '../../config/api';
 import { useSocketEvent } from '../../hooks/useSocketEvent';
 import { formatMoney } from '../../config/chipFormat';
 import { TablesManager } from '../game/TablesManager';
 import { DebugOverlay } from '../debug/DebugOverlay';
+import { TournamentResultModal } from '../lobby/TournamentResultModal';
 
 // Кнопки в панели — lazy, код не в бандле обычного игрока.
 const AdminNavButton = lazy(() => import('../admin/AdminNavButton'));
@@ -33,6 +35,7 @@ export const Layout = ({ children }: LayoutProps) => {
   const { user, isAdmin, logout, token, setChips } = useAuthStore();
   const { myClub } = useMyClub();
   const { unread: inboxUnread, fetchInbox, addNotification } = useInboxStore();
+  const [tournamentResult, setTournamentResult] = useState<TournamentResultPayload | null>(null);
   // Кнопка «Мой клуб» — только не-админ владелец (у администраторов свои вкладки Клуб/Админ)
   const isClubOwner = !!myClub && !!user && myClub.ownerId === user.id && !isAdmin;
   const loadDecks = useDecksStore((s) => s.load);
@@ -149,6 +152,32 @@ export const Layout = ({ children }: LayoutProps) => {
     !!user,
   );
 
+  // Результат турнира (выбыл/победил) — сервер шлёт это ДО закрытия стола, глобально (не только
+  // в GameRoom), т.к. игрок может быть на любой странице в момент завершения (ROADMAP: раньше
+  // стол молча пропадал и клиент узнавал об этом только через ошибку not-found).
+  useSocketEvent<TournamentResultPayload>(
+    SOCKET_EVENTS.TOURNAMENT_RESULT,
+    (payload) => setTournamentResult(payload),
+    !!user,
+  );
+
+  // Зайти заново прямо из модалки результата (как в PokerStars/GGPoker — предлагают ре-энтри
+  // сразу при вылете). Переиспользует тот же register(), что и кнопка «Зайти заново» в лобби
+  // турниров — сервер сам отличает ре-энтри от первого входа.
+  const handleReEnter = async (tournamentId: string) => {
+    setTournamentResult(null);
+    if (!token) return;
+    const result = await useTournamentStore.getState().register(token, tournamentId);
+    if (!result.ok) {
+      toast.error(result.error);
+      navigate('/tournaments');
+      return;
+    }
+    const trn = useTournamentStore.getState().tournaments.find((x) => x.id === tournamentId);
+    const myTableId = trn?.entries.find((e) => e.userId === user?.id && e.status === 'playing')?.tableId;
+    navigate(myTableId ? '/game/' + myTableId : '/tournaments');
+  };
+
   // connect_error — сервер отклоняет handshake при невалидном/протухшем JWT ('No token'/'Invalid token'
   // из io.use; см. §11.42). Прочие ошибки (сеть, server down) игнорируем — не logout на каждый сбой связи.
   useSocketEvent<Error>(
@@ -168,6 +197,14 @@ export const Layout = ({ children }: LayoutProps) => {
       {/* Мультитейблинг: персистентный слушатель открытых столов (пилюли). Живёт выше роутов. */}
       <TablesManager />
       <DebugOverlay />
+      <TournamentResultModal
+        result={tournamentResult}
+        onClose={() => {
+          setTournamentResult(null);
+          navigate('/tournaments');
+        }}
+        onReEnter={handleReEnter}
+      />
       {/* Фоновые блюр-пятна — дорогие по GPU (полноэкранный blur-3xl + animate-pulse).
           За столом их не видно под непрозрачным полом, поэтому там не рендерим (perf §0.10). */}
       {!isGameRoom && (

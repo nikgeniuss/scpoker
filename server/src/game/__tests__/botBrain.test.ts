@@ -304,7 +304,7 @@ const GOLDEN_PERSONA: BotPersona = {
 function goldenCtx(over: Partial<BotDecisionContext>, seed: number): BotDecisionContext {
   const base: BotDecisionContext = {
     myCards: cards('As Ad'), myCurrentBet: 0, myChips: 1000,
-    board: [], pot: 30, currentBet: 20, phase: 'preflop', bigBlind: 10,
+    board: [], pot: 30, currentBet: 20, phase: 'preflop', bigBlind: 10, isLockedCaller: false,
     activeOpponents: [{ id: 'o1', cards: cards('7h 2c'), chips: 1000, currentBet: 20, isFolded: false, isBot: false }],
     futureBoard: [], persona: GOLDEN_PERSONA, targetPnL: 'zero', runtime: createBotRuntime(1000),
     lifetimePnL: 0, peekMode: 'river', rng: makeSeededRng(seed),
@@ -415,5 +415,29 @@ describe('decideAction — чистота runtime (события наружу)'
     const d = decideAction(ctx);
     expect(d.recordBluff).toBeUndefined();
     expect(ctx.runtime.bluffEventHands).toEqual([]);
+  });
+});
+
+// §5.2 POKER_RULES: locked caller (после incomplete all-in) не может re-raise — сервер
+// такое действие молча отклоняет (GameManager.handlePlayerAction), из-за чего стол
+// подвисал навсегда (постмортем "зависшие боты" 2026-07-03). decideAction обязана сама
+// понижать raise до call, чтобы бот не пытался сходить нелегально.
+describe('decideAction — isLockedCaller понижает raise до call (§5.2)', () => {
+  it('сценарий, где обычно raise → при isLockedCaller=true отдаёт call с тем же tag', () => {
+    const normalCtx = goldenCtx(GOLDEN['preflop-AA-vs-raise'].over, 2);
+    const normal = decideAction(normalCtx);
+    expect(normal.action).toBe('raise'); // база: без лока бот рейзит
+
+    const lockedCtx = goldenCtx({ ...GOLDEN['preflop-AA-vs-raise'].over, isLockedCaller: true }, 2);
+    const locked = decideAction(lockedCtx);
+    expect(locked.action).toBe('call');
+    expect(locked.amount).toBeUndefined();
+    expect(locked.tag).toBe(normal.tag); // остальные поля решения не теряются
+  });
+
+  it('isLockedCaller=true не трогает решения fold/call/check (только raise понижается)', () => {
+    const foldCtx = goldenCtx({ ...GOLDEN['preflop-72o-weak'].over, isLockedCaller: true }, 1);
+    const fold = decideAction(foldCtx);
+    expect(fold.action).toBe('fold'); // как и без isLockedCaller (seed=1 → pot-odds-fold)
   });
 });

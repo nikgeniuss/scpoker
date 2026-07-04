@@ -40,7 +40,7 @@ import { getResponsibleGamblingState, markResponsibleGamblingWarned } from '../a
 import { aggregateUserStats } from './statsService.js';
 import { periodRange, isLimitCrossed } from './responsibleGamblingService.js';
 import type { FrozenTableRecord } from './frozenTableLog.js';
-import type { GameState as SharedGameState, RoomInfo, TimebankConfig, TimebankSettings, PaymentsSettings, ResponsibleGamblingSettings } from '@poker-room/shared';
+import type { GameState as SharedGameState, RoomInfo, TimebankConfig, TimebankSettings, PaymentsSettings, ResponsibleGamblingSettings, TournamentResultPayload } from '@poker-room/shared';
 export type { RoomInfo, TimebankConfig, TimebankSettings };
 import {
   clearTurnTimers, scheduleTurnPhase1, scheduleTurnPhase2, scheduleSitOutTimer,
@@ -189,6 +189,7 @@ const SOCKET_EVENTS = {
   INBOX_NOTIFICATION: 'inboxNotification',
   RABBIT_HUNT: 'rabbitHunt',
   TOURNAMENT_TABLE_ASSIGNED: 'tournamentTableAssigned',
+  TOURNAMENT_RESULT: 'tournamentResult',
 } as const;
 
 const AUTO_START_MIN_PLAYERS = 2;
@@ -349,6 +350,8 @@ export interface Room {
   // Турнирный стол (§10 «Турниры»): если задан — TournamentManager владеет жизненным циклом
   // (блайнды по уровням, элиминация без возврата в банкролл — см. autoLeaveBrokePlayers/onTournamentBust).
   tournamentId?: string;
+  tournamentNextLevelAt?: number;  // timestamp следующего повышения уровня (HUD под общими картами)
+  tournamentNextBigBlind?: number; // BB следующего уровня; undefined вместе с ...At — лестница кончилась
   // Доделка §10.6 (2026-06-26) — спец-режимы стола, см. docs/ROADMAP.md и план реализации.
   straddleEnabled: boolean;
   bombPotEnabled: boolean;
@@ -831,6 +834,7 @@ export class GameManager implements GameManagerForBots {
     maxPlayers: number;
     smallBlind: number;
     bigBlind: number;
+    ante: number;
     format: GameFormat;
   }): string {
     const roomId = nanoid(10);
@@ -848,7 +852,7 @@ export class GameManager implements GameManagerForBots {
       buyInMaxBb: 0,
       timebank: toRoomTimebank(this.settings.timebank),
       rake: { percent: 0, capBb: 0 }, // турниры без рейка в v1
-      ante: 0,
+      ante: params.ante,
       format: params.format,
       autoStartPlayers: 2, // раздачи продолжаются, пока живы ≥2 — первый старт вызывает TournamentManager явно
       sessionDurationHours: 0,
@@ -896,13 +900,25 @@ export class GameManager implements GameManagerForBots {
   }
 
   // Повысить уровень блайндов на турнирном столе (TournamentManager, по общему таймеру уровней).
-  setTableBlinds(roomId: string, smallBlind: number, bigBlind: number, ante: number): void {
+  // nextLevelAt/nextBigBlind — когда и на сколько вырастут блайнды ДАЛЬШЕ (для HUD под общими
+  // картами); undefined у обоих — лестница уже кончилась, роста больше не будет.
+  setTableBlinds(roomId: string, smallBlind: number, bigBlind: number, ante: number, nextLevelAt?: number, nextBigBlind?: number): void {
     const room = this.rooms.get(roomId);
     if (!room) return;
     room.smallBlind = smallBlind;
     room.bigBlind = bigBlind;
     room.ante = ante;
+    room.tournamentNextLevelAt = nextLevelAt;
+    room.tournamentNextBigBlind = nextBigBlind;
     this.broadcastGameState(roomId);
+  }
+
+  // Уведомить игрока о результате его участия в турнире (выбыл/победил) — TournamentManager
+  // вызывает это ДО того, как убирает игрока со стола/закрывает стол, иначе клиент узнаёт
+  // о завершении только через requestGameState → not-found («стол висит», см. ROADMAP).
+  // Бот (нет реального сокета) — findUserSocket вернёт null, emit просто не произойдёт.
+  notifyTournamentResult(userId: string, payload: TournamentResultPayload): void {
+    this.findUserSocket(userId)?.emit(SOCKET_EVENTS.TOURNAMENT_RESULT, payload);
   }
 
   // Можно ли сейчас трогать стол (двигать игрока/закрывать) — только между раздачами,
@@ -1531,6 +1547,15 @@ export class GameManager implements GameManagerForBots {
     const player = room.players.get(userId);
     if (!player || player.isFolded) return;
 
+    // Валидация действия ДО очистки таймеров (см. постмортем "зависшие боты" 2026-07-03):
+    // если отклонить невалидное действие ПОСЛЕ clearTurnTimers, safety-net таймер уже
+    // потушен, nextPlayer() не вызывается — стол виснет навсегда без единой ошибки в логах.
+    if (!['fold', 'check', 'call', 'raise', 'all-in'].includes(action)) return;
+    // Incomplete all-in (§5.2): уже сходившие call'еры не могут re-raise
+    if (action === 'raise' && room.lockedCallers.has(userId)) return;
+    if (action === 'check' && player.currentBet < room.currentBet) return;
+    if (action === 'raise' && !isLegalRaise(amount, room.currentBet, room.lastRaiseSize, player.chips, player.currentBet)) return;
+
     // Если игрок действовал во время таймбанк-фазы — списать прошедшие секунды
     if (room.turnTimebankStartedAt !== null && room.turnTimebankPlayerId === userId) {
       const elapsedSec = Math.ceil((Date.now() - room.turnTimebankStartedAt) / 1000);
@@ -1542,9 +1567,6 @@ export class GameManager implements GameManagerForBots {
 
     let broadcastAmount: number | undefined;
 
-    // Incomplete all-in (§5.2): уже сходившие call'еры не могут re-raise
-    if (action === 'raise' && room.lockedCallers.has(userId)) return;
-
     switch (action) {
       case 'fold':
         player.isFolded = true;
@@ -1552,7 +1574,6 @@ export class GameManager implements GameManagerForBots {
         console.log(`   ▶ [${room.phase}] ${player.username} FOLD (chips=${player.chips} pot=${room.pot})`);
         break;
       case 'check':
-        if (player.currentBet < room.currentBet) return;
         room.actionsThisRound.add(userId);
         console.log(`   ▶ [${room.phase}] ${player.username} CHECK (chips=${player.chips} pot=${room.pot})`);
         break;
@@ -1563,8 +1584,6 @@ export class GameManager implements GameManagerForBots {
         console.log(`   ▶ [${room.phase}] ${player.username} CALL ${broadcastAmount} (chips=${player.chips} pot=${room.pot})`);
         break;
       case 'raise': {
-        // Валидация (min-raise + исключение all-in) — чистая bettingRules.isLegalRaise.
-        if (!isLegalRaise(amount, room.currentBet, room.lastRaiseSize, player.chips, player.currentBet)) return;
         const to = amount as number;
         const prevCurrentBet = room.currentBet;
         const delta = to - player.currentBet;
@@ -2869,6 +2888,7 @@ export class GameManager implements GameManagerForBots {
       currentBet: room.currentBet,
       phase: room.phase,
       bigBlind: room.bigBlind,
+      isLockedCaller: room.lockedCallers.has(botId),
       activeOpponents,
       futureBoard: getFutureBoardCards(room.deck, room.communityCards.length),
       persona: meta.bot.persona,
