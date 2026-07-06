@@ -421,7 +421,8 @@ const Stepper = ({
       <button
         onClick={() => onChange(Math.max(min, value - step))}
         disabled={disabled || value <= min}
-        className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/5 hover:bg-white/10 text-white/80 disabled:opacity-20 disabled:cursor-not-allowed"
+        aria-label={`Уменьшить: ${label}`}
+        className="w-11 h-11 flex items-center justify-center rounded-lg bg-white/5 hover:bg-white/10 text-white/80 disabled:opacity-20 disabled:cursor-not-allowed"
       >
         <ChevronLeft size={16} />
       </button>
@@ -431,7 +432,8 @@ const Stepper = ({
       <button
         onClick={() => onChange(Math.min(max, value + step))}
         disabled={disabled || value >= max}
-        className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/5 hover:bg-white/10 text-white/80 disabled:opacity-20 disabled:cursor-not-allowed"
+        aria-label={`Увеличить: ${label}`}
+        className="w-11 h-11 flex items-center justify-center rounded-lg bg-white/5 hover:bg-white/10 text-white/80 disabled:opacity-20 disabled:cursor-not-allowed"
       >
         <ChevronRight size={16} />
       </button>
@@ -476,7 +478,8 @@ const PresetRow = ({
     <button
       onClick={onLeft}
       disabled={leftDisabled}
-      className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/5 hover:bg-white/10 text-white/80 disabled:opacity-20 disabled:cursor-not-allowed"
+      aria-label={`Предыдущий: ${label}`}
+      className="w-11 h-11 flex items-center justify-center rounded-lg bg-white/5 hover:bg-white/10 text-white/80 disabled:opacity-20 disabled:cursor-not-allowed"
     >
       <ChevronLeft size={16} />
     </button>
@@ -484,7 +487,8 @@ const PresetRow = ({
     <button
       onClick={onRight}
       disabled={rightDisabled}
-      className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/5 hover:bg-white/10 text-white/80 disabled:opacity-20 disabled:cursor-not-allowed"
+      aria-label={`Следующий: ${label}`}
+      className="w-11 h-11 flex items-center justify-center rounded-lg bg-white/5 hover:bg-white/10 text-white/80 disabled:opacity-20 disabled:cursor-not-allowed"
     >
       <ChevronRight size={16} />
     </button>

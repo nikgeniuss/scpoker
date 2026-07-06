@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { MotionConfig } from 'framer-motion';
 import { Toaster } from 'react-hot-toast';
 import { Layout } from './components/layout/Layout';
 import { ScrollToTop } from './components/ScrollToTop';
@@ -46,6 +47,7 @@ const MyClubAdmin = lazy(() => import('./pages/myClub/MyClubAdmin').then((m) => 
 
 function App() {
   return (
+    <MotionConfig reducedMotion="user">
     <Router>
       <ScrollToTop />
       <TelegramAutoLogin />
@@ -197,6 +199,7 @@ function App() {
         }}
       />
     </Router>
+    </MotionConfig>
   );
 }
 

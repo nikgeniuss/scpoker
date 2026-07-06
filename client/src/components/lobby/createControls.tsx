@@ -39,18 +39,21 @@ export const Stepper = ({
   onDec,
   onInc,
   disabled,
+  label,
 }: {
   display: ReactNode;
   onDec: () => void;
   onInc: () => void;
   disabled?: boolean;
+  label?: string;
 }) => (
   <div className={'flex items-center gap-2 ' + (disabled ? 'opacity-40' : '')}>
     <button
       type="button"
       disabled={disabled}
       onClick={onDec}
-      className="w-8 h-8 rounded-full bg-gray-700 hover:bg-gray-600 text-white text-lg leading-none flex items-center justify-center disabled:cursor-not-allowed"
+      aria-label={label ? `Уменьшить: ${label}` : 'Уменьшить'}
+      className="w-11 h-11 rounded-full bg-gray-700 hover:bg-gray-600 text-white text-lg leading-none flex items-center justify-center disabled:cursor-not-allowed"
     >
       −
     </button>
@@ -61,7 +64,8 @@ export const Stepper = ({
       type="button"
       disabled={disabled}
       onClick={onInc}
-      className="w-8 h-8 rounded-full bg-gray-700 hover:bg-gray-600 text-white text-lg leading-none flex items-center justify-center disabled:cursor-not-allowed"
+      aria-label={label ? `Увеличить: ${label}` : 'Увеличить'}
+      className="w-11 h-11 rounded-full bg-gray-700 hover:bg-gray-600 text-white text-lg leading-none flex items-center justify-center disabled:cursor-not-allowed"
     >
       +
     </button>
