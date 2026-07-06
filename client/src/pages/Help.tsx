@@ -12,6 +12,7 @@ export function Help() {
 
   return (
     <div className="min-h-[100dvh] bg-[#0a0f1a] text-white flex flex-col">
+    <div className="w-full max-w-md mx-auto flex-1 flex flex-col">
       <div className="flex items-center gap-3 px-4 pt-14 pb-6">
         <button onClick={() => navigate(-1)} className="text-white/40 hover:text-white/80 mr-1">
           <ChevronRight size={22} className="rotate-180" />
@@ -43,6 +44,7 @@ export function Help() {
           })}
         </div>
       </div>
+    </div>
     </div>
   );
 }

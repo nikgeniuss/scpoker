@@ -40,6 +40,7 @@ export function Inbox() {
 
   return (
     <div className="min-h-[100dvh] bg-[#0a0f1a] text-white flex flex-col">
+    <div className="w-full max-w-md mx-auto flex-1 flex flex-col">
       {/* Header */}
       <div className="flex items-center gap-3 px-4 pt-14 pb-4">
         <button
@@ -84,6 +85,7 @@ export function Inbox() {
       </div>
 
       <div className="pb-24" />
+    </div>
     </div>
   );
 }
