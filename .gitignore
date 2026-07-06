@@ -9,6 +9,9 @@ dist/
 .gstack/
 .gstack_bak_*/
 .codegraph/
+.cograph/
+.obsidian/
+/рум/
 
 # Серверные runtime-данные: реальные юзеры/банкроллы (CLAUDE.md §0.3/§0.4)
 server/data/
