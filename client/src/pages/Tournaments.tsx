@@ -8,7 +8,6 @@ import { useAuthStore } from '../store/authStore';
 import { useTournamentStore } from '../store/tournamentStore';
 import { TournamentCard } from '../components/lobby/TournamentCard';
 import { CreateTournamentModal } from '../components/lobby/CreateTournamentModal';
-import { PageBackground } from '../components/layout/PageBackground';
 import type { CreateTournamentOptions } from '@poker-room/shared';
 
 // Турниры (ROADMAP §10 «Турниры», SNG v1). Создаёт ТОЛЬКО админ — реальный призовой фонд
@@ -55,7 +54,6 @@ export const Tournaments = () => {
 
   return (
     <>
-      <PageBackground />
       <div className="container mx-auto px-4 pt-0 pb-12 relative z-10">
         <div className="flex flex-wrap justify-between items-center gap-3 mb-5">
           <h1 className="text-xl font-bold text-white flex items-center gap-2">
