@@ -64,6 +64,15 @@ export function createTournamentsAdminRouter(tournamentManager: TournamentManage
     res.json(result);
   });
 
+  router.delete('/:id', (req, res) => {
+    const result = tournamentManager.remove(req.params.id);
+    if ('error' in result) {
+      res.status(400).json(result);
+      return;
+    }
+    res.json(result);
+  });
+
   router.post('/:id/add-bots', (req, res) => {
     const count = Number((req.body as { count?: unknown }).count);
     if (!Number.isInteger(count) || count < 1) {

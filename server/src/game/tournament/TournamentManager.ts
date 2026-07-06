@@ -163,6 +163,19 @@ export class TournamentManager {
     return t.info;
   }
 
+  // Удаление из списка ЗАВЕРШЁННОГО/отменённого турнира (архивации пока нет, ROADMAP §9.5 —
+  // список иначе засоряется тестовыми турнирами навсегда). registering/running трогать нельзя —
+  // там реальные бай-ины и незавершённая игра, для них есть только cancel().
+  remove(id: string): { ok: true } | ServiceError {
+    const t = this.tournaments.get(id);
+    if (!t) return { error: 'not-found' };
+    if (t.info.status !== 'finished' && t.info.status !== 'cancelled') return { error: 'invalid-status' };
+    this.tournaments.delete(id);
+    console.log(`🏅 [tournament-remove] "${t.info.name}" (id=${id}, status=${t.info.status}) — убран из списка`);
+    this.persist();
+    return { ok: true };
+  }
+
   // Принудительный старт админом до заполнения стола (нужно ≥2 зарегистрированных). Для MTT — единственный
   // способ старта (нет авто-старта по заполнению, в отличие от SNG).
   // testDeck — опциональный параметр для тестов SNG (как GameManager.startGame), production-вызовы его не передают.
