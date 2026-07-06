@@ -8,17 +8,32 @@ import { formatMoney } from '../config/chipFormat';
 
 interface ChartPoint { t: number; cumPnL: number; }
 
+// При тысячах раздач в 320px несколько точек ложатся на один пиксель — резкий свинг за
+// пару раздач рисуется вертикальной «стеной». Даунсэмплим до разумного числа точек
+// (равномерно по индексу, первая/последняя точка сохраняются всегда).
+const MAX_CHART_POINTS = 150;
+function downsample(data: ChartPoint[], maxPoints: number): ChartPoint[] {
+  if (data.length <= maxPoints) return data;
+  const step = (data.length - 1) / (maxPoints - 1);
+  const out: ChartPoint[] = [];
+  for (let i = 0; i < maxPoints; i++) {
+    out.push(data[Math.round(i * step)]);
+  }
+  return out;
+}
+
 // Простой SVG-график кумулятивного PnL (без recharts).
-function BankrollChart({ data }: { data: ChartPoint[] }) {
+function BankrollChart({ data: rawData }: { data: ChartPoint[] }) {
   const { t } = useTranslation();
   const W = 320, H = 120, PAD = 12;
-  if (data.length < 2) {
+  if (rawData.length < 2) {
     return (
       <div className="h-[120px] flex items-center justify-center text-white/20 text-sm">
         {t('pokerCraft.notEnoughData')}
       </div>
     );
   }
+  const data = downsample(rawData, MAX_CHART_POINTS);
   const minY = Math.min(...data.map(d => d.cumPnL));
   const maxY = Math.max(...data.map(d => d.cumPnL));
   const rangeY = maxY - minY || 1;
