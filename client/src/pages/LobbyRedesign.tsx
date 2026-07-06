@@ -305,12 +305,10 @@ function RoomRow({ room, imIn, myQueuePos, onJoin, onQueue, onLeaveQueue, onObse
 
   return (
     <div className={'flex gap-3 px-4 py-3 transition-colors ' + (imIn ? 'bg-emerald-900/20' : 'bg-white/[0.02] hover:bg-white/[0.05]')}>
-      <div className={'w-1 self-stretch rounded-full shrink-0 ' + (room.format === 'shortdeck' ? 'bg-amber-500' : 'bg-emerald-500')} />
-
       <div className="min-w-0 flex-1 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
         <div className="w-28 sm:w-32 shrink-0">
           <div className="text-base font-black text-white tabular-nums">{formatMoney(room.smallBlind)}/{formatMoney(room.bigBlind)}</div>
-          <div className="text-[10px] text-gray-500 uppercase tracking-wide">{room.format === 'shortdeck' ? t('lobby.formatShortdeck') : 'NLH'}</div>
+          <div className={'text-[10px] font-bold uppercase tracking-wide ' + (room.format === 'shortdeck' ? 'text-amber-500' : 'text-emerald-500')}>{room.format === 'shortdeck' ? t('lobby.formatShortdeck') : 'NLH'}</div>
         </div>
 
         <div className="min-w-0 flex-1">
