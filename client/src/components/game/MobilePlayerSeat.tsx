@@ -119,12 +119,13 @@ const MobilePlayerSeatImpl = ({
         (player.isFolded ? 'opacity-50 grayscale ' : '')
       }
     >
-      {/* Bubble сверху (emoji + action) */}
-      {(actionBubble || emojiBubble) && (
+      {/* Bubble сверху (emoji + action). Action-тег героя переехал в fixed-блок карт (GameRoom,
+          единый зелёный стиль — референс AK Poker), здесь для isMe его не рисуем — иначе дубль. */}
+      {(emojiBubble || (actionBubble && !isMe)) && (
         <div className="absolute -top-12 left-1/2 -translate-x-1/2 flex flex-col items-center gap-0.5 pointer-events-none z-30">
           <AnimatePresence mode="popLayout">
             {emojiBubble && <EmojiBubble key={'e-' + emojiBubble.key} emoji={emojiBubble.emoji} />}
-            {actionBubble && (
+            {actionBubble && !isMe && (
               <ActionBubble
                 key={'a-' + actionBubble.key}
                 action={actionBubble.action}

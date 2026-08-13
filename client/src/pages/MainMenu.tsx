@@ -61,9 +61,9 @@ export const MainMenu = () => {
             className="fixed left-1/2 -translate-x-1/2 top-[28%] z-20 w-full max-w-sm px-4"
           >
             {myClub ? (
-              /* Клуб есть — переход в панель */
+              /* Клуб есть — /club сам разрулит владелец/участник */
               <button
-                onClick={() => navigate('/my-club')}
+                onClick={() => navigate('/club')}
                 className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl bg-gray-950/90 border border-emerald-500/30 backdrop-blur-sm hover:border-emerald-400/55 transition-all duration-200 text-left shadow-lg shadow-black/40"
               >
                 <div className="shrink-0 w-11 h-11 rounded-xl bg-gradient-to-br from-emerald-500/25 to-cyan-600/15 border border-emerald-500/30 flex items-center justify-center">

@@ -16,7 +16,7 @@ import { isRoundComplete, computePhaseTransition } from './phaseRules.js';
 import type { Card, GamePhase, RoomStatus, GameFormat } from './types.js';
 import { isBot as isBotId } from './botIdentity.js';
 import { serializeGameState } from './gameStateSerializer.js';
-import { handHintName } from './handHint.js';
+import { handHintName, handRankValue } from './handHint.js';
 import { winProbabilityVsRandom, computeRealEquity } from './equity.js';
 import { computeRabbitHuntEligibility, canPayRabbitHunt } from './rabbitHuntService.js';
 import { readClubs } from './clubsStorage.js';
@@ -747,8 +747,13 @@ export class GameManager implements GameManagerForBots {
     }
   }
 
-  // Создать комнату
-  createRoom(options: CreateRoomOptions, createdBy: string): { roomId: string } | { error: string } {
+  // Создать комнату.
+  // createdBy — имя пользователя (для отображения «Создатель: …» в лобби, см. Room.createdBy).
+  // creatorUserId — реальный userId создателя, нужен отдельно для проверки членства в клубе
+  // (баг 2026-08-11: раньше клубную проверку сверяли по createdBy-имени против club.members[].userId —
+  // никогда не совпадало, «Только для клуба» не работал вообще ни у кого). Необязателен для обратной
+  // совместимости со старыми вызовами/тестами — тогда проверка идёт по createdBy, как раньше.
+  createRoom(options: CreateRoomOptions, createdBy: string, creatorUserId?: string): { roomId: string } | { error: string } {
     const validationError = validateCreateOptions(options);
     if (validationError) {
       return { error: validationError };
@@ -758,8 +763,8 @@ export class GameManager implements GameManagerForBots {
     // создавать клубный стол может только участник этого клуба.
     if (options.clubId) {
       const club = readClubs().find(c => c.id === options.clubId);
-      if (!club || !club.members.some(m => m.userId === createdBy)) {
-        return { error: 'club-membership-required' };
+      if (!club || !club.members.some(m => m.userId === (creatorUserId ?? createdBy))) {
+        return { error: 'Создавать клубный стол может только участник этого клуба' };
       }
     }
 
@@ -2605,13 +2610,16 @@ export class GameManager implements GameManagerForBots {
       const myHint = myPlayer.wantsHint && !myPlayer.isFolded
         ? handHintName(myPlayer.cards, room.communityCards, room.format)
         : undefined;
+      const myRank = myPlayer.wantsHint && !myPlayer.isFolded
+        ? handRankValue(myPlayer.cards, room.communityCards, room.format)
+        : undefined;
       const myWin = myPlayer.wantsHint ? myPlayer.winChance : undefined;
       // Shallow clone + override карт/подсказок только для своего игрока.
       const personalized = {
         ...baseState,
         players: baseState.players.map((p) =>
           p.id === viewer!.id
-            ? { ...p, cards: myPlayer.cards, handHint: myHint, winChance: myWin }
+            ? { ...p, cards: myPlayer.cards, handHint: myHint, handRank: myRank, winChance: myWin }
             : p,
         ),
       };
@@ -2667,6 +2675,10 @@ export class GameManager implements GameManagerForBots {
       : this.settings.responsibleGambling;
     this.settings = { ...this.settings, ...partial, timebank: nextTb, botMode: nextBm, paidFeatures: nextPf, payments: nextPm, responsibleGambling: nextRg };
     writeJSON('settings.json', this.settings);
+    // botMode передавался в BotManager по ссылке только в конструкторе — без этого вызова
+    // BotManager молча работал по старым настройкам (enabled/интервал/botsPerTable) до
+    // рестарта сервера, переключатель в админке физически ничего не делал (найдено 2026-08-11).
+    if (partial.botMode) this.botManager.updateSettings(partial.botMode);
     return { ...this.settings };
   }
 

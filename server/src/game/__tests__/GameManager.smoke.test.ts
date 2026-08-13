@@ -152,7 +152,41 @@ describe('GameManager — test infrastructure smoke', () => {
       },
       'owner',
     );
-    expect(result).toEqual({ error: 'club-membership-required' });
+    expect(result).toEqual({ error: 'Создавать клубный стол может только участник этого клуба' });
+  });
+
+  it('createRoom принимает реальный userId владельца отдельно от createdBy-имени (баг 2026-08-11)', async () => {
+    const { gm } = await createTestGameManager();
+    const { setStorage } = await import('./helpers/storage.js');
+    // username и userId РАЗНЫЕ (как в реальности) — раньше клубная проверка сверяла
+    // createdBy-имя против club.members[].userId и никогда не совпадала.
+    setStorage('clubs.json', [
+      {
+        id: 'club-real',
+        name: 'RealClub',
+        ownerId: 'uuid-owner-123',
+        members: [{ userId: 'uuid-owner-123', username: 'kiroochkaaawl44', role: 'owner', joinedAt: new Date().toISOString() }],
+        inviteCode: 'ABCD1234',
+        pendingRequests: [],
+        settings: {},
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    const result = gm.createRoom(
+      {
+        name: 'ClubRoom',
+        smallBlind: 5,
+        bigBlind: 10,
+        maxPlayers: 6,
+        turnDurationSec: 30,
+        buyInMinBb: 20,
+        buyInMaxBb: 100,
+        clubId: 'club-real',
+      },
+      'kiroochkaaawl44', // createdBy — имя для отображения
+      'uuid-owner-123',  // creatorUserId — реальный id для проверки членства
+    );
+    expect('error' in result).toBe(false);
   });
 
   it('MockIo получает emit\'ы от GameManager', async () => {

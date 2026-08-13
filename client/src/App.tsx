@@ -26,8 +26,8 @@ import { Inbox } from './pages/Inbox';
 import { Leaderboard } from './pages/Leaderboard';
 import { DeckPreview } from './pages/DeckPreview';
 import { SeatingPreview } from './pages/SeatingPreview';
-import { RedesignPreview } from './pages/RedesignPreview';
 import { Tournaments } from './pages/Tournaments';
+import { ClubHome } from './pages/club/ClubHome';
 import { RakebackInfo } from './pages/RakebackInfo';
 import { ResponsibleGambling } from './pages/ResponsibleGambling';
 import { Terms } from './pages/Terms';
@@ -72,7 +72,6 @@ function App() {
           <Route path="/privacy" element={<ErrorBoundary><Privacy /></ErrorBoundary>} />
           <Route path="/deck-preview" element={<ErrorBoundary><DeckPreview /></ErrorBoundary>} />
           <Route path="/seating-preview" element={<ErrorBoundary><SeatingPreview /></ErrorBoundary>} />
-          <Route path="/redesign-preview" element={<ErrorBoundary><RedesignPreview /></ErrorBoundary>} />
           <Route
             path="/bad-beat"
             element={
@@ -85,6 +84,7 @@ function App() {
               </ErrorBoundary>
             }
           />
+          <Route path="/club" element={<ErrorBoundary><RequireAuth><ClubHome /></RequireAuth></ErrorBoundary>} />
           <Route
             path="/my-club"
             element={

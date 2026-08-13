@@ -15,11 +15,11 @@
 
 2. **Не редактировать `server/src/*` если пользователь сейчас за реальным столом.** Каждое изменение в `server/src` триггерит nodemon-рестарт — сокеты рвутся, нужен реконнект. Активная раздача (deck/pot/ставки/фаза) переживает рестарт и доигрывается (снапшот в `active-hands.json`, восстановление через `GameManager.restoreActiveHands()` — ROADMAP §9.2, 2026-06-18), но сам разрыв соединения всё равно ощутим за столом. Перед серверным Edit'ом — спросить «играешь?». Клиентские правки (`client/src/*`) безопасны (HMR).
 
-3. **`nodemon.json` watch только `src/`, НЕ `data/`.** Иначе записи в `server/data/*.json` (persistChips, saveRoomsSnapshot) триггерят рестарт → теряем стек в памяти → дублирование/потеря банкролла. Не «оптимизировать» обратно. См. историю инцидента §11.9.1 в [docs/POSTMORTEMS/2026-05.md](docs/POSTMORTEMS/2026-05.md).
+3. **`nodemon.json` watch только `src/`, НЕ `data/`.** Иначе записи в `server/data/*.json` (persistChips, saveRoomsSnapshot) триггерят рестарт → теряем стек в памяти → дублирование/потеря банкролла. Не «оптимизировать» обратно. См. историю инцидента §11.9.1 в [memory/postmortems-2026-Q2.md](memory/postmortems-2026-Q2.md).
 
 4. **Запись в `server/data/*.json` — только атомарно через `writeJSON`** ([server/src/auth/storage.ts](server/src/auth/storage.ts)). Никаких прямых `writeFileSync` на эти файлы. Защита от частично записанного JSON при крэше.
 
-5. **POKER_RULES.md — источник правды для игровой логики.** Если код противоречит [POKER_RULES.md](POKER_RULES.md) — чинить код, не правила. Известные расхождения (A1 min-raise, A3 incomplete all-in) описаны в POKER_RULES.md.
+5. **POKER_RULES.md — источник правды для игровой логики.** Если код противоречит [POKER_RULES.md](POKER_RULES.md) — чинить код, не правила. (Расхождения A1 min-raise/A3 incomplete all-in, упоминавшиеся здесь ранее, закрыты 2026-06-15 — см. [bettingRules.ts](server/src/game/bettingRules.ts).)
 
 6. **Single-session middleware в `io.use()` — не обходить.** При новом handshake любые старые сокеты того же `user.id` получают `forceDisconnect`. Это фича, не баг — она защищает от мульти-аккаунтинга и race condition. Refresh защищён 1-секундной задержкой в `socket.on('disconnect')`.
 
@@ -222,6 +222,14 @@ $ports=@(3001,5173,5174); foreach($p in $ports){ Get-NetTCPConnection -LocalPort
 ## §11. GStack workflow
 
 В окружении установлен [GStack](https://github.com/garrytan/gstack) (`~/.claude/skills/gstack/`) — 48+ skills, использовать **проактивно**. Таблица триггеров «какой skill когда вызывать» + правила «что не делать» вынесены в [docs/GSTACK_WORKFLOW.md](docs/GSTACK_WORKFLOW.md) — прочитать при работе со skill'ами (баг → `/investigate`, UI → `/qa`, ship → `/ship`, ревью → `/review`, security → `/cso`, работа с `server/data` → `/careful`).
+
+---
+
+## §12. task-observer — мета-скилл наблюдений за работой
+
+В начале любой задаче-ориентированной сессии (используются инструменты, есть результат) — вызывать скилл `task-observer` до начала работы. Он копит наблюдения (повторяющиеся паттерны, поправки пользователя, находки по методологии, кандидаты в новые/улучшенные скиллы) в `skill-observations/log.md` в стабильной project-папке харнесса (`~/.claude/projects/<project-id>/`) — НЕ в этом репозитории и не в git. При загрузке любого скилла — проверять лог на OPEN-наблюдения по нему. Раз в ~7 дней при накопленных наблюдениях — предложит comprehensive review одной строкой, не блокируя текущую задачу.
+
+Установлен: [.claude/skills/task-observer/](.claude/skills/task-observer/SKILL.md), автор Eoghan Henn (rebelytics.com), лицензия CC BY 4.0.
 
 <!-- BEGIN sqz-claude-guidance (auto-installed by sqz init; remove this block to disable) -->
 

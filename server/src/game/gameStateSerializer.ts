@@ -1,7 +1,7 @@
 import type { Room } from './GameManager.js';
 import type { GameState } from '@poker-room/shared';
 import { getFutureBoardCards } from './deck.js';
-import { handHintName } from './handHint.js';
+import { handHintName, handRankValue } from './handHint.js';
 import { getBadBeatState } from './badBeatService.js';
 
 // §0.1 — ЕДИНСТВЕННОЕ место, где решается, кому какие карты уходят (была реальная утечка, фикс 2026-05-17).
@@ -29,13 +29,17 @@ export function serializeGameState(room: Room, viewerId?: string, withPeek = fal
     const canSeeCards = withPeek || (contestedShowdown && !p.isFolded) || (viewerId !== undefined && p.id === viewerId);
     // Название комбинации — только тем, кому видны карты (§0.1), и только если зритель включил подсказку.
     let handHint: string | undefined;
+    let handRank: number | undefined;
     if (wantsHint && canSeeCards && !p.isFolded && p.cards.length >= 2) {
       if (withPeek && p.id === viewerId) {
         // Админ на СВОЁМ месте — ИТОГОВАЯ комбинация (борд + будущие карты до 5).
-        handHint = handHintName(p.cards, room.communityCards.concat(futureBoard).slice(0, 5), room.format);
+        const finalBoard = room.communityCards.concat(futureBoard).slice(0, 5);
+        handHint = handHintName(p.cards, finalBoard, room.format);
+        handRank = handRankValue(p.cards, finalBoard, room.format);
       } else {
         // Все прочие (вкл. чужих для админа) — ТЕКУЩАЯ комбинация по открытому борду.
         handHint = handHintName(p.cards, room.communityCards, room.format);
+        handRank = handRankValue(p.cards, room.communityCards, room.format);
       }
     }
     // Шанс на выигрыш — только своё место (считается сервером против случайных, без утечки).
@@ -60,6 +64,7 @@ export function serializeGameState(room: Room, viewerId?: string, withPeek = fal
       // timebank пробрасываем только если он включён на столе — UI решит что рисовать
       timebank: tbOn ? p.timebank : undefined,
       handHint,
+      handRank,
       winChance,
       shownCards,
       revealedCards: p.revealedCards,

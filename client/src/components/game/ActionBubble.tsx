@@ -8,6 +8,9 @@ interface Props {
   amount?: number;
   bigBlind: number;
   displayMode: ChipDisplay;
+  // 'hero' — единый полупрозрачный зелёный стиль (референс AK Poker) для тега действия
+  // на своём месте, вместо цвета по типу действия. Текст берётся тот же (labelKey из STYLE).
+  variant?: 'default' | 'hero';
 }
 
 const STYLE: Record<string, { bg: string; ring: string; labelKey: string }> = {
@@ -38,9 +41,12 @@ const STYLE: Record<string, { bg: string; ring: string; labelKey: string }> = {
   },
 };
 
-export const ActionBubble = ({ action, amount, bigBlind, displayMode }: Props) => {
+const HERO_STYLE = { bg: 'bg-emerald-600/35 backdrop-blur-sm', ring: 'ring-emerald-400/50' };
+
+export const ActionBubble = ({ action, amount, bigBlind, displayMode, variant = 'default' }: Props) => {
   const { t } = useTranslation();
   const s = STYLE[action] || STYLE.fold;
+  const style = variant === 'hero' ? HERO_STYLE : s;
   const showAmount = (action === 'call' || action === 'raise' || action === 'all-in') && amount != null && amount > 0;
   return (
     <motion.div
@@ -50,9 +56,9 @@ export const ActionBubble = ({ action, amount, bigBlind, displayMode }: Props) =
       transition={{ duration: 0.18 }}
       className={
         'inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-white text-xs font-bold shadow-lg ring-2 whitespace-nowrap ' +
-        s.bg +
+        style.bg +
         ' ' +
-        s.ring
+        style.ring
       }
     >
       <span>{t(s.labelKey)}</span>

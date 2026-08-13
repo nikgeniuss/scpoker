@@ -143,7 +143,7 @@ for (const t of TYPES_TO_SYNC) {
 // двусторонняя как для RoomInfo/CreateRoomOptions выше. Но каждое поле shared.Player обязано
 // либо реально храниться в server.Player, либо (если оно считается только в сериализаторе —
 // как handHint/shownCards в gameStateSerializer.ts) попасть в список ниже.
-const COMPUTED_ONLY_PUBLIC_FIELDS = new Set(['handHint', 'shownCards']);
+const COMPUTED_ONLY_PUBLIC_FIELDS = new Set(['handHint', 'handRank', 'shownCards']);
 const sharedPlayerFields = parseInterfaceFields(sharedSrc, 'Player');
 const serverPlayerFields = parseInterfaceFields(serverTypesSrc, 'Player');
 if (!sharedPlayerFields) errors.push('Тип Player не найден в shared/index.ts');

@@ -10,6 +10,16 @@ function isLateRegOpen(t: TournamentInfo): boolean {
   return Date.now() < t.startedAt + t.lateRegMinutes * 60_000;
 }
 
+function isRegNotOpenYet(t: TournamentInfo): boolean {
+  return t.status === 'registering' && !!t.regOpensAt && Date.now() < t.regOpensAt;
+}
+
+function formatScheduled(ts: number, lang: string): string {
+  return new Date(ts).toLocaleString(lang === 'en' ? 'en-US' : 'ru-RU', {
+    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+  });
+}
+
 interface TournamentCardProps {
   tournament: TournamentInfo;
   myId: string | null;
@@ -25,7 +35,7 @@ interface TournamentCardProps {
 export const TournamentCard = ({
   tournament: trn, myId, isAdmin, onRegister, onUnregister, onForceStart, onCancel, onGoToTable, onAddBots,
 }: TournamentCardProps) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [botCount, setBotCount] = useState(3);
   const SPEED_LABEL: Record<TournamentInfo['blindSpeed'], string> = {
     slow: t('tournamentCard.speedSlow'),
@@ -42,6 +52,7 @@ export const TournamentCard = ({
     myBustedCount <= (trn.maxReEntries ?? 0);
   const isFull = trn.type === 'sng' && trn.entries.length >= trn.tableSize;
   const lateRegOpen = isLateRegOpen(trn);
+  const regNotOpenYet = isRegNotOpenYet(trn);
 
   return (
     <motion.div
@@ -111,6 +122,11 @@ export const TournamentCard = ({
             🎯 {t('tournamentCard.bounty')} {trn.bountyPercent}% {trn.bountyType === 'progressive' ? 'PKO' : ''}
           </span>
         )}
+        {trn.status === 'registering' && !!trn.scheduledStartAt && (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white/5 text-gray-300">
+            {t('tournamentCard.scheduledStart', { time: formatScheduled(trn.scheduledStartAt, i18n.language) })}
+          </span>
+        )}
       </div>
 
       {trn.bountyEnabled && myEntry && trn.status === 'running' && (
@@ -148,6 +164,10 @@ export const TournamentCard = ({
           >
             {t('tournamentCard.unregister')}
           </button>
+        ) : regNotOpenYet ? (
+          <div className="w-full py-2 rounded-xl text-center font-bold bg-gray-800 text-gray-400 text-sm">
+            {t('tournamentCard.regOpensAt', { time: formatScheduled(trn.regOpensAt!, i18n.language) })}
+          </div>
         ) : (
           <button
             onClick={onRegister}

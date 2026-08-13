@@ -94,6 +94,15 @@ describe('TournamentManager — SNG, полный цикл', () => {
     expect(chipsOf(gm, roomId, 'A')).toBe(2000);
     expect(chipsOf(gm, roomId, 'B')).toBe(0);
 
+    // Живой рэнкинг в это же окно (турнир ещё running, оба ещё 'playing') — реальные стеки после
+    // раздачи, не стартовые: A впереди по фишкам получает place=1.
+    const standings = tm.getStandings(id)!;
+    expect(standings.entries).toEqual([
+      { userId: 'A', username: 'Alice', chips: 2000, place: 1 },
+      { userId: 'B', username: 'Bob', chips: 0, place: 2 },
+    ]);
+    expect(standings.playersRemaining).toBe(2);
+
     // Окно шоудауна (5с) — после него cleanupHand → autoLeaveBrokePlayers → onTournamentBust → finish().
     vi.advanceTimersByTime(6000);
 
@@ -193,6 +202,45 @@ describe('TournamentManager — SNG, полный цикл', () => {
     // A (победитель) — тоже уведомлён, отдельно от B, синхронно в finish().
     const aResult = sockA.emitted.find((e) => e.event === SOCKET_EVENTS.TOURNAMENT_RESULT)?.payload as TournamentResultPayload;
     expect(aResult).toMatchObject({ place: 1, isWinner: true, prize: a.prize, totalEntries: 2 });
+  });
+
+  it('рейк (rakePercent) уменьшает призовой фонд мимо игроков, но не трогает дебет/рефанд бай-ина', async () => {
+    const { gm } = await createTestGameManager();
+    const tm = new TournamentManager(gm as unknown as GameManager);
+    const created = tm.create(
+      {
+        name: 'Rake Test', type: 'sng', format: 'nlh', buyIn: 1000, startingStack: 1000,
+        tableSize: 6, blindSpeed: 'regular', levelUpMinutes: 10, rakePercent: 10,
+      },
+      'admin1',
+    );
+    if ('error' in created) throw new Error(created.error);
+    expect(created.rakePercent).toBe(10);
+
+    const regA = tm.register(created.id, 'A', 'Alice');
+    if ('error' in regA) throw new Error(regA.error);
+    // Бай-ин 1000, рейк 10% = 100 → в prizePool уходит 900, не 1000.
+    expect(regA.prizePool).toBe(900);
+    // Банкролл списан на полный бай-ин (рейк — это раскладка ВНУТРИ prizePool, не доп. списание).
+    expect(usersChips()).toEqual({ A: 4000, B: 5000 });
+
+    const regB = tm.register(created.id, 'B', 'Bob');
+    if ('error' in regB) throw new Error(regB.error);
+    expect(regB.prizePool).toBe(1800);
+
+    // Отмена возвращает игрокам ПОЛНЫЙ бай-ин (рейк не был реальным списанием сверху).
+    const cancelled = tm.cancel(created.id);
+    if ('error' in cancelled) throw new Error(cancelled.error);
+    expect(usersChips()).toEqual({ A: 5000, B: 5000 });
+  });
+
+  it('rakePercent вне диапазона [0,50] или нецелый — отказ создания', async () => {
+    const { gm } = await createTestGameManager();
+    const tm = new TournamentManager(gm as unknown as GameManager);
+    const base = { name: 'Bad Rake', type: 'sng' as const, format: 'nlh' as const, buyIn: 1000, startingStack: 1000, tableSize: 6, blindSpeed: 'regular' as const, levelUpMinutes: 10 };
+    expect(tm.create({ ...base, rakePercent: -1 }, 'admin1')).toEqual({ error: 'invalid-rake-percent' });
+    expect(tm.create({ ...base, rakePercent: 51 }, 'admin1')).toEqual({ error: 'invalid-rake-percent' });
+    expect(tm.create({ ...base, rakePercent: 5.5 }, 'admin1')).toEqual({ error: 'invalid-rake-percent' });
   });
 
   it('HUD «через сколько вырастут блайнды и на сколько» — обновляется на каждом уровне', async () => {

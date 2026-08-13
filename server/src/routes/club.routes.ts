@@ -11,6 +11,8 @@ import {
   kickMember,
   regenerateInviteCode,
   searchOpenClubs,
+  leaveClub,
+  getMyPendingRequest,
 } from '../game/clubService.js';
 
 // Роуты клубов (/api/clubs/*). Все требуют авторизации; owner-only — через requireClubOwner.
@@ -72,6 +74,11 @@ export function createClubRouter(): Router {
     res.json(searchOpenClubs(q));
   });
 
+  // Моя заявка на вступление, ожидающая решения владельца другого клуба (или null)
+  router.get('/my-request', (req, res) => {
+    res.json(getMyPendingRequest((req as unknown as { user: { id: string } }).user.id));
+  });
+
   // Обновить настройки клуба (только owner)
   router.put('/:id', requireClubOwner, (req, res) => {
     const { name, openJoin } = req.body;
@@ -110,6 +117,17 @@ export function createClubRouter(): Router {
       return;
     }
     res.json(result);
+  });
+
+  // Покинуть клуб (сам участник, не owner)
+  router.post('/:id/leave', (req, res) => {
+    const result = leaveClub(String(req.params.id), (req as unknown as { user: { id: string } }).user.id);
+    if ('error' in result) {
+      const status = result.error === 'not-found' || result.error === 'not-member' ? 404 : 400;
+      res.status(status).json({ error: result.error });
+      return;
+    }
+    res.json({ ok: true });
   });
 
   // Перегенерировать инвайт-код (только owner)

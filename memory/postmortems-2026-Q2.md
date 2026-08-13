@@ -24,23 +24,23 @@
 
 После аудита (general-purpose агент, см. итоги в чате 2026-05-26) сделаны 5 главных оптимизаций.
 
-**#5 — decksStore O(1) lookup** ([client/src/store/decksStore.ts](client/src/store/decksStore.ts), [Card.tsx](client/src/components/game/Card.tsx)):
+**#5 — decksStore O(1) lookup** ([client/src/store/decksStore.ts](../client/src/store/decksStore.ts), [Card.tsx](../client/src/components/game/Card.tsx)):
 Раньше `decks.find((d) => d.id === faceStyle)` линейно искал в каждом ререндере карты — на showdown ~115 операций/сек. Добавлено поле `decksById: Map<string, DeckInfo>` (строится в `buildIndex` при load/reload). Card.tsx использует `useDecksStore((s) => s.decksById.get(faceStyle))` — O(1).
 
-**#1 — React.memo для GameRoom-карусели + selectors** ([Card.tsx](client/src/components/game/Card.tsx), [PlayerSeat.tsx](client/src/components/game/PlayerSeat.tsx), [MobilePlayerSeat.tsx](client/src/components/game/MobilePlayerSeat.tsx), [ChipStack.tsx](client/src/components/game/ChipStack.tsx)):
+**#1 — React.memo для GameRoom-карусели + selectors** ([Card.tsx](../client/src/components/game/Card.tsx), [PlayerSeat.tsx](../client/src/components/game/PlayerSeat.tsx), [MobilePlayerSeat.tsx](../client/src/components/game/MobilePlayerSeat.tsx), [ChipStack.tsx](../client/src/components/game/ChipStack.tsx)):
 Раньше тикер `setNow(Date.now())` каждые 200мс ре-рендерил весь GameRoom-дерево (9 PlayerSeat + 9 MobilePlayerSeat + ~20 Card + 9 ChipStack = ~235 рендеров/сек). Каждый компонент обёрнут в `React.memo(XxxImpl)` (default shallow compare). Props для inactive игроков (`turnSecondsLeft={undefined}`, стабильный `player` reference между тиками) — memo скипает. Активный игрок ре-рендерится для countdown ring (нужное поведение). **~10× меньше рендеров на /game.**
 
-**#2 — Framer infinite loops → CSS @keyframes** ([PlayerSeat.tsx](client/src/components/game/PlayerSeat.tsx), [Card.tsx](client/src/components/game/Card.tsx), [index.css](client/src/index.css)):
+**#2 — Framer infinite loops → CSS @keyframes** ([PlayerSeat.tsx](../client/src/components/game/PlayerSeat.tsx), [Card.tsx](../client/src/components/game/Card.tsx), [index.css](../client/src/index.css)):
 - PlayerSeat: `motion.div animate={boxShadow: [...]} transition={repeat: Infinity}` → обычный `<div className="active-turn-pulse">` + `@keyframes active-turn-pulse` в CSS. Compositor thread вместо main.
 - Card: `transition={type: 'spring', duration: 0.4}` → `{ease: 'easeOut', duration: 0.35}`. Spring физика дороже линейного easing на каждой карте, разница незаметна визуально.
 
-**#3 — broadcastGameState dedup** ([GameManager.ts](server/src/game/GameManager.ts)):
+**#3 — broadcastGameState dedup** ([GameManager.ts](../server/src/game/GameManager.ts)):
 Раньше getGameState вызывался N раз по числу сокетов в комнате (9-max × 13 broadcast'ов/раздача = 117 объектов). Теперь:
 - На showdown все видят всё → 1 emit через `io.to(roomId).emit` (socket.io serialize один раз).
 - Иначе строим base-state один раз (без карт), для каждого сокета shallow clone с override `players[me].cards = realCards`. Peek-сокеты — отдельная сборка (редко).
 - Net: на 9-max столе ~9× меньше CPU на serialize в getGameState.
 
-**#4 — writeJSON async + debounce 200мс** ([server/src/auth/storage.ts](server/src/auth/storage.ts)):
+**#4 — writeJSON async + debounce 200мс** ([server/src/auth/storage.ts](../server/src/auth/storage.ts)):
 Раньше `writeFileSync + renameSync` блокировали event loop на 5-20мс × N writes/раздачу. Теперь:
 - API `writeJSON(filename, data)` остался sync-style (без `await`).
 - Внутри: data → `writeBuffer.set(filename, data)`, planSched 200мс таймер, на срабатывании flush через `fsPromises.writeFile + rename`.
@@ -62,9 +62,9 @@
 
 **Проблема:** при F5 на своём ходу сервер мгновенно фолдил игрока.
 
-**Root cause** в [handleDisconnect](server/src/game/GameManager.ts): если игрок отвалился во время своего хода, код мгновенно ставил `isFolded=true` + `nextPlayer(roomId)`. Это перекрывало 1-сек defer single-session в index.ts: defer мог сработать ДО того как новый сокет F5'нул и пришёл, → handleDisconnect → instant fold. Особенно через Cloudflare tunnel где F5-reconnect занимает 2-3 сек.
+**Root cause** в [handleDisconnect](../server/src/game/GameManager.ts): если игрок отвалился во время своего хода, код мгновенно ставил `isFolded=true` + `nextPlayer(roomId)`. Это перекрывало 1-сек defer single-session в index.ts: defer мог сработать ДО того как новый сокет F5'нул и пришёл, → handleDisconnect → instant fold. Особенно через Cloudflare tunnel где F5-reconnect занимает 2-3 сек.
 
-**Фикс:** убран instant-fold блок. handleDisconnect теперь только ставит `disconnected=true` и заводит 30-сек grace-таймер на удаление. Turn-таймер сервера продолжает идти своим темпом — если игрок реконнектится раньше, нет проблем; если timeout — обычный auto-CHECK (если call=0) или auto-FOLD через [startTurnTimer](server/src/game/GameManager.ts).
+**Фикс:** убран instant-fold блок. handleDisconnect теперь только ставит `disconnected=true` и заводит 30-сек grace-таймер на удаление. Turn-таймер сервера продолжает идти своим темпом — если игрок реконнектится раньше, нет проблем; если timeout — обычный auto-CHECK (если call=0) или auto-FOLD через [startTurnTimer](../server/src/game/GameManager.ts).
 
 **Шероховатости:**
 - Если игрок реально ушёл (не F5) — стол ждёт до turn-timeout (13-25 сек настройка стола) вместо мгновенного фолда. Приемлемо: turn-таймер ограничивает сверху.
@@ -74,15 +74,15 @@
 ### 11.50. Rebrand POKER HUB + showdown lift-фикс + admin-peek mobile (2026-05-26)
 
 **Rebrand SK Poker → POKER HUB** (под домен `poker-hub.city`):
-- [client/index.html](client/index.html) `<title>` → «Poker Hub».
-- [Layout.tsx](client/src/components/layout/Layout.tsx) navbar лого — единая строка «POKER HUB» с CSS-классом `.neon-logo` (циан/мадженто glow, без пульсации).
-- [MainMenu.tsx](client/src/pages/MainMenu.tsx) — большой неон-заголовок и кнопки убраны полностью; страница = фон `/images/main-bg.jpg` (без overlay) + маленький статус-блок снизу.
+- [client/index.html](../client/index.html) `<title>` → «Poker Hub».
+- [Layout.tsx](../client/src/components/layout/Layout.tsx) navbar лого — единая строка «POKER HUB» с CSS-классом `.neon-logo` (циан/мадженто glow, без пульсации).
+- [MainMenu.tsx](../client/src/pages/MainMenu.tsx) — большой неон-заголовок и кнопки убраны полностью; страница = фон `/images/main-bg.jpg` (без overlay) + маленький статус-блок снизу.
 - Добавлена 4-я вкладка «Турниры» в bottom-bar и desktop-nav, disabled со скоро.
-- Новые CSS-классы в [index.css](client/src/index.css): `.neon-logo` (steady, navbar) и `.neon-title` (с пульсацией, не используется — оставлено как fallback).
+- Новые CSS-классы в [index.css](../client/src/index.css): `.neon-logo` (steady, navbar) и `.neon-title` (с пульсацией, не используется — оставлено как fallback).
 
 **Showdown UX-фикс — было два бага:**
-1. **Карты победителя не показывались** на mobile-овале: `hasCardsInHand` в GameRoom исключал phase==='showdown', из-за чего overlay в [MobilePlayerSeat](client/src/components/game/MobilePlayerSeat.tsx) не рендерил cards. Условие изменено на `state.phase !== 'waiting' && !player.isFolded` — теперь cards visible и в раздаче и на showdown.
-2. **Winning-карты светились вместо «выезжания вверх»** — пользователь хотел только lift. В [Card.tsx](client/src/components/game/Card.tsx) убран класс `.card-winning-glow` из highlightCls; оставлен только framer-motion lift `y: -18` + `scale: 1.06`. CSS-класс `.card-winning-glow` остался в index.css на случай если потребуется обратно.
+1. **Карты победителя не показывались** на mobile-овале: `hasCardsInHand` в GameRoom исключал phase==='showdown', из-за чего overlay в [MobilePlayerSeat](../client/src/components/game/MobilePlayerSeat.tsx) не рендерил cards. Условие изменено на `state.phase !== 'waiting' && !player.isFolded` — теперь cards visible и в раздаче и на showdown.
+2. **Winning-карты светились вместо «выезжания вверх»** — пользователь хотел только lift. В [Card.tsx](../client/src/components/game/Card.tsx) убран класс `.card-winning-glow` из highlightCls; оставлен только framer-motion lift `y: -18` + `scale: 1.06`. CSS-класс `.card-winning-glow` остался в index.css на случай если потребуется обратно.
 
 **Admin-peek mobile полировка:**
 - Карты соперников при peek = `size="sm"` (как рубашки), раньше были `lg` — слишком большие.
@@ -103,16 +103,16 @@
 
 **Что сделано:**
 
-- **[client/index.html](client/index.html)**: подключён `<script src="https://telegram.org/js/telegram-web-app.js"></script>` до main bundle. Без него `window.Telegram.WebApp` не появляется даже внутри Telegram webview.
-- **[server/src/config.ts](server/src/config.ts)**: добавлена опциональная env-переменная `TELEGRAM_BOT_TOKEN`. Если не задана — в dev печатает warning, в проде НЕ роняет сервер (в отличие от JWT_SECRET) — endpoint просто отдаёт 503.
-- **[server/src/auth/auth.ts](server/src/auth/auth.ts)**:
+- **[client/index.html](../client/index.html)**: подключён `<script src="https://telegram.org/js/telegram-web-app.js"></script>` до main bundle. Без него `window.Telegram.WebApp` не появляется даже внутри Telegram webview.
+- **[server/src/config.ts](../server/src/config.ts)**: добавлена опциональная env-переменная `TELEGRAM_BOT_TOKEN`. Если не задана — в dev печатает warning, в проде НЕ роняет сервер (в отличие от JWT_SECRET) — endpoint просто отдаёт 503.
+- **[server/src/auth/auth.ts](../server/src/auth/auth.ts)**:
   - В `User` добавлено поле `telegramId?: number`.
   - Экспортирован тип `TelegramUserPayload`.
   - `validateTelegramInitData(initData, botToken, maxAgeSec=86400)` — HMAC-SHA256 валидация по [официальному алгоритму](https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app): пересобирает `data_check_string` (ключи alphabetical, `\n` между, без `hash`), считает `secret_key = HMAC("WebAppData", botToken)`, потом `computed = HMAC(dataCheckString, secret_key)`, сравнивает через `crypto.timingSafeEqual`. Дополнительно проверяет `auth_date` (отказ если старше 24 ч — защита от replay).
   - `loginOrRegisterTelegramUser(tg)` — находит юзера по `telegramId` или создаёт нового. Username: предпочитает `@username` из TG (если соответствует regex `[A-Za-z0-9_]{3,32}`), иначе `tg<id>`. Email синтетический `tg-<id>@telegram.local`. `passwordHash=''` (bcrypt.compareSync на пустом hash вернёт false → вход по паролю невозможен). Первый юзер становится admin'ом как и при обычной регистрации. Возвращает `{ token, user }` или null если найденный юзер забанен.
-- **[server/src/index.ts](server/src/index.ts)**: `POST /api/auth/telegram` принимает `{ initData: string }`, возвращает `{ token, user }` в той же форме что login/register. 503 — нет BOT_TOKEN, 400 — нет initData, 401 — невалидная подпись, 403 — бан.
-- **[client/src/components/auth/TelegramAutoLogin.tsx](client/src/components/auth/TelegramAutoLogin.tsx)** — новый компонент. Mount один раз в App.tsx. Если в `window.Telegram.WebApp.initData` есть данные и `!token` в authStore — шлёт `POST /api/auth/telegram`, при успехе `authStore.login()` + `toast` + (если на `/login`/`/register`) `navigate('/lobby')`. На любую ошибку — молча падает в обычный flow (юзер увидит MainMenu и сможет залогиниться руками).
-- **[client/src/App.tsx](client/src/App.tsx)**: добавлен `<TelegramAutoLogin />` сразу после `<Router>`, до `<Layout>`.
+- **[server/src/index.ts](../server/src/index.ts)**: `POST /api/auth/telegram` принимает `{ initData: string }`, возвращает `{ token, user }` в той же форме что login/register. 503 — нет BOT_TOKEN, 400 — нет initData, 401 — невалидная подпись, 403 — бан.
+- **[client/src/components/auth/TelegramAutoLogin.tsx](../client/src/components/auth/TelegramAutoLogin.tsx)** — новый компонент. Mount один раз в App.tsx. Если в `window.Telegram.WebApp.initData` есть данные и `!token` в authStore — шлёт `POST /api/auth/telegram`, при успехе `authStore.login()` + `toast` + (если на `/login`/`/register`) `navigate('/lobby')`. На любую ошибку — молча падает в обычный flow (юзер увидит MainMenu и сможет залогиниться руками).
+- **[client/src/App.tsx](../client/src/App.tsx)**: добавлен `<TelegramAutoLogin />` сразу после `<Router>`, до `<Layout>`.
 
 **Что нужно когда будет домен:**
 
@@ -132,7 +132,7 @@
 - **Single-session middleware vs TG auto-login**: если юзер залогинен в одной вкладке email/password, потом откроет TG MiniApp и auto-login создаст новый token для того же `telegramId`-юзера — middleware закроет первую вкладку. Безопасное поведение, но UX странный. Сейчас telegramId не привязывается к существующему юзеру через email — только полностью новый аккаунт. Поэтому коллизия маловероятна.
 - **Скрипт SDK через CDN telegram.org** — если CDN недоступен, в TWA нечем будет инициироваться (window.Telegram.WebApp пустой). Telegram свой CDN сам контролирует — но при отдельном self-hosted сценарии стоит вшить SDK локально.
 - **`maxAgeSec=86400` (24 часа)** — Telegram рекомендует это значение, но если юзер открыл MiniApp вчера и оставил вкладку, при следующем взаимодействии получит 401. Безопасно, нечего чинить — это replay-protection.
-- **Нет admin-индикатора что юзер привязан к TG** — в [Admin.tsx](client/src/pages/Admin.tsx) не показывается telegramId. Если админу важно различать TG vs обычных — добавить чипс «TG» + поле `telegramId` в `GET /api/admin/users`.
+- **Нет admin-индикатора что юзер привязан к TG** — в [Admin.tsx](../client/src/pages/Admin.tsx) не показывается telegramId. Если админу важно различать TG vs обычных — добавить чипс «TG» + поле `telegramId` в `GET /api/admin/users`.
 - **Тесты на прод-домене не выполнял** (нет домена). Сценарии для будущей проверки:
   - (а) В Telegram desktop/mobile открыть бот → клик «Open Mini App» → app загружается с inline indicator «📱 Telegram Mini App» (он уже есть в MainMenu).
   - (б) Первый раз: auto-login создаёт юзера, toast «Вход через Telegram», навигация в /lobby. Юзер в users.json с `telegramId=<id>`, `email='tg-<id>@telegram.local'`, `username` из TG или fallback.
@@ -147,7 +147,7 @@
 
 **Изменения:**
 
-- [server/src/decks/decks.ts:22](server/src/decks/decks.ts#L22) — добавлен `.svg` в `IMAGE_EXT`. SVG раньше не парсились, хотя `<img>` тэг их рендерит из коробки. Одна строка.
+- [server/src/decks/decks.ts:22](../server/src/decks/decks.ts#L22) — добавлен `.svg` в `IMAGE_EXT`. SVG раньше не парсились, хотя `<img>` тэг их рендерит из коробки. Одна строка.
 - `scripts/generate-classic-deck.mjs` — генератор-скрипт (Node ESM, ~180 строк). Запуск: `node scripts/generate-classic-deck.mjs`. Создаёт 52 карты + BACK.svg в `images/classic/`. Параметрический — стиль/цвета/координаты в одном месте, можно перегенерить если захочется поменять.
 - `images/classic/` — новая папка с 53 SVG-файлами (~2-4 КБ каждый). Стиль:
   - viewBox 200×280 (стандарт 5:7), белый фон, тонкая серая рамка с rounded-corners
@@ -157,12 +157,12 @@
   - A: большая масть 130px в центре
   - ♠♣ цвет `#1a1a1a` (почти-чёрный), ♥♦ `#c0282d` (стандартный покерный красный)
   - BACK.svg: красный фон `#9d1d1d` + диагональный pattern из ромбов + белая внутренняя рамка
-- [server/data/design.json](server/data/design.json) — `cardFaceStyle` сменён `"cards"` → `"classic"`. Это глобальный дефолт через `GET /api/design`. Старая колода `cards` (премиум-винтаж) остаётся доступной в админке как альтернатива.
+- [server/data/design.json](../server/data/design.json) — `cardFaceStyle` сменён `"cards"` → `"classic"`. Это глобальный дефолт через `GET /api/design`. Старая колода `cards` (премиум-винтаж) остаётся доступной в админке как альтернатива.
 
 **Pipeline уже всё умел:**
-- `app.use('/decks', express.static(IMAGES_DIR))` ([index.ts](server/src/index.ts)) — раздаёт SVG как любую другую статику.
-- `scanDecks()` ([decks.ts:132](server/src/decks/decks.ts#L132)) — авто-парсер имён файлов распознал все 52 карты (формат `<rank><suit>.svg`, например `AS.svg`, `10H.svg`).
-- `Card.tsx` ([client/src/components/game/Card.tsx](client/src/components/game/Card.tsx)) — рендерит через `<img src=...>`, SVG ничем не отличается от PNG.
+- `app.use('/decks', express.static(IMAGES_DIR))` ([index.ts](../server/src/index.ts)) — раздаёт SVG как любую другую статику.
+- `scanDecks()` ([decks.ts:132](../server/src/decks/decks.ts#L132)) — авто-парсер имён файлов распознал все 52 карты (формат `<rank><suit>.svg`, например `AS.svg`, `10H.svg`).
+- `Card.tsx` ([client/src/components/game/Card.tsx](../client/src/components/game/Card.tsx)) — рендерит через `<img src=...>`, SVG ничем не отличается от PNG.
 - Никаких клиентских правок не понадобилось.
 
 **Серверная проверка (без визуала):**
@@ -192,14 +192,14 @@ unmapped: [ 'BACK.svg' ]   ← рубашка корректно не распо
 
 Делегировал general-purpose агенту по подробному ТЗ. Агент работал ~25 минут, написал 88 тестов в 7 файлах, не модифицировал production-код.
 
-**Файлы** (все в [server/src/game/__tests__/](server/src/game/__tests__/)):
-- [GameManager.positions.test.ts](server/src/game/__tests__/GameManager.positions.test.ts) — 14 тестов. HU / 3-max / 4-max / 6-max / 9-max preflop+postflop порядок, BB option, folded SB skip, all-in skip, BB option raise re-open.
-- [GameManager.actions.test.ts](server/src/game/__tests__/GameManager.actions.test.ts) — 23 теста. fold/check/call/raise/all-in валидация, out-of-turn, chips=0, неизвестные actions, PLAYER_ACTION_BROADCAST.
-- [GameManager.minRaise.test.ts](server/src/game/__tests__/GameManager.minRaise.test.ts) — 6 тестов (3 lock-in + 3 `it.fails` для A1). Спека §5.1.
-- [GameManager.allInReopen.test.ts](server/src/game/__tests__/GameManager.allInReopen.test.ts) — 5 тестов (2 `it.fails` для A3 + 3 lock-in). Спека §5.2.
-- [GameManager.phases.test.ts](server/src/game/__tests__/GameManager.phases.test.ts) — 10 тестов. Preflop→flop→turn→river→showdown с burn-картами, all-in run-out, между-стрит-reset.
-- [GameManager.pots.test.ts](server/src/game/__tests__/GameManager.pots.test.ts) — 14 тестов. Single winner, split 2/3-way, odd chip, folded commit в pot, uncalled bet, 2-layer / 3-layer side pots с конкретными числами chips.
-- [GameManager.lifecycle.test.ts](server/src/game/__tests__/GameManager.lifecycle.test.ts) — 16 тестов. Multi-hand, dealer rotation, timebank bonus/cap, late entry, disconnect 30s grace, reconnect, auto-check vs auto-fold, timebank Phase 2.
+**Файлы** (все в [server/src/game/__tests__/](../server/src/game/__tests__/)):
+- [GameManager.positions.test.ts](../server/src/game/__tests__/GameManager.positions.test.ts) — 14 тестов. HU / 3-max / 4-max / 6-max / 9-max preflop+postflop порядок, BB option, folded SB skip, all-in skip, BB option raise re-open.
+- [GameManager.actions.test.ts](../server/src/game/__tests__/GameManager.actions.test.ts) — 23 теста. fold/check/call/raise/all-in валидация, out-of-turn, chips=0, неизвестные actions, PLAYER_ACTION_BROADCAST.
+- [GameManager.minRaise.test.ts](../server/src/game/__tests__/GameManager.minRaise.test.ts) — 6 тестов (3 lock-in + 3 `it.fails` для A1). Спека §5.1.
+- [GameManager.allInReopen.test.ts](../server/src/game/__tests__/GameManager.allInReopen.test.ts) — 5 тестов (2 `it.fails` для A3 + 3 lock-in). Спека §5.2.
+- [GameManager.phases.test.ts](../server/src/game/__tests__/GameManager.phases.test.ts) — 10 тестов. Preflop→flop→turn→river→showdown с burn-картами, all-in run-out, между-стрит-reset.
+- [GameManager.pots.test.ts](../server/src/game/__tests__/GameManager.pots.test.ts) — 14 тестов. Single winner, split 2/3-way, odd chip, folded commit в pot, uncalled bet, 2-layer / 3-layer side pots с конкретными числами chips.
+- [GameManager.lifecycle.test.ts](../server/src/game/__tests__/GameManager.lifecycle.test.ts) — 16 тестов. Multi-hand, dealer rotation, timebank bonus/cap, late entry, disconnect 30s grace, reconnect, auto-check vs auto-fold, timebank Phase 2.
 
 **Финальный счёт:** `npm test` — **178 passed / 0 failed**. Vitest показывает `it.fails` тесты как ✓ если они правильно фейлятся под текущим кодом (5 шт. для A1+A3).
 
@@ -215,7 +215,7 @@ unmapped: [ 'BACK.svg' ]   ← рубашка корректно не распо
 GameManager непокрытые строки 1751-1786 — bot/admin методы (`hasOpenAutoBotTable`, `createBotTable`, `seatBot`, `buildBotContext`, `applyBotAction`, `adminKickPlayer`, `adminForceCloseRoom`, `setAdminPeek`). Это явный out-of-scope в плане тестирования §H — не баг.
 
 **Изменения конфига:**
-- [vitest.config.ts](server/vitest.config.ts) GameManager functions threshold снижен 70→60% с комментарием «admin/bot out-of-scope».
+- [vitest.config.ts](../server/vitest.config.ts) GameManager functions threshold снижен 70→60% с комментарием «admin/bot out-of-scope».
 
 **Что НЕ сделано (явно out-of-scope):**
 - Admin-методы (adminKickPlayer и т.п.) не тестируются. При желании покрыть — ~6-8 простых тестов, ~30 минут.
@@ -237,7 +237,7 @@ GameManager непокрытые строки 1751-1786 — bot/admin метод
 
 **Файлы которые тронуты:**
 - 7 новых test-файлов
-- [vitest.config.ts](server/vitest.config.ts) functions threshold 70→60
+- [vitest.config.ts](../server/vitest.config.ts) functions threshold 70→60
 
 Production code (`GameManager.ts`, `hands.ts`, `deck.ts`, helpers) **не тронут**. Подтверждено по timestamps файлов и grep на ключевые фиксы (A2 wheel, A9 two-trips full-house, testDeck DI — все на месте).
 
@@ -257,28 +257,28 @@ npm run test:coverage        # с coverage report (html в server/coverage/index
 
 **Инфра:**
 - `server/package.json`: добавлены devDeps `vitest@^2.1.9` + `@vitest/coverage-v8@^2.1.9`, scripts `test` / `test:watch` / `test:coverage`. `npm install` поднял 104 пакета.
-- [server/vitest.config.ts](server/vitest.config.ts) — `environment: node`, `globals: false` (явные импорты), coverage thresholds 95/95/70 для hands/deck/GameManager.
-- [server/tsconfig.json](server/tsconfig.json) `exclude` дополнен `src/**/*.test.ts` и `src/**/__tests__/**` — `tsc` не ронит тесты в `dist/`.
-- [server/nodemon.json](server/nodemon.json) `ignore` — тот же набор. `npm run dev` не рестартит при `npm run test:watch`.
+- [server/vitest.config.ts](../server/vitest.config.ts) — `environment: node`, `globals: false` (явные импорты), coverage thresholds 95/95/70 для hands/deck/GameManager.
+- [server/tsconfig.json](../server/tsconfig.json) `exclude` дополнен `src/**/*.test.ts` и `src/**/__tests__/**` — `tsc` не ронит тесты в `dist/`.
+- [server/nodemon.json](../server/nodemon.json) `ignore` — тот же набор. `npm run dev` не рестартит при `npm run test:watch`.
 
 **Тесты этапа 1 (90 passed, 0 failed):**
-- [server/src/game/__tests__/hands.test.ts](server/src/game/__tests__/hands.test.ts) — 65 тестов. Все категории рук, кикеры, wheel, steel wheel (regression для §11.45 fix), determineWinner, compareHands cross-category, formatHandName русские строки.
-- [server/src/game/__tests__/deck.test.ts](server/src/game/__tests__/deck.test.ts) — 22 теста. createDeck (52 уникальные), shuffleDeck (multiset, no mutation, seeded determinism), dealCards (pop-порядок), dealCommunityCards (burn перед раздачей), getFutureBoardCards для alreadyOnBoard 0/3/4/5 + e2e сценарий с реальной раздачей улиц.
-- [server/src/game/__tests__/GameManager.smoke.test.ts](server/src/game/__tests__/GameManager.smoke.test.ts) — 3 теста. Проверяет что фундамент целостно работает: vi.mock storage, MockIo, testDeck DI, seatPlayer.
+- [server/src/game/__tests__/hands.test.ts](../server/src/game/__tests__/hands.test.ts) — 65 тестов. Все категории рук, кикеры, wheel, steel wheel (regression для §11.45 fix), determineWinner, compareHands cross-category, formatHandName русские строки.
+- [server/src/game/__tests__/deck.test.ts](../server/src/game/__tests__/deck.test.ts) — 22 теста. createDeck (52 уникальные), shuffleDeck (multiset, no mutation, seeded determinism), dealCards (pop-порядок), dealCommunityCards (burn перед раздачей), getFutureBoardCards для alreadyOnBoard 0/3/4/5 + e2e сценарий с реальной раздачей улиц.
+- [server/src/game/__tests__/GameManager.smoke.test.ts](../server/src/game/__tests__/GameManager.smoke.test.ts) — 3 теста. Проверяет что фундамент целостно работает: vi.mock storage, MockIo, testDeck DI, seatPlayer.
 
 **Helpers** (фундамент для этапа 2):
-- [helpers/cards.ts](server/src/game/__tests__/helpers/cards.ts) — `card(rank, suit)`, `cards(spec)` (parse "As Kh ..."), `hand(spec)` (parse 7 карт в hole+board), `buildDeck(...dealOrder)` (учитывает pop-семантику, паддит до 52 уникальных).
-- [helpers/storage.ts](server/src/game/__tests__/helpers/storage.ts) — in-memory подмена `auth/storage.ts`. Подключается per-test-file через `vi.mock('../../auth/storage.js', () => import('./helpers/storage.js'))`.
-- [helpers/ioMock.ts](server/src/game/__tests__/helpers/ioMock.ts) — минимальный двойник `socket.io Server`: `io.to(target).emit`, `io.sockets.sockets`, `io.sockets.adapter.rooms`. Эмиты накапливаются в `io.emitted` и `sock.emitted` для assertion'ов.
-- [helpers/gameManager.ts](server/src/game/__tests__/helpers/gameManager.ts) — `resetStorage()` сеет defaults (settings, bots с одним noop-ботом, пустые users/rooms), `createTestGameManager()` динамически импортирует GameManager после vi.mock, `seatPlayer()` пишет в users.json, создаёт сокет, зовёт addPlayer.
+- [helpers/cards.ts](../server/src/game/__tests__/helpers/cards.ts) — `card(rank, suit)`, `cards(spec)` (parse "As Kh ..."), `hand(spec)` (parse 7 карт в hole+board), `buildDeck(...dealOrder)` (учитывает pop-семантику, паддит до 52 уникальных).
+- [helpers/storage.ts](../server/src/game/__tests__/helpers/storage.ts) — in-memory подмена `auth/storage.ts`. Подключается per-test-file через `vi.mock('../../auth/storage.js', () => import('./helpers/storage.js'))`.
+- [helpers/ioMock.ts](../server/src/game/__tests__/helpers/ioMock.ts) — минимальный двойник `socket.io Server`: `io.to(target).emit`, `io.sockets.sockets`, `io.sockets.adapter.rooms`. Эмиты накапливаются в `io.emitted` и `sock.emitted` для assertion'ов.
+- [helpers/gameManager.ts](../server/src/game/__tests__/helpers/gameManager.ts) — `resetStorage()` сеет defaults (settings, bots с одним noop-ботом, пустые users/rooms), `createTestGameManager()` динамически импортирует GameManager после vi.mock, `seatPlayer()` пишет в users.json, создаёт сокет, зовёт addPlayer.
 
 **DI в startGame:**
-- [GameManager.ts:822/834](server/src/game/GameManager.ts#L822) — `startGame(roomId: string, testDeck?: Card[])`. При `testDeck` shuffle пропускается. 3 production caller'а (index.ts socket handler, scheduleAutoStart timer, cleanupHand) передают только `roomId` — обратно-совместимо.
+- [GameManager.ts:822/834](../server/src/game/GameManager.ts#L822) — `startGame(roomId: string, testDeck?: Card[])`. При `testDeck` shuffle пропускается. 3 production caller'а (index.ts socket handler, scheduleAutoStart timer, cleanupHand) передают только `roomId` — обратно-совместимо.
 
 **A9 (FIXED): full-house из двух трипсов** не определялся.
 
 - Симптом: рука вида `AAA + KKK` на 7 картах (например, 2 сета через борд) определялась как `three-of-a-kind`, не как full-house. Тест в hands.test.ts «full-house: два сета → старший trips + второй как pair» это поймал.
-- Root cause [hands.ts:188](server/src/game/hands.ts#L188): `if (hasThree && pairs >= 1)` — `pairs` считает только группы ровно из 2 карт. При двух тройках `pairs=0` → ветка пропускалась → falls through к three-of-a-kind.
+- Root cause [hands.ts:188](../server/src/game/hands.ts#L188): `if (hasThree && pairs >= 1)` — `pairs` считает только группы ровно из 2 карт. При двух тройках `pairs=0` → ветка пропускалась → falls through к three-of-a-kind.
 - Production impact: `AAA+KKK` (value=4 как trips) проигрывал любому реальному фулл-хаусу (`JJJ+22`, value=7) — серьёзная ошибка ранкинга в довольно частом сценарии (сет + спаренный борд).
 - Fix: добавил `tripsCount = counts.filter(c => c === 3).length`, расширил условие до `hasThree && (pairs >= 1 || tripsCount >= 2)`. Для случая двух трипсов: старший trips играет как trips, второй — как pair.
 - Тот же класс что A2 (steel wheel) — локальная правка `evaluateHand`, ~12 строк.
@@ -310,13 +310,13 @@ npm run test:coverage        # с coverage report (html в server/coverage/index
 
 **Аудит** выявил 3 критических расхождения с правилами + 5 допустимых упрощений (см. полный список в чате 2026-05-24). По договорённости с пользователем пофикшен только 1 баг:
 
-**A2 (FIXED): Steel wheel** ([hands.ts:161-175](server/src/game/hands.ts#L161-L175)). Раньше для стрит-флеша A-2-3-4-5 `highCard = Math.max(...)` давало 14 (туз) → formatHandName выдавал «Стрит-флеш до туза» и `compareHands` считал wheel **сильнее** 6-high стрит-флеша — **прямое нарушение ранкинга рук**. Заменил `Math.max` на `sfCards[0].rank` (как уже сделано для обычного стрита) — `pickStraightCards` возвращает массив с правильной старшей картой первой (5 для wheel, иначе максимум). Royal-флеш отдельно ловится через проверку ranksSet ⊇ {10,J,Q,K,A}, wheel её не проходит. Должно также закрыть мистерию «Стрит-флеш до undefined» в логах ботов из §11.36.
+**A2 (FIXED): Steel wheel** ([hands.ts:161-175](../server/src/game/hands.ts#L161-L175)). Раньше для стрит-флеша A-2-3-4-5 `highCard = Math.max(...)` давало 14 (туз) → formatHandName выдавал «Стрит-флеш до туза» и `compareHands` считал wheel **сильнее** 6-high стрит-флеша — **прямое нарушение ранкинга рук**. Заменил `Math.max` на `sfCards[0].rank` (как уже сделано для обычного стрита) — `pickStraightCards` возвращает массив с правильной старшей картой первой (5 для wheel, иначе максимум). Royal-флеш отдельно ловится через проверку ranksSet ⊇ {10,J,Q,K,A}, wheel её не проходит. Должно также закрыть мистерию «Стрит-флеш до undefined» в логах ботов из §11.36.
 
 **Не пофикшено (пользователь оставил на потом):**
 
-- **A1: Min-raise формула** ([GameManager.ts:951](server/src/game/GameManager.ts#L951) + [ActionPanel.tsx:43](client/src/components/game/ActionPanel.tsx#L43)) — сейчас `max(currentBet*2, currentBet+BB)`, должно быть `currentBet + lastRaiseSize`. Сервер реджектит валидные re-raise после 3-bet+. Пример провала: BB=10, A raise to 30, B re-raise to 50 (валидно по NLH) → код требует ≥60. **Чем чинить:** добавить `room.lastRaiseSize` в Room/GameState, обновлять при каждом полном raise (не при incomplete all-in), синхронизировать формулу сервер+клиент. Поле пробросить через GameState чтобы ActionPanel считал тот же min.
+- **A1: Min-raise формула** ([GameManager.ts:951](../server/src/game/GameManager.ts#L951) + [ActionPanel.tsx:43](../client/src/components/game/ActionPanel.tsx#L43)) — сейчас `max(currentBet*2, currentBet+BB)`, должно быть `currentBet + lastRaiseSize`. Сервер реджектит валидные re-raise после 3-bet+. Пример провала: BB=10, A raise to 30, B re-raise to 50 (валидно по NLH) → код требует ≥60. **Чем чинить:** добавить `room.lastRaiseSize` в Room/GameState, обновлять при каждом полном raise (не при incomplete all-in), синхронизировать формулу сервер+клиент. Поле пробросить через GameState чтобы ActionPanel считал тот же min.
 
-- **A3: Incomplete all-in re-opens action** ([GameManager.ts:963-972](server/src/game/GameManager.ts#L963-L972)) — сейчас любой all-in с повышением currentBet делает `actionsThisRound = new Set([userId])`. По правилу 5.2 спека: incomplete all-in (прирост < lastRaiseSize) НЕ открывает action для уже-сходивших call'еров — они могут только call/fold, не re-raise. **Чем чинить:** хранить «закрытые от re-raise» в параллельной структуре или через флаг на игроке. Сложный фикс, может потребовать Plan-агента. Реальная частота сценария — редко (короткие стеки в all-in over partial bet).
+- **A3: Incomplete all-in re-opens action** ([GameManager.ts:963-972](../server/src/game/GameManager.ts#L963-L972)) — сейчас любой all-in с повышением currentBet делает `actionsThisRound = new Set([userId])`. По правилу 5.2 спека: incomplete all-in (прирост < lastRaiseSize) НЕ открывает action для уже-сходивших call'еров — они могут только call/fold, не re-raise. **Чем чинить:** хранить «закрытые от re-raise» в параллельной структуре или через флаг на игроке. Сложный фикс, может потребовать Plan-агента. Реальная частота сценария — редко (короткие стеки в all-in over partial bet).
 
 **A4-A8 (отклонения, оставлены как casual):**
 - Late entry без принудительного поста BB (упрощение UX).
@@ -327,15 +327,15 @@ npm run test:coverage        # с coverage report (html в server/coverage/index
 
 **Не баги (подтверждены аудитом):**
 
-- Heads-up D=SB ([GameManager.ts:871](server/src/game/GameManager.ts#L871)) ✓
-- Multi-way UTG=(D+3)%N префлоп ([GameManager.ts:879](server/src/game/GameManager.ts#L879), §11.28) ✓
+- Heads-up D=SB ([GameManager.ts:871](../server/src/game/GameManager.ts#L871)) ✓
+- Multi-way UTG=(D+3)%N префлоп ([GameManager.ts:879](../server/src/game/GameManager.ts#L879), §11.28) ✓
 - BB option ✓
-- Auto-CHECK на тайм-аут когда canCheck ([GameManager.ts:1030-1033](server/src/game/GameManager.ts#L1030), §11.29) ✓
-- Side pots через `totalCommitted` ([GameManager.ts:1252-1323](server/src/game/GameManager.ts#L1252), §11.26) ✓
-- Burn-карты перед flop/turn/river ([deck.ts:52](server/src/game/deck.ts#L52)) ✓
+- Auto-CHECK на тайм-аут когда canCheck ([GameManager.ts:1030-1033](../server/src/game/GameManager.ts#L1030), §11.29) ✓
+- Side pots через `totalCommitted` ([GameManager.ts:1252-1323](../server/src/game/GameManager.ts#L1252), §11.26) ✓
+- Burn-карты перед flop/turn/river ([deck.ts:52](../server/src/game/deck.ts#L52)) ✓
 - `nextPlayer` пропускает chips=0 (all-in skip) ✓
-- Wheel-стрит (без флеша) даёт highCard=5 ([hands.ts:82](server/src/game/hands.ts#L82)) ✓
-- `determineWinner` ловит empty active ([hands.ts:329](server/src/game/hands.ts#L329)) ✓
+- Wheel-стрит (без флеша) даёт highCard=5 ([hands.ts:82](../server/src/game/hands.ts#L82)) ✓
+- `determineWinner` ловит empty active ([hands.ts:329](../server/src/game/hands.ts#L329)) ✓
 
 **Шероховатости steel wheel фикса:**
 
@@ -346,7 +346,7 @@ npm run test:coverage        # с coverage report (html в server/coverage/index
 
 **Файлы:**
 - `POKER_RULES.md` — новый, ~340 строк.
-- [server/src/game/hands.ts:161-175](server/src/game/hands.ts#L161-L175) — fix A2.
+- [server/src/game/hands.ts:161-175](../server/src/game/hands.ts#L161-L175) — fix A2.
 
 ### 11.44. Mobile GameRoom редизайн под референс ClubGG (2026-05-23, in-progress)
 
@@ -354,7 +354,7 @@ npm run test:coverage        # с coverage report (html в server/coverage/index
 
 **Что сделано в коде:**
 
-1. **Новая тема `clubgg`** добавлена в [client/src/config/design.ts](client/src/config/design.ts) (TABLE_THEME_PRESETS) — «зелёный felt + чёрный rail». В [client/src/index.css](client/src/index.css) — правила:
+1. **Новая тема `clubgg`** добавлена в [client/src/config/design.ts](../client/src/config/design.ts) (TABLE_THEME_PRESETS) — «зелёный felt + чёрный rail». В [client/src/index.css](../client/src/index.css) — правила:
    - `.theme-clubgg` background: `radial-gradient(#3e9b58 → #2f8447 → #226a36)`
    - `.theme-clubgg .poker-oval-rail` через **multi-stop box-shadow** (без border): `0 0 0 4px #050505, 0 0 0 26px #1a1a1c, 0 0 0 28px #2c2c2e, 0 -2px 0 4px rgba(255,255,255,0.08), 0 18px 40px rgba(0,0,0,0.85)` — даёт ~28px чёрный 3D-bumper с top highlight + drop shadow.
    - `.theme-clubgg .poker-watermark` — белый ghost-text (opacity 0.10) с !important + обнулённый `-webkit-text-fill-color` (иначе classic-gradient перебивает).
@@ -363,9 +363,9 @@ npm run test:coverage        # с coverage report (html в server/coverage/index
    - `.mobile-seat-nameplate` — компактная плашка под аватаром (78-92px width).
    - `.poker-watermark--center` — `clamp(56px, 22vw, 110px)` для центра овала.
 
-2. **Тема `clubgg` захардкожена на mobile** через `<div className="md:hidden theme-clubgg ...">` в [client/src/pages/GameRoom.tsx](client/src/pages/GameRoom.tsx) — игнорируем `design.tableTheme` от админки на mobile (по запросу юзера, чтобы не было конфликта пока полируем). Desktop тема — как было.
+2. **Тема `clubgg` захардкожена на mobile** через `<div className="md:hidden theme-clubgg ...">` в [client/src/pages/GameRoom.tsx](../client/src/pages/GameRoom.tsx) — игнорируем `design.tableTheme` от админки на mobile (по запросу юзера, чтобы не было конфликта пока полируем). Desktop тема — как было.
 
-3. **Новый компонент [client/src/components/game/MobilePlayerSeat.tsx](client/src/components/game/MobilePlayerSeat.tsx)** — структура:
+3. **Новый компонент [client/src/components/game/MobilePlayerSeat.tsx](../client/src/components/game/MobilePlayerSeat.tsx)** — структура:
    - Аватар (40px для соперников, 48px для me) — цветной кружок с инициалом + TurnProgressRing для current player.
    - Плашка `mobile-seat-nameplate` снизу: username (белый или amber-300 для me) + chips (amber-300 жирный).
    - Hole-cards overlay 42×58px СЛЕВА от аватара (для me — `-left-16`, для соперников — `-left-10`), z-20, ромбический паттерн через `repeating-linear-gradient(45deg)`. На showdown — `<Card size="md">` лицом.
@@ -373,7 +373,7 @@ npm run test:coverage        # с coverage report (html в server/coverage/index
    - Timebank в top-left, FOLD pill в bottom-center, disconnect 🔌 pill.
    - Action/emoji bubble через AnimatePresence в `-top-12 z-30`.
 
-4. **Утилита [client/src/utils/seatLayout.ts](client/src/utils/seatLayout.ts)** — `buildSeatLayout(N)` возвращает массив `{left, top, chipLeft, chipTop}` с координатами в % от овала. PRESETS жёстко заданы для N=2..9, `me` всегда индекс 0 = bottom-center (50, 88). Soседи: для 4-6 max x:10/90, для 7-9 разнесены.
+4. **Утилита [client/src/utils/seatLayout.ts](../client/src/utils/seatLayout.ts)** — `buildSeatLayout(N)` возвращает массив `{left, top, chipLeft, chipTop}` с координатами в % от овала. PRESETS жёстко заданы для N=2..9, `me` всегда индекс 0 = bottom-center (50, 88). Soседи: для 4-6 max x:10/90, для 7-9 разнесены.
 
 5. **`mobileSeatPositions` useMemo** в GameRoom.tsx — отдельно от existing desktop `seatPositions`. Перестановка players[] так чтобы me был первый (соответствовал layout[0]).
 
@@ -383,7 +383,7 @@ npm run test:coverage        # с coverage report (html в server/coverage/index
    - Layer 2: seats по `mobileSeatPositions` с MobilePlayerSeat
    - Layer 3: ChipStack между seat и центром (chipLeft/chipTop, z-10)
 
-7. **ChipStack апгрейд** в [client/src/components/game/ChipStack.tsx](client/src/components/game/ChipStack.tsx):
+7. **ChipStack апгрейд** в [client/src/components/game/ChipStack.tsx](../client/src/components/game/ChipStack.tsx):
    - Диски `w-6 h-[7px]` (было `w-6 h-2`) с `ring-1 ring-white/40` + drop-shadow.
    - Подпись `text-amber-300` (золотая) на `bg-black/75` (как ClubGG «Общий банк»).
 
@@ -435,13 +435,13 @@ npm run test:coverage        # с coverage report (html в server/coverage/index
 
 **Файлы которые трогал в этой итерации:**
 
-- [client/src/pages/GameRoom.tsx](client/src/pages/GameRoom.tsx) — mobile-блок переписан, root класс, `mobileSeatPositions` useMemo, импорт MobilePlayerSeat + buildSeatLayout.
-- [client/src/components/game/MobilePlayerSeat.tsx](client/src/components/game/MobilePlayerSeat.tsx) — новый файл, ~210 строк.
-- [client/src/utils/seatLayout.ts](client/src/utils/seatLayout.ts) — новый файл, PRESETS+buildSeatLayout.
-- [client/src/components/game/ChipStack.tsx](client/src/components/game/ChipStack.tsx) — diski покрупнее, ring + amber-подпись.
-- [client/src/index.css](client/src/index.css) — `.theme-clubgg` rules, `.poker-watermark--center`, `.pot-plate-mobile`, `.mobile-seat-nameplate`, `.gameroom-root-mobile-clubgg`, mobile @media.
-- [client/src/config/design.ts](client/src/config/design.ts) — `clubgg` пресет в TABLE_THEME_PRESETS.
-- [server/data/design.json](server/data/design.json) — `tableTheme: "classic"` (mobile игнорирует).
+- [client/src/pages/GameRoom.tsx](../client/src/pages/GameRoom.tsx) — mobile-блок переписан, root класс, `mobileSeatPositions` useMemo, импорт MobilePlayerSeat + buildSeatLayout.
+- [client/src/components/game/MobilePlayerSeat.tsx](../client/src/components/game/MobilePlayerSeat.tsx) — новый файл, ~210 строк.
+- [client/src/utils/seatLayout.ts](../client/src/utils/seatLayout.ts) — новый файл, PRESETS+buildSeatLayout.
+- [client/src/components/game/ChipStack.tsx](../client/src/components/game/ChipStack.tsx) — diski покрупнее, ring + amber-подпись.
+- [client/src/index.css](../client/src/index.css) — `.theme-clubgg` rules, `.poker-watermark--center`, `.pot-plate-mobile`, `.mobile-seat-nameplate`, `.gameroom-root-mobile-clubgg`, mobile @media.
+- [client/src/config/design.ts](../client/src/config/design.ts) — `clubgg` пресет в TABLE_THEME_PRESETS.
+- [server/data/design.json](../server/data/design.json) — `tableTheme: "classic"` (mobile игнорирует).
 
 **Чтобы продолжить в следующей сессии:**
 
@@ -461,8 +461,8 @@ npm run test:coverage        # с coverage report (html в server/coverage/index
 ### 11.43. ErrorBoundary + GuestOnly guard (2026-05-23, defensive)
 
 **Что сделано:**
-- [client/src/components/ErrorBoundary.tsx](client/src/components/ErrorBoundary.tsx) — class-component, обёртка вокруг каждого Route в [App.tsx](client/src/App.tsx). Render-крэш в одном route больше не валит соседние. См. §11.41 пункт 3.
-- [client/src/components/auth/GuestOnly.tsx](client/src/components/auth/GuestOnly.tsx) — зеркало `RequireAuth`. Если `token` есть → `<Navigate to="/" replace />`. Применён к `/login` и `/register` в App.tsx — залогиненный юзер не может попасть на формы входа/регистрации.
+- [client/src/components/ErrorBoundary.tsx](../client/src/components/ErrorBoundary.tsx) — class-component, обёртка вокруг каждого Route в [App.tsx](../client/src/App.tsx). Render-крэш в одном route больше не валит соседние. См. §11.41 пункт 3.
+- [client/src/components/auth/GuestOnly.tsx](../client/src/components/auth/GuestOnly.tsx) — зеркало `RequireAuth`. Если `token` есть → `<Navigate to="/" replace />`. Применён к `/login` и `/register` в App.tsx — залогиненный юзер не может попасть на формы входа/регистрации.
 
 **Шероховатости:**
 
@@ -476,16 +476,16 @@ npm run test:coverage        # с coverage report (html в server/coverage/index
 
 **Симптом**: пользователь зашёл на `http://69.164.242.115:5173/lobby` с Xbox-консольного Edge. В шапке виден его ник (значит «залогинен»), но лобби пустое — ни одного стола. С компа и телефона тот же URL работает. После **перелогина на Xbox** всё заработало.
 
-**Root cause**: в localStorage Xbox-браузера лежал старый JWT (возможно подписанный другим `JWT_SECRET` после рестарта сервера в dev, либо expired). `io.use` middleware на сервере ([server/src/index.ts:481-504](server/src/index.ts#L481-L504)) делает `jwt.verify(token, JWT_SECRET)` → бросает → `next(new Error('Invalid token'))` → handshake отклонён → socket вообще не подключается → `lobby:subscribe` нигде не emit'ится → `roomList` никогда не приходит.
+**Root cause**: в localStorage Xbox-браузера лежал старый JWT (возможно подписанный другим `JWT_SECRET` после рестарта сервера в dev, либо expired). `io.use` middleware на сервере ([server/src/index.ts:481-504](../server/src/index.ts#L481-L504)) делает `jwt.verify(token, JWT_SECRET)` → бросает → `next(new Error('Invalid token'))` → handshake отклонён → socket вообще не подключается → `lobby:subscribe` нигде не emit'ится → `roomList` никогда не приходит.
 
 При этом:
 - `authStore.user` в zustand закэширован (с предыдущей успешной сессии) → шапка рисует ник + chips → визуально кажется «я залогинен».
-- Layout запрашивает `GET /api/auth/me` для свежих chips ([Layout.tsx:31-50](client/src/components/layout/Layout.tsx)) — он тоже отдал бы 401 с invalid token, но клиент это молча проглатывает и оставляет cached значение.
-- `getSocket()` не имеет `connect_error`/`connect_failed` обработчиков ([client/src/lib/socket.ts](client/src/lib/socket.ts)) — пользователь нигде не видит причину.
+- Layout запрашивает `GET /api/auth/me` для свежих chips ([Layout.tsx:31-50](../client/src/components/layout/Layout.tsx)) — он тоже отдал бы 401 с invalid token, но клиент это молча проглатывает и оставляет cached значение.
+- `getSocket()` не имеет `connect_error`/`connect_failed` обработчиков ([client/src/lib/socket.ts](../client/src/lib/socket.ts)) — пользователь нигде не видит причину.
 
 В итоге UX: «вроде залогинен, но лобби пустое навсегда».
 
-**Что починил** (2026-05-23): в [Layout.tsx](client/src/components/layout/Layout.tsx) добавлен глобальный обработчик `socket.on('connect_error', ...)` рядом с forceDisconnect. При `err.message === 'Invalid token'` или `'No token'` (точные строки из `io.use` в [server/src/index.ts:481-504](server/src/index.ts#L481-L504)) — toast «Сессия устарела, войдите снова», `logout()` (он же чистит localStorage + disconnectSocket), `navigate('/login')`. Прочие connect_error (сеть, server down — `xhr poll error`, `websocket error` и т.п.) **игнорируются** — не делать logout на каждый сбой связи. Closure-`socket` в cleanup — тот же паттерн, что у forceDisconnect, не создаёт новый socket после disconnectSocket.
+**Что починил** (2026-05-23): в [Layout.tsx](../client/src/components/layout/Layout.tsx) добавлен глобальный обработчик `socket.on('connect_error', ...)` рядом с forceDisconnect. При `err.message === 'Invalid token'` или `'No token'` (точные строки из `io.use` в [server/src/index.ts:481-504](../server/src/index.ts#L481-L504)) — toast «Сессия устарела, войдите снова», `logout()` (он же чистит localStorage + disconnectSocket), `navigate('/login')`. Прочие connect_error (сеть, server down — `xhr poll error`, `websocket error` и т.п.) **игнорируются** — не делать logout на каждый сбой связи. Closure-`socket` в cleanup — тот же паттерн, что у forceDisconnect, не создаёт новый socket после disconnectSocket.
 
 **Шероховатости (для следующей итерации):**
 
@@ -505,15 +505,15 @@ npm run test:coverage        # с coverage report (html в server/coverage/index
 1. **Mockup-фаза** (`~/.gstack/projects/scpoker/designs/poker-table-20260521/`) — 5 HTML-эскизов (A=GGPoker Classic / B=Luxe Casino / C=Dark Wood / D=Minimal Modern / E=Neon Arcade) + `comparison.html` с табами и viewport-симулятором (320/390/768/1280/Fluid). Plan-агент спроектировал smart layout: формулы рассадки для N=2/3/4/6/9 на эллипсе с Ax=38/Ay=32, fluid-sizing через `clamp/dvh/svh`, aspect-ratio плавно от 0.78:1 phone portrait → 2:1 desktop. 3 параллельных general-purpose агента предложили 41 доработку; пользователь одобрил 16.
 
 2. **React-реализация** — добавлен бандл `tableTheme: 'classic' | 'luxe' | 'wood'` в `DesignConfig`. Файлы:
-   - [client/src/config/design.ts](client/src/config/design.ts) — `tableTheme: string` + `TABLE_THEME_PRESETS` (3 пресета)
-   - [server/data/design.json](server/data/design.json) — дефолт `"classic"`
-   - [client/src/index.css](client/src/index.css) — ~280 строк themed-CSS: `.theme-classic/luxe/wood` бандлом задают felt-цвет + rail-визуал + watermark + spotlight + lighting (Tiffany flicker для wood). Универсальные правки: `font-variant-numeric: tabular-nums`, `.poker-card-shadow` (multi-layer drop shadow), `.animate-timer-shake`, `.poker-chip-disc::before` (banded для classic), `.theme-luxe .player-info-block` (frosted glass nameplates, backdrop-filter blur), `.theme-luxe .is-current .player-avatar-wrap::after` (cyan-pulse), brass nailheads (14) + inlay rim для wood.
-   - [client/src/pages/GameRoom.tsx](client/src/pages/GameRoom.tsx) — `themeCls = 'theme-' + design.tableTheme` на root + замена простого border-div на `.poker-oval-rail` (gold/chrome/wood с pseudo-elements) + watermark «SK» + spotlight-слой
-   - [client/src/pages/Admin.tsx](client/src/pages/Admin.tsx) — новая секция «Тема стола» с 3 карточками (legacy «Сукно стола» переименован для контраста)
-   - [client/src/components/game/Card.tsx](client/src/components/game/Card.tsx) — `shadow-lg` → `poker-card-shadow` в 2 ветках (back + face)
-   - [client/src/components/game/TurnProgressRing.tsx](client/src/components/game/TurnProgressRing.tsx) — `animate-timer-shake` класс при `variant === 'turn-urgent'`
-   - [client/src/components/game/ChipStack.tsx](client/src/components/game/ChipStack.tsx) — `poker-chip-disc` класс на каждый disc для CSS-таргета
-   - [client/src/components/game/PlayerSeat.tsx](client/src/components/game/PlayerSeat.tsx) — стабильные классы `player-info-block`, `player-avatar-wrap`, и `is-current` на outer-motion (для Luxe cyan-pulse)
+   - [client/src/config/design.ts](../client/src/config/design.ts) — `tableTheme: string` + `TABLE_THEME_PRESETS` (3 пресета)
+   - [server/data/design.json](../server/data/design.json) — дефолт `"classic"`
+   - [client/src/index.css](../client/src/index.css) — ~280 строк themed-CSS: `.theme-classic/luxe/wood` бандлом задают felt-цвет + rail-визуал + watermark + spotlight + lighting (Tiffany flicker для wood). Универсальные правки: `font-variant-numeric: tabular-nums`, `.poker-card-shadow` (multi-layer drop shadow), `.animate-timer-shake`, `.poker-chip-disc::before` (banded для classic), `.theme-luxe .player-info-block` (frosted glass nameplates, backdrop-filter blur), `.theme-luxe .is-current .player-avatar-wrap::after` (cyan-pulse), brass nailheads (14) + inlay rim для wood.
+   - [client/src/pages/GameRoom.tsx](../client/src/pages/GameRoom.tsx) — `themeCls = 'theme-' + design.tableTheme` на root + замена простого border-div на `.poker-oval-rail` (gold/chrome/wood с pseudo-elements) + watermark «SK» + spotlight-слой
+   - [client/src/pages/Admin.tsx](../client/src/pages/Admin.tsx) — новая секция «Тема стола» с 3 карточками (legacy «Сукно стола» переименован для контраста)
+   - [client/src/components/game/Card.tsx](../client/src/components/game/Card.tsx) — `shadow-lg` → `poker-card-shadow` в 2 ветках (back + face)
+   - [client/src/components/game/TurnProgressRing.tsx](../client/src/components/game/TurnProgressRing.tsx) — `animate-timer-shake` класс при `variant === 'turn-urgent'`
+   - [client/src/components/game/ChipStack.tsx](../client/src/components/game/ChipStack.tsx) — `poker-chip-disc` класс на каждый disc для CSS-таргета
+   - [client/src/components/game/PlayerSeat.tsx](../client/src/components/game/PlayerSeat.tsx) — стабильные классы `player-info-block`, `player-avatar-wrap`, и `is-current` на outer-motion (для Luxe cyan-pulse)
 
 **Статус 16 доработок** (все done в коде):
 - Universal: tabular nums, card multi-layer shadows, felt recess (через rail inset), timer shake + red glow
@@ -525,7 +525,7 @@ npm run test:coverage        # с coverage report (html в server/coverage/index
 
 1. ✅ ~~Lobby = белая страница~~ — снято. `/lobby` (без логина → редирект на `/login`) рендерится, console чистая. Скорее всего был транзитный после HMR в момент мокап-итерации, ушёл после рестарта сервера.
 2. ✅ ~~CreateRoomModal не открывается~~ — снято вместе с (1).
-3. ✅ ~~TimebankSection крашит~~ — снято. `GET /api/admin/settings` возвращает полный объект с `timebank: { enabled, startSec, bonusSec, bonusEveryHands, capSec, allowPerTableOverride }` — все 6 полей. `tb.enabled` в [Admin.tsx:919](client/src/pages/Admin.tsx#L919) теперь читается. **Защитный guard** (`tb={settings.timebank ?? DEFAULT}` / `timebank?:`) не добавлял по правилу §1 «ничего лишнего» — если баг повторится, чинить тогда.
+3. ✅ ~~TimebankSection крашит~~ — снято. `GET /api/admin/settings` возвращает полный объект с `timebank: { enabled, startSec, bonusSec, bonusEveryHands, capSec, allowPerTableOverride }` — все 6 полей. `tb.enabled` в [Admin.tsx:919](../client/src/pages/Admin.tsx#L919) теперь читается. **Защитный guard** (`tb={settings.timebank ?? DEFAULT}` / `timebank?:`) не добавлял по правилу §1 «ничего лишнего» — если баг повторится, чинить тогда.
 4. ✅ ~~Server log access~~ — закрыто. Сейчас `npm run dev` запущен в фоне с `tee dev.log` (старый ротирован в `dev.log.bak-pre-2026-05-23`). Live-логи grep'аются.
 
 **Шероховатости:**
@@ -543,9 +543,9 @@ npm run test:coverage        # с coverage report (html в server/coverage/index
 
 1. ~~Дебаг белой страницы Lobby~~ — снято, не воспроизводится.
 2. ~~Починить TimebankSection~~ — снято, не воспроизводится.
-3. ✅ ~~Добавить ErrorBoundary~~ — сделано 2026-05-23. Новый компонент [client/src/components/ErrorBoundary.tsx](client/src/components/ErrorBoundary.tsx) (class component с `getDerivedStateFromError` + `componentDidCatch` → console.error). Fallback UI: красная плашка «Что-то пошло не так» + раскрывающийся блок с `error.message` + кнопки «Перезагрузить» (`window.location.reload`) и «На главную» (`window.location.href='/'`). Каждый Route в [App.tsx](client/src/App.tsx) теперь обёрнут в `<ErrorBoundary>` — крэш на `/admin` больше не валит `/lobby`. **Ограничения React-ErrorBoundary** (документированы в коде): ловит только render-ошибки. Event handlers, async, Promise rejections — не ловит (обычное поведение React).
+3. ✅ ~~Добавить ErrorBoundary~~ — сделано 2026-05-23. Новый компонент [client/src/components/ErrorBoundary.tsx](../client/src/components/ErrorBoundary.tsx) (class component с `getDerivedStateFromError` + `componentDidCatch` → console.error). Fallback UI: красная плашка «Что-то пошло не так» + раскрывающийся блок с `error.message` + кнопки «Перезагрузить» (`window.location.reload`) и «На главную» (`window.location.href='/'`). Каждый Route в [App.tsx](../client/src/App.tsx) теперь обёрнут в `<ErrorBoundary>` — крэш на `/admin` больше не валит `/lobby`. **Ограничения React-ErrorBoundary** (документированы в коде): ловит только render-ошибки. Event handlers, async, Promise rejections — не ловит (обычное поведение React).
 4. **Ручной QA-прогон 3 темы × 3 брейкпоинта** — для верификации 16 доработок темы.
-5. **Тестовый юзер**: в [users.json](server/data/users.json) лежит `testadmin_audit` (role=admin, password=`audit-2026-05-23`, publicId=A2Q7-K4HA) — оставлен после аудита 2026-05-23. Можно использовать как admin-account для будущих headless-тестов или удалить руками.
+5. **Тестовый юзер**: в [users.json](../server/data/users.json) лежит `testadmin_audit` (role=admin, password=`audit-2026-05-23`, publicId=A2Q7-K4HA) — оставлен после аудита 2026-05-23. Можно использовать как admin-account для будущих headless-тестов или удалить руками.
 
 ### 11.40. Чёрный экран GameRoom при первом mount: AnimatePresence в Layout (2026-05-21, critical-fix)
 
@@ -558,7 +558,7 @@ npm run test:coverage        # с coverage report (html в server/coverage/index
 - JS-ошибок в Console **не было**.
 - DBG-overlay с `position:fixed, zIndex:99999, background:red` — **виден** при первом mount.
 
-**Root cause** ([Layout.tsx:164-174 до фикса](client/src/components/layout/Layout.tsx#L164)):
+**Root cause** ([Layout.tsx:164-174 до фикса](../client/src/components/layout/Layout.tsx#L164)):
 
 ```tsx
 <AnimatePresence mode="wait">
@@ -583,7 +583,7 @@ npm run test:coverage        # с coverage report (html в server/coverage/index
 
 Это **не наш бaг** — это известное поведение framer-motion с `AnimatePresence mode="wait"` + heavy load дочерних motion при mount. Похожие issues есть на GitHub framer/motion.
 
-**Фикс** ([Layout.tsx](client/src/components/layout/Layout.tsx)): удалён весь `<AnimatePresence>`/`<motion.div>`-обёртка, `<main>{children}</main>` напрямую. Простой fade между страницами не стоит race-condition, ломавшей весь основной workflow.
+**Фикс** ([Layout.tsx](../client/src/components/layout/Layout.tsx)): удалён весь `<AnimatePresence>`/`<motion.div>`-обёртка, `<main>{children}</main>` напрямую. Простой fade между страницами не стоит race-condition, ломавшей весь основной workflow.
 
 **Шероховатости:**
 
@@ -601,7 +601,7 @@ npm run test:coverage        # с coverage report (html в server/coverage/index
 1. npm run dev (корень) → 2. concurrently → 3. npm run dev:client → 4. npm run dev:server → 5. npm run dev (внутри client/) → 6. npm run dev (внутри server/) → 7. vite → 8. nodemon → 9. tsx → 10. server.js. Любое лишнее значение — диагностировать (см. 11.39 «правило проверки», §8.4 «При каждом рестарте — сверять»).
 
 **Фикс**:
-- В [BotManager.ts:loadBots](server/src/game/BotManager.ts) — после try/catch добавлена проверка `if (this.bots.size === 0) { seedDefaultPool(); saveBots() }`. Срабатывает при любом сценарии «пул пуст» (нет файла, битый JSON, пустой массив), но **не перезаписывает существующих ботов**.
+- В [BotManager.ts:loadBots](../server/src/game/BotManager.ts) — после try/catch добавлена проверка `if (this.bots.size === 0) { seedDefaultPool(); saveBots() }`. Срабатывает при любом сценарии «пул пуст» (нет файла, битый JSON, пустой массив), но **не перезаписывает существующих ботов**.
 - Новый `seedDefaultPool()` создаёт 12 ботов: 10 из старой истории (Alex88/Pavel_R/Vovan/Tania/RedFox/AnnaG/Max77/Kira_/Nataly/SergG из §11.36) + 2 новых (Igor_K, Olga_M). Распределение `targetPnL`: 8 zero / 2 plus / 2 minus. Persona-параметры (aggression/bluffRate/heroFoldRate/slowplayRate/vpip) — микс TAG/LAG/passive/maniac. Все стартуют с 5000 chips.
 - В CLAUDE.md §8.4 добавлено правило «при каждом рестарте — сверять количество node.exe до и после» с явным ожидаемым числом (10 для `npm run dev`).
 
@@ -616,7 +616,7 @@ npm run test:coverage        # с coverage report (html в server/coverage/index
 
 ### 11.38. Колоды карт из images/ + ручной mapping в админке (2026-05-20)
 
-Заменил CSS-пресеты «Лицо карт» в админке на динамический список колод из подпапок `images/`. Старые id (`classic`/`minimal`/`premium-gold`) остаются в коде [Card.tsx](client/src/components/game/Card.tsx) как fallback, доступны через карточку «Без колоды (CSS)». Сервер раздаёт `images/` как `/decks/*` через `express.static`, авто-парсер имён покрывает стандартный формат `<rank><suit>.png` + варианты с разделителями и длинными словами (`ace_of_clubs`, `king-hearts`). Файлы `BACK*.png` сознательно попадают в `unmappedFiles` (рубашка в этой задаче не реализуется, см. ответ на AskUserQuestion от 2026-05-20). Подробное описание в [§8.2](#82-подсказки-по-проекту) пункт «Колоды карт из `images/`».
+Заменил CSS-пресеты «Лицо карт» в админке на динамический список колод из подпапок `images/`. Старые id (`classic`/`minimal`/`premium-gold`) остаются в коде [Card.tsx](../client/src/components/game/Card.tsx) как fallback, доступны через карточку «Без колоды (CSS)». Сервер раздаёт `images/` как `/decks/*` через `express.static`, авто-парсер имён покрывает стандартный формат `<rank><suit>.png` + варианты с разделителями и длинными словами (`ace_of_clubs`, `king-hearts`). Файлы `BACK*.png` сознательно попадают в `unmappedFiles` (рубашка в этой задаче не реализуется, см. ответ на AskUserQuestion от 2026-05-20). Подробное описание в [§8.2](#82-подсказки-по-проекту) пункт «Колоды карт из `images/`».
 
 **Шероховатости:**
 
@@ -645,7 +645,7 @@ npm run test:coverage        # с coverage report (html в server/coverage/index
 
 ### 11.1. 10.2 ActionPanel preset бет-сайзы (2026-05-15)
 
-- **HMR Fast Refresh warning на [PlayerSeat.tsx](client/src/components/game/PlayerSeat.tsx)** — файл экспортирует и компонент, и константы (`CHIP_COLOR`, `avatarColor`). **Почему отложено:** косметика, влияет только на скорость dev-итераций (страница перезагружается полностью вместо HMR). **Чем чинить:** вынести `CHIP_COLOR` и `avatarColor` в отдельный модуль `client/src/components/game/playerStyle.ts`.
+- **HMR Fast Refresh warning на [PlayerSeat.tsx](../client/src/components/game/PlayerSeat.tsx)** — файл экспортирует и компонент, и константы (`CHIP_COLOR`, `avatarColor`). **Почему отложено:** косметика, влияет только на скорость dev-итераций (страница перезагружается полностью вместо HMR). **Чем чинить:** вынести `CHIP_COLOR` и `avatarColor` в отдельный модуль `client/src/components/game/playerStyle.ts`.
 - **Preset disabled на мини-банке пост-флоп** — если рассчитанная сумма ≤ `minRaiseTotal`, кнопка disabled (33% от маленького банка не дотягивает до min-raise). **Почему отложено:** корректное поведение, но реальный сценарий не тестировал. **Чем чинить:** ручной прогон. При желании — fallback на `minRaiseTotal` с подписью «min».
 - **Ручные тесты в 3 таргетах не выполнял** (desktop 1280 / mobile 375×667 / TWA) — UI-тестирование вне моих возможностей (см. 8.4). Чеклист пунктов: 4 кнопки пресетов помещаются, активный пресет подсвечен emerald, переключение open↔postflop по контексту, localStorage переживает reload.
 
@@ -672,7 +672,7 @@ npm run test:coverage        # с coverage report (html в server/coverage/index
 - **`lastEmojiAt: Map` не чистится при выходе пользователя** — растёт навсегда. Утечка крошечная (~ 50 байт/юзер), но в долгоживущем процессе накопится. **Почему отложено:** не критично. **Чем чинить:** в `handleDisconnect` (или при `leaveRoom`) — `lastEmojiAt.delete(userId)`. Либо TTL через `setTimeout`.
 - **Action bubble и emoji bubble одновременно** — оба отрисуются стопкой. Возможно, что emoji подскочит сразу же после action bubble и они нальются друг на друга. **Почему отложено:** AnimatePresence + spring-анимация эмодзи разводит их во времени, обычно ок. **Чем чинить:** если в прогонах будет мешать — разделить вертикально с большим gap или показывать emoji над action.
 - **Auto-fold по таймауту неразличим визуально** — показывает то же «Фолд» без пометки «авто». **Почему отложено:** маркировка усложняет визуал, для MVP достаточно общего стиля. **Чем чинить:** broadcast'ить флаг `auto: true` и рисовать другой цвет (например, серый).
-- **Подписи на русском хардкодены** — `Фолд / Чек / Колл / Рейз / Олл-ин` в [ActionBubble.tsx](client/src/components/game/ActionBubble.tsx). **Почему отложено:** интернационализации в проекте нет. **Чем чинить:** при появлении i18n — вынести в словарь.
+- **Подписи на русском хардкодены** — `Фолд / Чек / Колл / Рейз / Олл-ин` в [ActionBubble.tsx](../client/src/components/game/ActionBubble.tsx). **Почему отложено:** интернационализации в проекте нет. **Чем чинить:** при появлении i18n — вынести в словарь.
 
 ### 11.4. 10.17 Зелёный акцент + felt-glow + CTA-унификация (2026-05-15)
 
@@ -684,7 +684,7 @@ npm run test:coverage        # с coverage report (html в server/coverage/index
 
 ### 11.5. 10.5 Каркас лобби: шапка + табы форматов + фильтр «ожидающие» (2026-05-16)
 
-- **Таб «Шорт-дэк» — disabled-заглушка.** PLO/SNG/MTT убраны 2026-05-16 (по запросу пользователя — в проекте будут только NLH и Шорт-дэк / Short Deck Hold'em на 36 картах). Остался один disabled-таб «Шорт-дэк». **Почему отложено:** нужен `gameType` на сервере + правила Шорт-дэка (колода 36 карт без 2-5, скирс-стрейт A-6-7-8-9, флэш бьёт фул-хаус, etc). **Чем чинить:** добавить `gameType: 'nlh' | 'shortdeck'` в shared `Room`/`CreateRoomOptions`/`RoomInfo` + поддержка в GameManager + UI выбора в `CreateRoomModal` + правила Шорт-дэка в [hands.ts](server/src/game/hands.ts) и [deck.ts](server/src/game/deck.ts).
+- **Таб «Шорт-дэк» — disabled-заглушка.** PLO/SNG/MTT убраны 2026-05-16 (по запросу пользователя — в проекте будут только NLH и Шорт-дэк / Short Deck Hold'em на 36 картах). Остался один disabled-таб «Шорт-дэк». **Почему отложено:** нужен `gameType` на сервере + правила Шорт-дэка (колода 36 карт без 2-5, скирс-стрейт A-6-7-8-9, флэш бьёт фул-хаус, etc). **Чем чинить:** добавить `gameType: 'nlh' | 'shortdeck'` в shared `Room`/`CreateRoomOptions`/`RoomInfo` + поддержка в GameManager + UI выбора в `CreateRoomModal` + правила Шорт-дэка в [hands.ts](../server/src/game/hands.ts) и [deck.ts](../server/src/game/deck.ts).
 - **`onlineCount` считается по уникальным `playerIds` из rooms[].** Не считает игроков в лобби (которые подключены, но не в комнате). **Почему отложено:** для шапки лобби «игроки в комнатах» осмысленный показатель. **Чем чинить:** если хочется «всего онлайн» — сервер может слать `io.engine.clientsCount` через периодический broadcast.
 - **Кнопка All vs NLH сейчас визуально различимы, но фильтр идентичен** (нет других форматов). Может смутить пользователя, который ожидает разницу. **Почему отложено:** связано с предыдущим пунктом (нужны другие форматы). **Чем чинить:** скрыть NLH-таб когда у нас 1 формат, либо дать ему статус «активен по умолчанию» как у All.
 
@@ -693,7 +693,7 @@ npm run test:coverage        # с coverage report (html в server/coverage/index
 - **3 кнопки приведены к иерархии primary/secondary/disabled** — Быстрая игра emerald-gradient (primary, с shimmer), Создать комнату emerald-translucent (secondary, без shimmer), Турниры серый disabled с тегом «скоро». Декоративные летающие карты сохранены.
 - **«Турниры» физически ведут на `#`** — лучше чем прежний `/lobby?tournaments=true`, но при появлении страницы турниров надо менять `path` и снимать `variant: 'disabled'`. **Почему отложено:** фича 10.11 ещё `💤`. **Чем чинить:** заменить `path` на `/tournaments` и снять disabled.
 - **Декоративные карты при наведении подпрыгивают** — пасхалка из старого дизайна, сохранилась. На тач-экранах hover ничего не делает (см. правило 5.1: hover не должен быть единственным каналом). **Почему отложено:** карты декорация, ничего важного hover не несёт. **Чем чинить:** если хочется, заменить hover-эффект на бесконечный idle-bob.
-- **Заголовок-gradient (emerald→бледный emerald)** в [MainMenu.tsx](client/src/pages/MainMenu.tsx) после 10.17 стал плоским — см. ту же шероховатость в 11.4. Возможный фикс там же.
+- **Заголовок-gradient (emerald→бледный emerald)** в [MainMenu.tsx](../client/src/pages/MainMenu.tsx) после 10.17 стал плоским — см. ту же шероховатость в 11.4. Возможный фикс там же.
 
 ### 11.7. (откат) Настраиваемый порог автостарта — удалён 2026-05-16
 
@@ -701,8 +701,8 @@ npm run test:coverage        # с coverage report (html в server/coverage/index
 
 **Откат:**
 - Поле `autostartMinPlayers` убрано из `RoomInfo`, `CreateRoomOptions`, `Room`, snapshot, `getRoomList`, валидации.
-- Введена константа `AUTO_START_MIN_PLAYERS = 2` в [GameManager.ts](server/src/game/GameManager.ts) — единственный источник.
-- Из [Lobby.tsx](client/src/pages/Lobby.tsx) удалён slider + state + useEffect-clamp + чипс «старт от N».
+- Введена константа `AUTO_START_MIN_PLAYERS = 2` в [GameManager.ts](../server/src/game/GameManager.ts) — единственный источник.
+- Из [Lobby.tsx](../client/src/pages/Lobby.tsx) удалён slider + state + useEffect-clamp + чипс «старт от N».
 - Старые `rooms.json` со значением `autostartMinPlayers` — поле игнорируется при чтении, перезаписывается без него при первом `saveRoomsSnapshot` (входе/выходе игрока).
 
 **Урок:** перед добавлением per-table настройки уточнять у пользователя её semantics. Особенно если поле может быть прочитано двояко (порог низа vs верха).
@@ -711,7 +711,7 @@ npm run test:coverage        # с coverage report (html в server/coverage/index
 
 - **UI-чипсы ровно [13, 15, 18, 20, 25] сек по ClubGG-roadmap, дефолт 20.** Серверная валидация шире — `5..120` сек, чтобы будущий админский API мог выставить кастомное значение в обход чипсов. На клиенте через модалку нельзя выбрать «свой» вариант. **Почему отложено:** в задаче конкретный набор пресетов. **Чем чинить:** добавить «своё число» рядом с чипсами через range/input — потом, когда пользователю не хватит фиксированных значений.
 - **Глобальный `settings.turnDurationMs` (30 сек) больше не применяется к новым столам** через CreateRoomModal (там фиксированный дефолт 20). Но остаётся как fallback в `loadRoomsSnapshot` и в `index.ts` handler'е (если клиент старый и не прислал `turnDurationSec`). Админ-настройки в SettingsTab при этом сохраняют видимость, что глобал «работает», хотя на практике новые столы его игнорируют. **Почему отложено:** убрать глобал означает удалить часть админ-UI и убрать поле из settings.json — отдельная задача. **Чем чинить:** либо привести админ-UI в соответствие («Дефолт для новых столов»), либо удалить поле из settings вовсе.
-- **Стек значений 30→20 для новых столов** — небольшое изменение дефолта геймплея. Если кто-то привык к 30 сек, заметит после рестарта (старый стол сохранит 30 через snapshot, новый стартанёт с 20). **Почему отложено:** пресет 20 — explicit-roadmap-выбор. **Чем чинить:** при желании поменять `DEFAULT_TURN_DURATION_SEC` в [Lobby.tsx](client/src/pages/Lobby.tsx).
+- **Стек значений 30→20 для новых столов** — небольшое изменение дефолта геймплея. Если кто-то привык к 30 сек, заметит после рестарта (старый стол сохранит 30 через snapshot, новый стартанёт с 20). **Почему отложено:** пресет 20 — explicit-roadmap-выбор. **Чем чинить:** при желании поменять `DEFAULT_TURN_DURATION_SEC` в [Lobby.tsx](../client/src/pages/Lobby.tsx).
 - **Бейдж «⏱ Xс на ход» теперь показывается всегда** на RoomCard. Это шум для дефолтных столов, но полезная инфа для нестандартных (10 vs 30 сек — сильное отличие стиля игры). **Почему отложено:** компромисс. **Чем чинить:** условный рендер `room.turnDurationSec !== 20`, если хочется тише.
 - **Время хода нельзя изменить пост-фактум** — только при создании стола. **Почему отложено:** scope. **Чем чинить:** общий механизм PATCH для активных комнат через admin-эндпоинт `PATCH /api/admin/rooms/:roomId`.
 - **Ручной прогон не выполнен.** Сценарии: (а) стол с 13с — таймер на PlayerSeat действительно отсчитывает 13 сек; (б) стол с 25с — действительно 25, не 30; (в) старая комната из `rooms.json` после рестарта сервера сохранила прежнее значение (30 сек); (г) валидация «60 сек» в DevTools-консоли — отклонено сервером. **Чем чинить:** ручной прогон.
@@ -732,7 +732,7 @@ npm run test:coverage        # с coverage report (html в server/coverage/index
 
 - **Что было:** после внедрения 10.6 (бай-ин min/max + раздельный банкролл) при тесте оба игрока теряли все фишки до 0 за несколько действий — без логических раздач. Изначально подозревал гонку single-session middleware с `handleDisconnect`, починил это, но реальный root cause оказался другой.
 - **Настоящий root cause:** **`nodemon --exec tsx src/index.ts` по умолчанию мониторит ts+json в `cwd` (= `server/`).** Поэтому **любая запись** в `server/data/*.json` (через `persistChips` при списании buy-in, `saveRoomsSnapshot` при createRoom/removePlayer) → nodemon видит изменение → рестарт сервера → **вся в-памяти `rooms` Map пропадает**. Игроки получают `disconnect` от socket.io (сервер umount), стек на столе исчезает, но в `users.json` уже зафиксировано списание buy-in. Клиенты автоматически реконнектятся через socket.io, видят пустую комнату, садятся заново, buy-in списывается **ещё раз**, ещё один write → ещё один рестарт. Цикл потери фишек.
-- **Чем починил:** (1) Создал [server/nodemon.json](server/nodemon.json) с `"watch": ["src"]` — теперь nodemon следит только за `server/src/` и игнорирует `server/data/`. (2) Race condition single-session всё равно реальная (пусть и не основная) проблема — `socket.on('disconnect')` отложил на 1 сек с проверкой наличия другого активного сокета того же `user.id`. (3) `requestGameState` handler — если юзер в `room.players`, вызывает `socket.join(roomId) + addPlayer` (реконнект-ветка) для обновления `socketId`. (4) Восстановил `admin.chips`/`natka.chips` обратно до 1000, очистил `rooms.json` дважды (в обеих инцидентах).
+- **Чем починил:** (1) Создал [server/nodemon.json](../server/nodemon.json) с `"watch": ["src"]` — теперь nodemon следит только за `server/src/` и игнорирует `server/data/`. (2) Race condition single-session всё равно реальная (пусть и не основная) проблема — `socket.on('disconnect')` отложил на 1 сек с проверкой наличия другого активного сокета того же `user.id`. (3) `requestGameState` handler — если юзер в `room.players`, вызывает `socket.join(roomId) + addPlayer` (реконнект-ветка) для обновления `socketId`. (4) Восстановил `admin.chips`/`natka.chips` обратно до 1000, очистил `rooms.json` дважды (в обеих инцидентах).
 - **Шероховатости после hotfix:**
   - **1 секунда задержки** перед `handleDisconnect`. Если юзер действительно ушёл (закрыл вкладку без single-session reconnect), его игроки остаются в комнате на лишнюю секунду — visually незаметно, но `roomList` обновится с задержкой.
   - **Защита проверяет только `io.sockets.sockets`** — не учитывает «висящие» подключения через polling-transport, теоретически они могут давать ложное «есть активный сокет». Маловероятно, но возможно.
@@ -792,7 +792,7 @@ npm run test:coverage        # с coverage report (html в server/coverage/index
 
 **Симптом** (жалоба пользователя): у бота winning hand, peek=full → бот видит, что выиграет showdown. Бот рейзует, юзер колит. На ривере юзер all-in → бот **фолдит**, теряя весь pot, в который сам же вложился. Парадокс: если бот знает, что выиграет, fold = гарантированная потеря. Так бот сам себя сливает на ровном месте.
 
-**Root cause**: в [botBrain.ts](server/src/game/botBrain.ts) три ветки могли fold'нуть при `knownWinIfShowdown=true`:
+**Root cause**: в [botBrain.ts](../server/src/game/botBrain.ts) три ветки могли fold'нуть при `knownWinIfShowdown=true`:
 
 1. **`peek-win-overfold`** (§11.35 PnL-driven peek, zone='over' + big toCall). Комментарий в коде гласил «хочется проиграть pot не вкладываясь» — это была фундаментальная путаница sunk cost'а с EV: уже вложенные в pot фишки — потери при fold; при call → они возвращаются + opponent's pot. Балансировка zone='over' должна идти через **не raise** (slowplay), не через **fold known win**.
 2. **`hero-fold`** (анти-фрод инъекция (б) для `strength > 0.82 && toCall > pot * 0.55`). Hero-fold имеет смысл для **догадки** о силе соперника (heuristic mode), но с peek бот **знает** исход. С peek strength=0.98 эта ветка триггерилась с вероятностью `persona.heroFoldRate` (≈5-12%).
@@ -846,7 +846,7 @@ npm run test:coverage        # с coverage report (html в server/coverage/index
 
 **Шероховатости:**
 
-- **`formatHandName` баг** для стрит-флеша: 3 случая `Стрит-флеш до undefined` в логе. Не критично (банк раздаётся правильно), только tooltip ломается. **Чем чинить:** в [server/src/game/hands.ts](server/src/game/hands.ts) посмотреть `formatHandName` ветку straight-flush — там видимо top-карта не передаётся.
+- **`formatHandName` баг** для стрит-флеша: 3 случая `Стрит-флеш до undefined` в логе. Не критично (банк раздаётся правильно), только tooltip ломается. **Чем чинить:** в [server/src/game/hands.ts](../server/src/game/hands.ts) посмотреть `formatHandName` ветку straight-flush — там видимо top-карта не передаётся.
 - **Uncontested 76% всё ещё на верхней границе нормы** — реальный покер в 3-handed live cash 65-72%. Можно дополнительно подкрутить (например снизить allowedLossBB до 8/3/0 вместо 12/4/1) если хочется больше action.
 - **«Средние блайнды» 25%** (910/3634) — не догнали до равных 33%, но близко. fill-table работает но не идеально. Возможно нужны более частые refill triggers (event-based вместо 2-минутного timer).
 - **241 all-in** — много в абсолютных числах, но норма ~6.6% от раздач (норма для PnL-под-pressure ботов).
@@ -868,9 +868,9 @@ npm run test:coverage        # с coverage report (html в server/coverage/index
 
 Это превращает peek из «cheat-mode AI» в **balance-driven AI**: два бота с одинаковыми картами могут принять разные решения исходя из своего PnL.
 
-**Реализация** ([botBrain.ts](server/src/game/botBrain.ts)):
+**Реализация** ([botBrain.ts](../server/src/game/botBrain.ts)):
 
-1. **Возврат `peekMode: "full"`** в [settings.json](server/data/settings.json).
+1. **Возврат `peekMode: "full"`** в [settings.json](../server/data/settings.json).
 
 2. **Новая функция `computePnLZone(realizedPnL, target, handsPlayed, bigBlind)`** возвращает:
    ```ts
@@ -955,7 +955,7 @@ npm run test:coverage        # с coverage report (html в server/coverage/index
 
 **Этап 2 из 5** комплексного редизайна бот-режима. После Этапа 1 (§11.32) выявленные шероховатости из агентского отчёта.
 
-**Изменение 1: bluffCatchBoost — sliding window ring buffer** ([botBrain.ts](server/src/game/botBrain.ts))
+**Изменение 1: bluffCatchBoost — sliding window ring buffer** ([botBrain.ts](../server/src/game/botBrain.ts))
 
 Раньше:
 - `bluffCountLast50: number` и `bluffCallCountLast50: number` — простые счётчики
@@ -966,7 +966,7 @@ npm run test:coverage        # с coverage report (html в server/coverage/index
 - При вычислении boost: `runtime.bluffCallEventHands.filter(h => h > handsPlayed - 50).length < 2` — реальное sliding window.
 - Cleanup в `recordHandResult`: фильтр `h > handsPlayed - 50` каждую раздачу (массивы не растут).
 
-**Изменение 2: ensureTables → fillExistingTable** ([BotManager.ts](server/src/game/BotManager.ts))
+**Изменение 2: ensureTables → fillExistingTable** ([BotManager.ts](../server/src/game/BotManager.ts))
 
 Раньше `ensureTables` каждые 2 минуты проверял **наличие** столов, но не **заполнение**. Если стол существует, но ботов 1-2 из нужных 3 — он стоял полупустым 2+ минут. Особенно болезненно для «Средних блайнды» (BB=50) — боты разоряются быстрее, столы постепенно пустеют, реальный игрок видит «1 бот сидит».
 
@@ -1011,7 +1011,7 @@ for (const profile of AUTO_TABLE_PROFILES) {
 - **`aggrShift` влиял только на `raiseThreshold` (тоже не используемый)** → реальный эффект от `persona.aggression` нулевой.
 - **Боты VPIP ≈ PFR** у всех (0 postflop call'ов на «Кэш» и «Средних») — патология реального покера.
 
-**Исправлено** в [botBrain.ts](server/src/game/botBrain.ts):
+**Исправлено** в [botBrain.ts](../server/src/game/botBrain.ts):
 
 **1. Новые `baseByPhase` thresholds** (§11.20 hotfix значения 0.35/0.62/0.85 на префлопе слишком tugие — закрывали один баг и создавали другой):
 ```ts
@@ -1064,7 +1064,7 @@ const raiseThreshold = base.raise + riskShift - aggrShift;    // ТЕПЕРЬ И
 
 Жалоба «после дилера идёт большой блайнд, потом малый?» — на самом деле визуальная путаница. Код назначает роли правильно (D → SB → BB), что подтверждается логом `[D]/[SB]/[BB]` в hand-start. Но на клиенте отображался **только D-бейдж** (оранжевый кружок), SB и BB не помечались. Игроку оставалось ориентироваться по размерам chip-stack'ов (1 vs 2 чипсы) — что неочевидно.
 
-**Добавил** в [PlayerSeat.tsx](client/src/components/game/PlayerSeat.tsx) + mobile-блоки [GameRoom.tsx](client/src/pages/GameRoom.tsx):
+**Добавил** в [PlayerSeat.tsx](../client/src/components/game/PlayerSeat.tsx) + mobile-блоки [GameRoom.tsx](../client/src/pages/GameRoom.tsx):
 
 - В GameRoom — `sbPlayerId` / `bbPlayerId` через `useMemo` (та же формула что на сервере: heads-up `D=SB`, multi-way `SB=D+1`, `BB=D+2`).
 - В PlayerSeat — новые опциональные props `isSmallBlind` / `isBigBlind`. Единый бейдж в `top-right` с приоритетом **D > SB > BB**: показываем одну роль за раз. Heads-up `D=SB` — рисуется только D (chip-stack BB соседа однозначно даёт понять, кто BB).
@@ -1091,7 +1091,7 @@ const raiseThreshold = base.raise + riskShift - aggrShift;    // ТЕПЕРЬ И
 
 **Root cause**: `refillTimer` каждые 2 минуты вызывает `ensureTables()`, который проверяет **наличие столов** (создаёт пустой если нет), но **не пополняет банкроллы ботов**. После нескольких раздач часть ботов разоряется до 0 chips, для столов с большими блайндами (BB=10, BB=50) их `chips < defaultBuyInBb * bigBlind` → `pickBotsForTable` возвращает пустой массив. На момент диагностики из 12 ботов 9 имели chips=0, 3 имели 125-197 — не дотягивали до даже buy-in минимума для BB=2 (200).
 
-**Фикс** в [BotManager.createTableWithBots](server/src/game/BotManager.ts): перед `pickBotsForTable` вызывается новый метод `autoRefillForBuyIn(buyIn, needed)`:
+**Фикс** в [BotManager.createTableWithBots](../server/src/game/BotManager.ts): перед `pickBotsForTable` вызывается новый метод `autoRefillForBuyIn(buyIn, needed)`:
 
 ```ts
 private autoRefillForBuyIn(buyIn: number, needed: number): void {
@@ -1137,12 +1137,12 @@ Self-healing: если кандидатов недостаточно, рефил
 
 **Универсальное правило** (как в реальных румах PokerStars/GG/ClubGG): `canCheck = player.currentBet >= room.currentBet`. Если да — auto-CHECK; иначе — auto-FOLD.
 
-**Изменения** ([GameManager.ts](server/src/game/GameManager.ts)):
+**Изменения** ([GameManager.ts](../server/src/game/GameManager.ts)):
 
 - **Phase 1 timeout** (`startTurnTimer`): после проверки timebank — `canCheck = p.currentBet >= r.currentBet`, выбор check/fold, лог `Auto-CHECK` или `Auto-FOLD`, вызов `handlePlayerAction(roomId, userId, autoAction)`.
 - **Phase 2 timeout** (`startTimebankTimer`): то же правило. `player.timebank = 0` обнуляется как раньше (запас потрачен), но action — check если можно, иначе fold.
 
-**Серверная валидация check** ([handlePlayerAction `case 'check'`](server/src/game/GameManager.ts) строка 937) проверяет ровно `player.currentBet < room.currentBet → reject`. Моя проверка `canCheck` идентична (`>=`). Если caller передаст `check` когда нельзя — handlePlayerAction молча reject'нёт и игрок зависнет с истёкшим таймером (плохо). Поэтому решение про check/fold принимается **до** вызова, по серверному состоянию `r.currentBet`/`p.currentBet` в момент срабатывания таймера.
+**Серверная валидация check** ([handlePlayerAction `case 'check'`](../server/src/game/GameManager.ts) строка 937) проверяет ровно `player.currentBet < room.currentBet → reject`. Моя проверка `canCheck` идентична (`>=`). Если caller передаст `check` когда нельзя — handlePlayerAction молча reject'нёт и игрок зависнет с истёкшим таймером (плохо). Поэтому решение про check/fold принимается **до** вызова, по серверному состоянию `r.currentBet`/`p.currentBet` в момент срабатывания таймера.
 
 **Edge cases, которые покрыты:**
 
@@ -1171,7 +1171,7 @@ Self-healing: если кандидатов недостаточно, рефил
 
 Стандартное правило техасского холдема: на префлопе **BB говорит последним** (он paid blind вынужденно, поэтому имеет «BB option» — последний check/raise после того, как все остальные определились). Сейчас в multi-way (3+) это было сломано: `currentPlayerIndex = sbIndex` → SB ходил первым, BB вторым, остальные после. BB не получал last word.
 
-**Что изменилось** ([GameManager.startGame](server/src/game/GameManager.ts)):
+**Что изменилось** ([GameManager.startGame](../server/src/game/GameManager.ts)):
 
 ```diff
 - room.currentPlayerIndex = sbIndex;  // SB первый (TODO: UTG=D+3 для multi-way)
@@ -1183,7 +1183,7 @@ Self-healing: если кандидатов недостаточно, рефил
 - **4-max**: D=0, SB=1, BB=2, UTG=3. UTG первым, потом D, SB, BB. ✓
 - **N-max общий**: UTG=`(D+3) % N` первым, далее по часовой, BB last естественным wrap-around.
 
-«BB option» работает через `isRoundComplete` ([строка 1145](server/src/game/GameManager.ts#L1145)): blinds кладутся через `placeBet` **без** добавления в `actionsThisRound`. Когда все остальные call'нут и придут к BB, его нет в `actionsThisRound` → round не complete → ход переходит к нему. BB может check (если никто не raise) или re-raise.
+«BB option» работает через `isRoundComplete` ([строка 1145](../server/src/game/GameManager.ts#L1145)): blinds кладутся через `placeBet` **без** добавления в `actionsThisRound`. Когда все остальные call'нут и придут к BB, его нет в `actionsThisRound` → round не complete → ход переходит к нему. BB может check (если никто не raise) или re-raise.
 
 **Шероховатости:**
 
@@ -1205,11 +1205,11 @@ Self-healing: если кандидатов недостаточно, рефил
 
 **Изменения:**
 
-- **[GameManager.ts endGame](server/src/game/GameManager.ts)** — `setTimeout(cleanupHand, 5000)` → `setTimeout(cleanupHand, 2200)`. 2.2 сек = время анимации (1.4с easeInOut) + ~800 мс на чтение карточки победителя.
-- **[GameManager.ts cleanupHand](server/src/game/GameManager.ts)** (доправка по жалобе «таймер не пропал») — между раздачами больше нет `scheduleAutoStart` countdown'а (был 10с). Если за столом ≥`AUTO_START_MIN_PLAYERS` игроков → `startGame(roomId)` мгновенно. Если меньше — `scheduleAutoStart` как прежде (для первого старта, когда стол наполняется через `addPlayer`). Итого: showdown 2.2с → новая раздача без задержки.
-- **[GameRoom.tsx desktop ChipStack'и](client/src/pages/GameRoom.tsx)** — анимация через **чистый CSS `transition`** (Framer Motion `animate` с `left`/`top` в `%`-строках интерполирует кривовато — был баг «нет анимации, фишки моргают»). `style.left/top` динамически указывают на исходную позицию или `50%/50%` на showdown, `transition: left/top/opacity/transform 1.4s ease-in-out`. На showdown также `scale(0.5)` + `opacity: 0`.
+- **[GameManager.ts endGame](../server/src/game/GameManager.ts)** — `setTimeout(cleanupHand, 5000)` → `setTimeout(cleanupHand, 2200)`. 2.2 сек = время анимации (1.4с easeInOut) + ~800 мс на чтение карточки победителя.
+- **[GameManager.ts cleanupHand](../server/src/game/GameManager.ts)** (доправка по жалобе «таймер не пропал») — между раздачами больше нет `scheduleAutoStart` countdown'а (был 10с). Если за столом ≥`AUTO_START_MIN_PLAYERS` игроков → `startGame(roomId)` мгновенно. Если меньше — `scheduleAutoStart` как прежде (для первого старта, когда стол наполняется через `addPlayer`). Итого: showdown 2.2с → новая раздача без задержки.
+- **[GameRoom.tsx desktop ChipStack'и](../client/src/pages/GameRoom.tsx)** — анимация через **чистый CSS `transition`** (Framer Motion `animate` с `left`/`top` в `%`-строках интерполирует кривовато — был баг «нет анимации, фишки моргают»). `style.left/top` динамически указывают на исходную позицию или `50%/50%` на showdown, `transition: left/top/opacity/transform 1.4s ease-in-out`. На showdown также `scale(0.5)` + `opacity: 0`.
 - **Pot-плашка в центре стола на showdown скрывается** — `motion.opacity: phase==='showdown' ? 0 : 1` с переходом 0.6с. Иначе на 2.2с висит «Pot: 0» (после `distributePot` `room.pot = 0`), что портит визуал летящих фишек.
-- **[GameRoom.tsx mobile chip-бэйджи](client/src/pages/GameRoom.tsx)** в opponent-strip и me-блоке — CSS `transition-opacity duration-[1400ms]` + класс `opacity-0` на showdown. Без полётной анимации (на mobile chips в плашках inline, FLIP бы добавил сложности).
+- **[GameRoom.tsx mobile chip-бэйджи](../client/src/pages/GameRoom.tsx)** в opponent-strip и me-блоке — CSS `transition-opacity duration-[1400ms]` + класс `opacity-0` на showdown. Без полётной анимации (на mobile chips в плашках inline, FLIP бы добавил сложности).
 
 **Шероховатости:**
 
@@ -1232,7 +1232,7 @@ Self-healing: если кандидатов недостаточно, рефил
 
 **Закрыта критическая шероховатость 11.20:** при all-in нескольких игроков с разными стеками банк делился целиком между всеми победителями — игрок с маленьким стеком мог несправедливо забрать чужие фишки или, наоборот, потерять заслуженный выигрыш. Теперь pot режется на слои по уровням commitment'ов.
 
-**Изменения в [server/src/game/GameManager.ts](server/src/game/GameManager.ts):**
+**Изменения в [server/src/game/GameManager.ts](../server/src/game/GameManager.ts):**
 
 - **Новое поле `Player.totalCommitted: number`** — накопительный вклад игрока за всю раздачу (в отличие от `currentBet`, который сбрасывается между улицами). Обнуляется в `startGame` для всех + в `addPlayer` для нового игрока. Инкрементируется в `placeBet`.
 - **`showdown` → `distributePot`** — новый алгоритм:
@@ -1270,7 +1270,7 @@ Self-healing: если кандидатов недостаточно, рефил
 
 После моего скриншота DevTools mobile-эмуляции (Samsung Galaxy S20, 412×915) в консоли висели 6 красных `WebSocket connection to 'ws://69.164.242.115:3001/socket.io/...' failed`. Причина: `VITE_API_URL=http://69.164.242.115:3001` (публичный IP, для доступа с телефона) — DevTools на этой же машине пытался открыть WS на свой публичный IP, Windows Firewall (или роутер) не пропускал upgrade-header. Polling-fallback работал, поэтому страница жила, но в консоли мусор + лишний HTTP-трафик.
 
-**Фикс:** [client/src/config/api.ts](client/src/config/api.ts) теперь считает `BASE_URL` динамически: `window.location.protocol + '//' + window.location.hostname + ':3001'`. DevTools на `localhost:5173` → `localhost:3001` (WS), телефон в LAN на `public:5173` → `public:3001` (тоже корректно). [client/src/lib/socket.ts](client/src/lib/socket.ts) переехал с прямого `import.meta.env.VITE_API_URL` на `BASE_URL` из api.ts. `.env` оставлен как override для production deploy (когда client и server на разных хостах) — но в браузере не используется.
+**Фикс:** [client/src/config/api.ts](../client/src/config/api.ts) теперь считает `BASE_URL` динамически: `window.location.protocol + '//' + window.location.hostname + ':3001'`. DevTools на `localhost:5173` → `localhost:3001` (WS), телефон в LAN на `public:5173` → `public:3001` (тоже корректно). [client/src/lib/socket.ts](../client/src/lib/socket.ts) переехал с прямого `import.meta.env.VITE_API_URL` на `BASE_URL` из api.ts. `.env` оставлен как override для production deploy (когда client и server на разных хостах) — но в браузере не используется.
 
 **Шероховатости:**
 - **Если открыть клиент через IP-один (`public:5173`), а сервер слушает только `localhost:3001`** — клиент будет пытаться `public:3001` и упадёт. Сейчас сервер слушает `0.0.0.0:3001` (см. 8.2), так что это не проблема. Если когда-нибудь поменяется на `127.0.0.1` — будет регресс.
@@ -1284,8 +1284,8 @@ Self-healing: если кандидатов недостаточно, рефил
 
 **Изменения:**
 
-- **Новый компонент [TurnProgressRing.tsx](client/src/components/game/TurnProgressRing.tsx)** — SVG-круг с `stroke-dasharray`/`stroke-dashoffset`, тикает плавно благодаря CSS `transition: stroke-dashoffset 200ms linear`. Три варианта цвета: `turn` (amber-400, обычно), `turn-urgent` (red-500, ≤5 сек, animate-pulse), `timebank` (orange-500, Phase 2, animate-pulse). Внутри кольца — мини-бейдж с числом секунд (без него ring был бы немой).
-- **Проброс длительностей через GameState** ([shared/index.ts:44-48](shared/index.ts#L44-L48) + [server GameManager.ts:51-55](server/src/game/GameManager.ts#L51-L55) + [client GameRoom.tsx](client/src/pages/GameRoom.tsx) state):
+- **Новый компонент [TurnProgressRing.tsx](../client/src/components/game/TurnProgressRing.tsx)** — SVG-круг с `stroke-dasharray`/`stroke-dashoffset`, тикает плавно благодаря CSS `transition: stroke-dashoffset 200ms linear`. Три варианта цвета: `turn` (amber-400, обычно), `turn-urgent` (red-500, ≤5 сек, animate-pulse), `timebank` (orange-500, Phase 2, animate-pulse). Внутри кольца — мини-бейдж с числом секунд (без него ring был бы немой).
+- **Проброс длительностей через GameState** ([shared/index.ts:44-48](../shared/index.ts#L44-L48) + [server GameManager.ts:51-55](../server/src/game/GameManager.ts#L51-L55) + [client GameRoom.tsx](../client/src/pages/GameRoom.tsx) state):
   - `turnDurationSec: number` — общая длительность Phase 1 (= `room.turnDurationMs / 1000`)
   - `turnTimebankStartedAt: number | null` — timestamp начала Phase 2 (нужен для расчёта прогресса: `(endsAt - now) / (endsAt - startedAt)`)
 - **GameRoom считает `turnPercent` и `timebankPercent`** на общем тикере `now`, передаёт в PlayerSeat и в mobile-блоки. Это избавляет от множества тикеров на каждого игрока.
@@ -1303,7 +1303,7 @@ Self-healing: если кандидатов недостаточно, рефил
 - **Mobile-ревью я не выполнял** (нет залогиненного аккаунта в локальной сессии браузера, /browse не имеет cookies на natka/admin) — нужен ручной прогон в Telegram и iPhone Safari. Чеклист в конце пункта.
 - **На очень узких экранах (320px)** ring 32px вокруг 32px аватара в opponent-strip немного увеличивает каждую плашку на ~5px по высоте — strip может стать на 5px выше. Должно поместиться, но не проверял.
 - **Анимация `animate-pulse` на urgent + timebank** — мерцает весь SVG (включая дорожку). Если будет резать глаз — обернуть pulse только на progress-circle (но это удвоит сложность).
-- **Старая логика «жёлтый bordered бейдж» с числом** удалена в [PlayerSeat.tsx](client/src/components/game/PlayerSeat.tsx) и в обоих mobile-местах. Если где-то ещё рендерится — Grep сейчас не находит (проверено).
+- **Старая логика «жёлтый bordered бейдж» с числом** удалена в [PlayerSeat.tsx](../client/src/components/game/PlayerSeat.tsx) и в обоих mobile-местах. Если где-то ещё рендерится — Grep сейчас не находит (проверено).
 - **Ручной прогон не выполнен.** Сценарии:
   - (а) Desktop: видно ring вокруг аватара активного игрока (жёлтый), сужается по мере истечения секунд, число в верхнем-левом углу. ≤5с → красный pulse.
   - (б) Desktop: при истечении основного → ring перекрашивается в оранжевый (timebank), идёт от полного.
@@ -1317,7 +1317,7 @@ Self-healing: если кандидатов недостаточно, рефил
 
 Из расследования жалобы «у natka не срабатывает Phase 2 — сразу фолд»: оказалось, **не баг**. natka исчерпала весь свой стартовый таймбанк (30→10→6→0) за первые 2-3 раздачи и далее на каждом ходу получала `⏰ Auto-fold (timeout)` без Phase 2. Корневой UX-косяк — индикатор `⏳N` показывался только при `player.timebank > 0`, поэтому игрок не видел, что запас уже пустой.
 
-**Что изменилось:** в [PlayerSeat.tsx:191-205](client/src/components/game/PlayerSeat.tsx#L191-L205), [GameRoom.tsx](client/src/pages/GameRoom.tsx) opponent-strip и me-блок — условие `player.timebank > 0` снято. Теперь, если `timebankEnabled=true` (включён на столе), бейдж рисуется при любом значении timebank ≥ 0:
+**Что изменилось:** в [PlayerSeat.tsx:191-205](../client/src/components/game/PlayerSeat.tsx#L191-L205), [GameRoom.tsx](../client/src/pages/GameRoom.tsx) opponent-strip и me-блок — условие `player.timebank > 0` снято. Теперь, если `timebankEnabled=true` (включён на столе), бейдж рисуется при любом значении timebank ≥ 0:
 - `timebank > 0` — оранжевый `bg-orange-500/30 text-orange-200 border-orange-400/40` (как было).
 - `timebank === 0` — серый `bg-white/5 text-white/40 border-white/15` + tooltip «Таймбанк исчерпан».
 
@@ -1332,8 +1332,8 @@ Self-healing: если кандидатов недостаточно, рефил
 
 Серия правок ActionPanel'а по просьбе пользователя: «кнопки только во время хода», «бегунок только при клике на Raise», «бегунок возвращается в min после хода», «на mobile бегунок вертикально с правого края», «мои карты на mobile приподнять и покрупнее».
 
-- **ActionPanel рендерится только при `isMyTurn=true`** ([GameRoom.tsx:917](client/src/pages/GameRoom.tsx#L917) — `me && isMyTurn && <ActionPanel ... />`). Раньше панель была всегда, кнопки `disabled` когда не мой ход. Теперь панель полностью пропадает между ходами — экран свободнее, особенно на mobile. **Бонус:** prop `enabled` удалён из ActionPanel. Размонтирование автоматически сбрасывает `raiseAmount` через `useState(minRaiseTotal)` — задача «бегунок возвращается в min после хода» решается без отдельного reset-effect'а.
-- **Raise-блок раскрывается по клику на «Raise»** — добавлен локальный `showRaise: boolean` в [ActionPanel.tsx](client/src/components/game/ActionPanel.tsx). Первый клик на «Raise» → `setShowRaise(true)`, раскрываются пресеты+слайдер+num-input через AnimatePresence (height: auto). Второй клик на «✓ Raise X» — отправляется raise. Fold/Check/Call/All-In закрывают всё через размонтирование. Кнопка Raise меняет надпись «Raise» → «✓ Raise X» когда блок раскрыт, плюс emerald-ring подсветка.
+- **ActionPanel рендерится только при `isMyTurn=true`** ([GameRoom.tsx:917](../client/src/pages/GameRoom.tsx#L917) — `me && isMyTurn && <ActionPanel ... />`). Раньше панель была всегда, кнопки `disabled` когда не мой ход. Теперь панель полностью пропадает между ходами — экран свободнее, особенно на mobile. **Бонус:** prop `enabled` удалён из ActionPanel. Размонтирование автоматически сбрасывает `raiseAmount` через `useState(minRaiseTotal)` — задача «бегунок возвращается в min после хода» решается без отдельного reset-effect'а.
+- **Raise-блок раскрывается по клику на «Raise»** — добавлен локальный `showRaise: boolean` в [ActionPanel.tsx](../client/src/components/game/ActionPanel.tsx). Первый клик на «Raise» → `setShowRaise(true)`, раскрываются пресеты+слайдер+num-input через AnimatePresence (height: auto). Второй клик на «✓ Raise X» — отправляется raise. Fold/Check/Call/All-In закрывают всё через размонтирование. Кнопка Raise меняет надпись «Raise» → «✓ Raise X» когда блок раскрыт, плюс emerald-ring подсветка.
 - **Mobile: вертикальный слайдер у правого края** — отдельный `<motion.div md:hidden fixed right-2 top-20 bottom-44 w-12>` с `writing-mode: vertical-lr; direction: rtl; width: 24px` на самом `<input type="range">`. Появляется одновременно с raise-блоком, исчезает с ним. Над/под слайдером — кнопки MAX/MIN и текущее значение в `fmt`. На desktop slider остаётся горизонтальный в самой панели, на mobile в панели вместо слайдера — узкий num-input.
 - **Mobile-карты «мои» крупнее и приподняты** — `size="sm"` → `size="md"` (40×56 → 56×80), `gap-1` → `gap-1.5`, `pb-36` → `pb-40` для всего mobile-обёрточного контейнера. Me-блок на 160px от низа viewport вместо 144px.
 
@@ -1499,8 +1499,8 @@ Self-healing: если кандидатов недостаточно, рефил
 
 ### 11.13. 10.8 publicId XXXX-XXXX + флаг страны (2026-05-16)
 
-- **Профиль игрока отсутствует** — игрок не может самостоятельно выбрать страну, только админ через PlayersTab. **Почему отложено:** страница `/profile` — отдельная задача (10.14). **Чем чинить:** при реализации профиля добавить селектор страны с тем же `COUNTRIES` из [client/src/utils/country.ts](client/src/utils/country.ts) и PATCH-эндпоинт `/api/profile/me` (или расширить /api/auth/me для PATCH).
-- **Auto-detect страны при регистрации не сделан** — новые юзеры создаются без `country`, админ заполняет вручную. **Почему отложено:** `navigator.language` может выдать неточный результат. **Чем чинить:** при необходимости в [Register.tsx](client/src/pages/Register.tsx) детектить из `navigator.language.slice(-2).toUpperCase()` и слать на сервер; `registerUser` должен принимать `country?: string`.
+- **Профиль игрока отсутствует** — игрок не может самостоятельно выбрать страну, только админ через PlayersTab. **Почему отложено:** страница `/profile` — отдельная задача (10.14). **Чем чинить:** при реализации профиля добавить селектор страны с тем же `COUNTRIES` из [client/src/utils/country.ts](../client/src/utils/country.ts) и PATCH-эндпоинт `/api/profile/me` (или расширить /api/auth/me для PATCH).
+- **Auto-detect страны при регистрации не сделан** — новые юзеры создаются без `country`, админ заполняет вручную. **Почему отложено:** `navigator.language` может выдать неточный результат. **Чем чинить:** при необходимости в [Register.tsx](../client/src/pages/Register.tsx) детектить из `navigator.language.slice(-2).toUpperCase()` и слать на сервер; `registerUser` должен принимать `country?: string`.
 - **Флаг и publicId не показываются в игре** — на seat'ах за столом и в opponent-strip их нет. **Почему отложено:** требует протащить `publicId`/`country` через `Player` в `GameState` (синхронизация в 3 местах — shared, server, client), также вопрос приватности (показывать ли реальный `publicId` соперника). **Чем чинить:** при реализации Smart-HUD (roadmap 10.10) или при дизайне seat-карточек добавить эти поля.
 - **Emoji-флаги не рендерятся на Windows-браузерах** — показываются как пара regional-indicator символов, выглядящих как `🇷🇺` → `RU`. Fallback на текстовый код в Admin.tsx есть. **Почему отложено:** Windows-проблема системного шрифта, не пофиксить кодом. **Чем чинить:** использовать SVG-флаги (например, `country-flag-icons` или `https://flagcdn.com/16x12/ru.png`) — добавит зависимость или сеть-запросы.
 - **Селектор страны шлёт PATCH при каждом onChange** — теоретически много fetch'ей при быстром листании dropdown'а. **Почему отложено:** для админ-панели не критично, onChange срабатывает только при смене option. **Чем чинить:** при необходимости — кнопка «Сохранить» как у chips.
@@ -1512,8 +1512,8 @@ Self-healing: если кандидатов недостаточно, рефил
 ### 11.12. 10.3 Три пресета колоды (2026-05-16)
 
 - **Имя модалки «Настроить кнопки ставок»** теперь не отражает содержимое — в ней 3 секции (кнопки ставок / отражение фишек / колода). **Почему отложено:** переименование за пределами scope текущей задачи. **Чем чинить:** при следующем UI-рефакторинге переименовать в «Настройки игры»; tooltip шестерёнки в GameRoom (сейчас «Настроить кнопки ставок») тоже обновить.
-- **Глобальная схема в `DesignConfig`** — не сделана. Roadmap-заметка упоминала `design.ts:cardColorScheme`, но логичнее `localStorage` (персональная настройка игрока, как `chipDisplay` и `betPresets`). **Почему отложено:** сознательный выбор. **Чем чинить:** если админ должен принудительно навязывать схему столу — добавить `cardColorScheme` в [design.ts](client/src/config/design.ts) с приоритетом «admin override > personal».
-- **Mobile opponent-strip showdown** не получает цветную масть — `suitSym` в [GameRoom.tsx:447-452](client/src/pages/GameRoom.tsx#L447-L452) использует обычный текст без цвета. **Почему отложено:** на тёмном фоне strip'а синий/зелёный читаются хуже, чем светло-серый текст; задумано так. **Чем чинить:** при необходимости — обернуть `suitSym[c.suit]` в `<span className={suitColorClass(c.suit, cardColors)}>`.
+- **Глобальная схема в `DesignConfig`** — не сделана. Roadmap-заметка упоминала `design.ts:cardColorScheme`, но логичнее `localStorage` (персональная настройка игрока, как `chipDisplay` и `betPresets`). **Почему отложено:** сознательный выбор. **Чем чинить:** если админ должен принудительно навязывать схему столу — добавить `cardColorScheme` в [design.ts](../client/src/config/design.ts) с приоритетом «admin override > personal».
+- **Mobile opponent-strip showdown** не получает цветную масть — `suitSym` в [GameRoom.tsx:447-452](../client/src/pages/GameRoom.tsx#L447-L452) использует обычный текст без цвета. **Почему отложено:** на тёмном фоне strip'а синий/зелёный читаются хуже, чем светло-серый текст; задумано так. **Чем чинить:** при необходимости — обернуть `suitSym[c.suit]` в `<span className={suitColorClass(c.suit, cardColors)}>`.
 - **Контраст зелёного `text-green-700`** на белой/светлой карте ≈5 (AA проходит). На дисплеях с пониженной яркостью может казаться чёрным. **Почему отложено:** WCAG AA в норме. **Чем чинить:** перейти на `text-green-600` (контраст падает до ~4.5, но цвет ярче).
 - **`PlayerSeat.cardColors`** — optional prop. Если в будущем компонент используется не из GameRoom (Replay, наблюдатель), пробросить явно или будет `set1` дефолт. **Почему отложено:** сейчас вызывается только из GameRoom. **Чем чинить:** ничего; пункт здесь для напоминания.
 - **Settings не синхронизируются между устройствами** — localStorage привязан к браузеру. При входе с другого устройства игрок начнёт с `set1`. **Почему отложено:** так же ведёт себя `chipDisplay` и `betPresets`. **Чем чинить:** если появится профиль игрока в БД — добавить серверную синхронизацию настроек.
@@ -1557,7 +1557,7 @@ Self-healing: если кандидатов недостаточно, рефил
 
 Второй формат стола. Движок: короткая колода 36, ранжир Triton (флеш > фулл-хаус), младший стрит A-6-7-8-9. `format: GameFormat` проброшен сквозь типы (shared+server) → Room/RoomInfo/GameState/CreateRoomOptions → deck/hands/equity/drawHints/handHint/badBeatDetect (везде формат-параметр с дефолтом 'nlh'). Клиент: селектор в CreateRoomModal, фильтр-таб в лобби, плашка RoomCard, лейбл центра стола + TableInfo. Спека — POKER_RULES.md §15. Тесты: shortdeck движок 11 + GameManager-интеграция 2 + useRoomFilters 1. `npm run check` зелёный (390 серверных + 68 клиентских).
 
-**✅ Найденная пред-существующая дыра — ИСПРАВЛЕНА 2026-06-13:** socket-обработчик `createRoom` ([registerSocketHandlers.ts](server/src/socket/registerSocketHandlers.ts)) строил `CreateRoomOptions` из whitelist-полей и **не форвардил `rake`/`ante`/`sessionDurationHours`/`autoStartPlayers`** — клиент их слал, сервер ронял. Per-table рейк/анте/длительность/автостарт из модалки (§10.6) в живом socket-флоу не применялись (работали только в юнит-тестах, что зовут `gm.createRoom` напрямую). Добавил все 4 поля + `format` в форвардинг обработчика. **Урок/кандидат в правило:** whitelist-обработчики событий легко рассинхронизируются с `CreateRoomOptions` при добавлении полей — тест на сквозной проброс socket→createRoom не помешал бы.
+**✅ Найденная пред-существующая дыра — ИСПРАВЛЕНА 2026-06-13:** socket-обработчик `createRoom` ([registerSocketHandlers.ts](../server/src/socket/registerSocketHandlers.ts)) строил `CreateRoomOptions` из whitelist-полей и **не форвардил `rake`/`ante`/`sessionDurationHours`/`autoStartPlayers`** — клиент их слал, сервер ронял. Per-table рейк/анте/длительность/автостарт из модалки (§10.6) в живом socket-флоу не применялись (работали только в юнит-тестах, что зовут `gm.createRoom` напрямую). Добавил все 4 поля + `format` в форвардинг обработчика. **Урок/кандидат в правило:** whitelist-обработчики событий легко рассинхронизируются с `CreateRoomOptions` при добавлении полей — тест на сквозной проброс socket→createRoom не помешал бы.
 
 **Чеклист ручной проверки Шорт-дэка** (браузерный прогон за мной невыполним):
 - (а) создать стол с вариантом «Шорт-дэк» → в лобби карточка с янтарной плашкой «ШОРТ-ДЭК», фильтр-таб «Шорт-дэк» показывает его, «NLH» — нет;

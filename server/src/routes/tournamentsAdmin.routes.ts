@@ -46,6 +46,10 @@ export function createTournamentsAdminRouter(tournamentManager: TournamentManage
       bountyEnabled: typeof body.bountyEnabled === 'boolean' ? body.bountyEnabled : undefined,
       bountyType: body.bountyType === 'progressive' ? 'progressive' : body.bountyType === 'flat' ? 'flat' : undefined,
       bountyPercent: typeof body.bountyPercent === 'number' ? body.bountyPercent : undefined,
+      regOpensAt: typeof body.regOpensAt === 'number' ? body.regOpensAt : undefined,
+      scheduledStartAt: typeof body.scheduledStartAt === 'number' ? body.scheduledStartAt : undefined,
+      fillWithBots: typeof body.fillWithBots === 'boolean' ? body.fillWithBots : undefined,
+      botFillTarget: typeof body.botFillTarget === 'number' ? body.botFillTarget : undefined,
     };
     const result = tournamentManager.create(opts, admin.id);
     if ('error' in result) {

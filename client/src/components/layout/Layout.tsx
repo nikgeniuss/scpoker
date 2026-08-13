@@ -7,7 +7,6 @@ import toast from 'react-hot-toast';
 import { Coins, Home, LayoutGrid, UserCircle, LogOut, Trophy, Crown, Shield } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useTournamentStore } from '../../store/tournamentStore';
-import { useMyClub } from '../../hooks/useMyClub';
 import { useDecksStore } from '../../store/decksStore';
 import { useInboxStore } from '../../store/inboxStore';
 import { disconnectSocket } from '../../lib/socket';
@@ -33,11 +32,11 @@ export const Layout = ({ children }: LayoutProps) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, isAdmin, logout, token, setChips } = useAuthStore();
-  const { myClub } = useMyClub();
   const { unread: inboxUnread, fetchInbox, addNotification } = useInboxStore();
   const [tournamentResult, setTournamentResult] = useState<TournamentResultPayload | null>(null);
-  // Кнопка «Мой клуб» — только не-админ владелец (у администраторов свои вкладки Клуб/Админ)
-  const isClubOwner = !!myClub && !!user && myClub.ownerId === user.id && !isAdmin;
+  // Кнопка «Клуб» (/club) — видна любому не-админ игроку (владелец/участник/без клуба —
+  // ветвление внутри ClubHome); у администраторов свои вкладки Клуб(room-admin)/Админ.
+  const showClubTab = !!user && !isAdmin;
   const loadDecks = useDecksStore((s) => s.load);
 
   // Загружаем список колод один раз при mount — нужен Card.tsx для отрисовки картинок вместо текста
@@ -54,8 +53,8 @@ export const Layout = ({ children }: LayoutProps) => {
   // Свайп влево/вправо для переключения вкладок нижнего бара
   const tabRoutes = isAdmin
     ? ['/', '/lobby', '/club-admin', '/admin']
-    : isClubOwner
-      ? ['/', '/lobby', '/my-club']
+    : showClubTab
+      ? ['/', '/lobby', '/club']
       : ['/', '/lobby'];
   const touchStartX = useRef<number | null>(null);
   const touchStartY = useRef<number | null>(null);
@@ -252,10 +251,10 @@ export const Layout = ({ children }: LayoutProps) => {
                   </span>
                 )}
                 {/* На мобиле admin-кнопки живут в нижнем баре (см. ниже); тут — только десктоп */}
-                {isClubOwner && (
+                {showClubTab && (
                   <div className="hidden md:flex items-center gap-2 md:gap-3">
                     <Suspense fallback={null}>
-                      <MyClubNavButton onClick={() => navigate('/my-club')} />
+                      <MyClubNavButton onClick={() => navigate('/club')} />
                     </Suspense>
                   </div>
                 )}
@@ -313,7 +312,7 @@ export const Layout = ({ children }: LayoutProps) => {
         <nav
           className="md:hidden fixed bottom-0 left-0 right-0 z-40 backdrop-blur-md bg-black/70 border-t border-white/10 pb-[env(safe-area-inset-bottom)]"
         >
-          <div className={'grid h-16 ' + (isAdmin ? 'grid-cols-6' : isClubOwner ? 'grid-cols-5' : 'grid-cols-4')}>
+          <div className={'grid h-16 ' + (isAdmin ? 'grid-cols-6' : showClubTab ? 'grid-cols-5' : 'grid-cols-4')}>
             <TabButton
               icon={<Home size={20} />}
               label={t('nav.home')}
@@ -339,13 +338,13 @@ export const Layout = ({ children }: LayoutProps) => {
               onClick={() => navigate('/profile')}
               badge={inboxUnread || undefined}
             />
-            {/* Кнопка владельца клуба — только не-admin владельцам */}
-            {!isAdmin && isClubOwner && (
+            {/* Кнопка «Клуб» — любой не-админ игрок; владелец/участник/без клуба — ветвление в ClubHome */}
+            {showClubTab && (
               <TabButton
                 icon={<Crown size={20} />}
-                label={t('nav.myClub')}
-                active={location.pathname.startsWith('/my-club')}
-                onClick={() => navigate('/my-club')}
+                label={t('nav.club')}
+                active={location.pathname.startsWith('/club') || location.pathname.startsWith('/my-club')}
+                onClick={() => navigate('/club')}
               />
             )}
             {/* Admin-only: видны только админам (исходно были в верхней панели). */}

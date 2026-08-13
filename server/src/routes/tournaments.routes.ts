@@ -21,6 +21,15 @@ export function createTournamentsRouter(tournamentManager: TournamentManager): R
     res.json(t);
   });
 
+  router.get('/:id/standings', (req, res) => {
+    const standings = tournamentManager.getStandings(req.params.id);
+    if (!standings) {
+      res.status(404).json({ error: 'not-found' });
+      return;
+    }
+    res.json(standings);
+  });
+
   router.post('/:id/register', (req, res) => {
     const user = (req as unknown as { user: { id: string; username: string } }).user;
     const result = tournamentManager.register(req.params.id, user.id, user.username);

@@ -70,6 +70,38 @@ describe('tournamentPayout — MTT-выплаты (ITM-кривая)', () => {
   });
 });
 
+describe('tournamentPayout — MTT-выплаты (настраиваемая форма кривой, exponent)', () => {
+  it('exponent=1 (дефолт) — та же гармоническая кривая, что и без параметра', () => {
+    expect(getMttPayoutTiers(18, 20, undefined, 1)).toEqual(getMttPayoutTiers(18, 20));
+  });
+
+  it('exponent>1 — top-heavy, 1-е место получает больше, чем на гармонической кривой', () => {
+    const harmonic = getMttPayoutTiers(18, 20)[0].percent;
+    const topHeavy = getMttPayoutTiers(18, 20, undefined, 2)[0].percent;
+    expect(topHeavy).toBeGreaterThan(harmonic);
+  });
+
+  it('exponent<1 — flat, 1-е место получает меньше, чем на гармонической кривой', () => {
+    const harmonic = getMttPayoutTiers(18, 20)[0].percent;
+    const flat = getMttPayoutTiers(18, 20, undefined, 0.5)[0].percent;
+    expect(flat).toBeLessThan(harmonic);
+  });
+
+  it('сумма % всегда 100 независимо от exponent', () => {
+    for (const exponent of [0.3, 0.7, 1, 1.4, 2.5]) {
+      const tiers = getMttPayoutTiers(18, 20, undefined, exponent);
+      const sum = tiers.reduce((a, t) => a + t.percent, 0);
+      expect(sum).toBeCloseTo(100, 5);
+    }
+  });
+
+  it('computeMttPayout: exponent пробрасывается, суммарно выплаченное == prizePool', () => {
+    const payout = computeMttPayout(10_000, 18, 20, undefined, 2);
+    const total = Object.values(payout).reduce((a, b) => a + b, 0);
+    expect(total).toBe(10_000);
+  });
+});
+
 describe('tournamentPayout — MTT-выплаты (фиксированное число мест, независимо от участников)', () => {
   it('getMttPayoutTiers: fixedPlaces игнорирует itmPercent и держит ровно N мест', () => {
     // 100 участников, ITM 10% дал бы 10 мест, но fixedPlaces=3 — строго 3 места.

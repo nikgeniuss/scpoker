@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { handHintName } from '../handHint.js';
+import { handHintName, handRankValue } from '../handHint.js';
 import type { Card } from '../types.js';
 
 const c = (rank: Card['rank'], suit: Card['suit']): Card => ({ rank, suit });
@@ -47,5 +47,29 @@ describe('handHintName', () => {
     const board = [c('5', 'hearts'), c('9', 'hearts'), c('2', 'clubs'), c('K', 'spades'), c('3', 'diamonds')];
     // 4 червы, но борд полный — добора нет, метку не клеим.
     expect(handHintName([c('A', 'hearts'), c('Q', 'hearts')], board)).toBe('Старшая карта: туза');
+  });
+});
+
+describe('handRankValue', () => {
+  it('пара → 2 (для HandStrengthMeter)', () => {
+    expect(handRankValue([c('A', 'hearts'), c('A', 'spades')], [])).toBe(2);
+  });
+
+  it('старшая карта → 1', () => {
+    expect(handRankValue([c('A', 'hearts'), c('K', 'spades')], [])).toBe(1);
+  });
+
+  it('стрит → 5', () => {
+    const board = [c('J', 'diamonds'), c('Q', 'spades'), c('10', 'hearts'), c('8', 'hearts'), c('9', 'clubs')];
+    expect(handRankValue([c('10', 'spades'), c('K', 'clubs')], board)).toBe(5);
+  });
+
+  it('роял-флеш ограничивается до 9 (объединён со стрит-флешем на шкале)', () => {
+    const board = [c('Q', 'hearts'), c('J', 'hearts'), c('10', 'hearts'), c('2', 'clubs'), c('3', 'diamonds')];
+    expect(handRankValue([c('A', 'hearts'), c('K', 'hearts')], board)).toBe(9);
+  });
+
+  it('менее 2 карманных → undefined', () => {
+    expect(handRankValue([c('A', 'hearts')], [])).toBeUndefined();
   });
 });

@@ -214,7 +214,7 @@ export const ChipsTab = () => {
       </div>
 
       {/* Sticky панель действий */}
-      <div className="fixed bottom-0 left-0 right-0 z-30 bg-gray-900/95 backdrop-blur border-t border-white/10 p-4 md:pl-72">
+      <div className="fixed bottom-[calc(4rem+env(safe-area-inset-bottom))] md:bottom-0 left-0 right-0 z-30 bg-gray-900/95 backdrop-blur border-t border-white/10 p-4 md:pl-72">
         <div className="max-w-3xl mx-auto space-y-3">
           {/* Счётчик + ввод суммы */}
           <div className="flex items-center gap-3">

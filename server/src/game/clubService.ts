@@ -151,3 +151,24 @@ export function regenerateInviteCode(clubId: string, ownerId: string): Club | Cl
   writeClubs(clubs);
   return clubs[idx];
 }
+
+// Участник сам покидает клуб (не owner — для этого disband/передача владения, здесь не нужны).
+export function leaveClub(clubId: string, userId: string): Club | ClubError {
+  const clubs = readClubs();
+  const idx = clubs.findIndex((c) => c.id === clubId);
+  if (idx === -1) return { error: 'not-found' };
+  if (clubs[idx].ownerId === userId) return { error: 'owner-cannot-leave' };
+  if (!clubs[idx].members.some((m) => m.userId === userId)) return { error: 'not-member' };
+  clubs[idx].members = clubs[idx].members.filter((m) => m.userId !== userId);
+  writeClubs(clubs);
+  return clubs[idx];
+}
+
+// Заявка пользователя на вступление в клуб, ожидающая решения владельца (для UI «нет клуба»).
+export function getMyPendingRequest(userId: string): { clubId: string; clubName: string; requestedAt: string } | null {
+  for (const c of readClubs()) {
+    const req = c.pendingRequests.find((r) => r.userId === userId);
+    if (req) return { clubId: c.id, clubName: c.name, requestedAt: req.requestedAt };
+  }
+  return null;
+}

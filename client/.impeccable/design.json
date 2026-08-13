@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-11T00:00:00.000Z",
+  "title": "Design System: POKER HUB",
+  "extensions": {
+    "colorMeta": {
+      "felt-emerald": { "role": "primary", "displayName": "Felt Emerald", "canonical": "oklch(72% 0.17 162)", "tonalRamp": ["#022c22", "#064e3b", "#065f46", "#047857", "#059669", "#10b981", "#34d399", "#6ee7b7"] },
+      "vip-gold": { "role": "secondary", "displayName": "VIP Gold", "canonical": "oklch(77% 0.16 70)", "tonalRamp": ["#451a03", "#78350f", "#92400e", "#b45309", "#d97706", "#f59e0b", "#fbbf24", "#fcd34d"] },
+      "alert-red": { "role": "tertiary", "displayName": "Alert Red", "canonical": "oklch(58% 0.22 27)", "tonalRamp": ["#450a0a", "#7f1d1d", "#991b1b", "#b91c1c", "#dc2626", "#ef4444", "#f87171", "#fca5a5"] },
+      "void-black": { "role": "neutral", "displayName": "Void Black", "canonical": "oklch(3% 0 0)", "tonalRamp": ["#000000", "#070707", "#0a0a0a", "#111827", "#1f2937", "#374151", "#6b7280", "#9ca3af"] }
+    },
+    "typographyMeta": {
+      "body": { "displayName": "Body / UI", "purpose": "Весь UI-текст, лейблы, числа. Фактически системный шрифт (Inter не подключён webfont-ом)." },
+      "numeric": { "displayName": "Numeric", "purpose": "Банк, стек, блайнды — всегда tabular-nums." },
+      "label": { "displayName": "ClubGG Label", "purpose": "Только вотермарк ClubGG-темы стола." },
+      "display-classic": { "displayName": "Classic Display", "purpose": "Только вотермарк classic-темы стола, не используется в UI." }
+    },
+    "shadows": [
+      { "name": "card-contact", "value": "0 1px 1px rgba(0,0,0,0.6)", "purpose": "Контактная тень карт/фишек." },
+      { "name": "card-ambient", "value": "0 8px 16px rgba(0,0,0,0.25), 0 16px 32px rgba(0,0,0,0.15)", "purpose": "Рассеянная тень поднятых карточек/модалок." },
+      { "name": "emerald-glow", "value": "0 0 0 0 rgba(16,185,129,0.4)", "purpose": "Пульсирующее кольцо активного хода/банка." },
+      { "name": "gold-glow", "value": "drop-shadow(0 8px 18px rgba(251,191,36,0.65))", "purpose": "Победная карта на шоудауне, VIP-элементы." }
+    ],
+    "motion": [
+      { "name": "ease-standard", "value": "cubic-bezier(0.4, 0, 0.2, 1)", "purpose": "Дефолтный easing для transition-all на кнопках/карточках." },
+      { "name": "duration-fast", "value": "150ms", "purpose": "Hover/focus переходы." },
+      { "name": "duration-pulse", "value": "1.4s-2s ease-in-out infinite", "purpose": "Пульсация активного хода / банка / джекпота." }
+    ],
+    "breakpoints": [
+      { "name": "mobile", "value": "375px" },
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Основное действие: войти за стол, подтвердить, сохранить.",
+      "html": "<button class=\"ds-btn-primary\">Войти</button>",
+      "css": ".ds-btn-primary { background: linear-gradient(to right, #10b981, #059669); color: #ffffff; padding: 8px 20px; border-radius: 12px; font-weight: 700; border: none; transition: box-shadow 0.15s cubic-bezier(0.4,0,0.2,1), transform 0.15s; } .ds-btn-primary:hover { box-shadow: 0 10px 15px -3px rgba(16,185,129,0.3); } .ds-btn-primary:focus-visible { outline: 2px solid #34d399; outline-offset: 2px; } .ds-btn-primary:active { transform: scale(0.98); }"
+    },
+    {
+      "name": "VIP Button",
+      "kind": "button",
+      "refersTo": "button-vip",
+      "description": "Премиальное действие: VIP-стол, джекпот, апгрейд.",
+      "html": "<button class=\"ds-btn-vip\">Войти</button>",
+      "css": ".ds-btn-vip { background: linear-gradient(to right, #fbbf24, #d97706); color: #000000; padding: 8px 20px; border-radius: 12px; font-weight: 700; border: none; transition: box-shadow 0.15s cubic-bezier(0.4,0,0.2,1); } .ds-btn-vip:hover { box-shadow: 0 10px 15px -3px rgba(245,158,11,0.3); } .ds-btn-vip:focus-visible { outline: 2px solid #fcd34d; outline-offset: 2px; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Второстепенное действие: наблюдать, отмена, назад.",
+      "html": "<button class=\"ds-btn-ghost\">Наблюдать</button>",
+      "css": ".ds-btn-ghost { background: rgba(255,255,255,0.05); color: #d1d5db; padding: 6px 16px; border-radius: 12px; font-weight: 700; border: 1px solid rgba(255,255,255,0.10); transition: background 0.15s, color 0.15s; } .ds-btn-ghost:hover { background: rgba(255,255,255,0.10); color: #ffffff; } .ds-btn-ghost:focus-visible { outline: 2px solid rgba(255,255,255,0.4); outline-offset: 2px; }"
+    },
+    {
+      "name": "Room Row Card",
+      "kind": "card",
+      "refersTo": "card-row",
+      "description": "Строка стола в списочном режиме лобби.",
+      "html": "<div class=\"ds-card-row\"><span class=\"ds-card-row-accent\"></span><div>Пример строки</div></div>",
+      "css": ".ds-card-row { display: flex; gap: 12px; padding: 12px 16px; background: rgba(255,255,255,0.02); border-radius: 12px; transition: background 0.15s; } .ds-card-row:hover { background: rgba(255,255,255,0.05); } .ds-card-row-accent { width: 4px; border-radius: 9999px; background: #10b981; }"
+    },
+    {
+      "name": "Input Field",
+      "kind": "input",
+      "refersTo": "input-field",
+      "description": "Текстовое/числовое поле форм (блайнды, название стола и т.п.).",
+      "html": "<input class=\"ds-input\" placeholder=\"0.00\" />",
+      "css": ".ds-input { background: #1f2937; border: 1px solid rgba(255,255,255,0.10); border-radius: 8px; color: #ffffff; padding: 8px 12px; font-size: 14px; } .ds-input:focus { outline: none; border-color: #10b981; } .ds-input:disabled { opacity: 0.4; cursor: not-allowed; }"
+    },
+    {
+      "name": "Status Chip",
+      "kind": "chip",
+      "refersTo": "status-chip",
+      "description": "Круглый бейдж-счётчик (онлайн, раздач/час, лидеры).",
+      "html": "<span class=\"ds-chip ds-chip-emerald\">1,284 онлайн</span>",
+      "css": ".ds-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 9999px; background: rgba(0,0,0,0.45); font-size: 12px; font-weight: 700; border: 1px solid transparent; } .ds-chip-emerald { border-color: rgba(16,185,129,0.4); color: #6ee7b7; } .ds-chip-amber { border-color: rgba(245,158,11,0.4); color: #fcd34d; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Ночной VIP-зал казино",
+    "overview": "POKER HUB — не маркетинговый лендинг и не SaaS-дэшборд «для доверия»: это ночной, премиальный, живой зал казино в духе GGPoker/ClubGG/PokerStars. Свет — точечный, а не разлитый ambient light. Система плотная: и за столом, и в лобби одновременно на экране много контролов и статуса.",
+    "keyCharacteristics": [
+      "Тёмный холст (void-black → surface-raised) с точечным светом, не заливкой",
+      "Двойной accent-словарь: emerald = действие/успех/твой ход, gold/amber = премиальность/VIP/джекпот",
+      "Плотность важнее воздуха",
+      "Tactile & confident: заметная hover/press-реакция (glow, gradient shift)"
+    ],
+    "rules": [
+      { "name": "The Two Lights Rule", "body": "Emerald и gold никогда не конкурируют за одну и ту же роль на одном экране. Emerald — «сделай действие», gold — «это премиально».", "section": "colors" },
+      { "name": "The Unloaded Font Rule", "body": "Пока Inter не подключён webfont-ом, объявление font-family: 'Inter' ничего не даёт кроме отката к системному шрифту. Решить явно.", "section": "typography" },
+      { "name": "The Backdrop-Blur Rule", "body": "Плавающие панели поверх контента — backdrop-blur-md + bg-black/50..70, не сплошная заливка.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do использовать felt-emerald только для действия/успеха и vip-gold только для премиальности/джекпота",
+      "Do красить hover-тени кнопок в цвет самой кнопки",
+      "Do использовать tabular-nums на всех денежных и счётных значениях",
+      "Do держать границы как border-white/10, не border-gray-700",
+      "Do плавающие панели — через backdrop-blur + полупрозрачный чёрный"
+    ],
+    "donts": [
+      "Don't светлый/кремовый/бежевый фон «для доверия»",
+      "Don't generic AI-лендинг приёмы: градиент-текст, uppercase-eyebrow, hero-metric блоки, одинаковые карточные гриды",
+      "Don't объявлять font-family: 'Inter' не подключив сам шрифт",
+      "Don't оставлять второстепенные страницы на голом bg-gray-950 + border-gray-700 без accent-словаря",
+      "Don't переносить фетровую тему стола на обычный UI-хром вне стола"
+    ]
+  }
+}

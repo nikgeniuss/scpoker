@@ -1,3 +1,5 @@
+import { memo } from 'react';
+
 export type PreSelectAction = 'fold' | 'check-fold' | 'call-any';
 
 interface PreSelectPanelProps {
@@ -11,7 +13,10 @@ const OPTS: { id: PreSelectAction; label: string }[] = [
   { id: 'call-any', label: 'Call Any' },
 ];
 
-export const PreSelectPanel = ({ value, onChange }: PreSelectPanelProps) => (
+// memo: GameRoom ре-рендерится на каждый GAME_UPDATE (то есть на каждое чужое действие за
+// столом) — без memo эта панель пересоздавалась бы вместе с ним, хотя её пропсы (value/onChange)
+// меняются только когда игрок сам тапнул чекбокс. На бот-столах (быстрые ходы) это давало лаги.
+export const PreSelectPanel = memo(({ value, onChange }: PreSelectPanelProps) => (
   <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-2xl px-4 pb-[calc(env(safe-area-inset-bottom)+12px)] z-30">
     <div className="flex justify-center gap-2">
       {OPTS.map(opt => {
@@ -39,4 +44,4 @@ export const PreSelectPanel = ({ value, onChange }: PreSelectPanelProps) => (
       })}
     </div>
   </div>
-);
+));

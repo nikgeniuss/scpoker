@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { createPortal } from 'react-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { X, Trophy } from 'lucide-react';
-import { Stepper, Segmented, SettingRow, Toggle } from './createControls';
+import { Stepper, Segmented, SettingRow, Toggle, InfoSheet } from './createControls';
 import { parseMoney, formatMoney } from '../../config/chipFormat';
-import type { CreateTournamentOptions, BlindSpeed, GameFormat, TournamentType, MttItmPercent, MttPayoutMode, BountyType } from '@poker-room/shared';
+import type { CreateTournamentOptions, BlindSpeed, GameFormat, TournamentType, MttPayoutMode, BountyType } from '@poker-room/shared';
 
 // Та же лестница, что и в server/src/game/tournament/tournamentSchedule.ts (BLIND_LADDER) —
 // держать в синхроне при правке. Дублируется, а не импортируется из shared: это просто список
@@ -32,13 +33,6 @@ const TYPE_OPTIONS: Array<{ value: TournamentType; label: string }> = [
   { value: 'mtt', label: 'MTT (мультистол)' },
 ];
 
-const ITM_OPTIONS: Array<{ value: MttItmPercent; label: string }> = [
-  { value: 10, label: '10%' },
-  { value: 12, label: '12%' },
-  { value: 15, label: '15%' },
-  { value: 20, label: '20%' },
-];
-
 const PAYOUT_MODE_OPTIONS: Array<{ value: MttPayoutMode; label: string }> = [
   { value: 'itm', label: 'ITM %' },
   { value: 'fixed', label: 'Фикс. мест' },
@@ -48,6 +42,79 @@ const BOUNTY_TYPE_OPTIONS: Array<{ value: BountyType; label: string }> = [
   { value: 'flat', label: 'Флэт' },
   { value: 'progressive', label: 'Progressive (PKO)' },
 ];
+
+// Тексты bottom-sheet'ов для инфо-«i» по каждому пункту модалки (см. CreateRoomModal.tsx — тот же
+// паттерн InfoSheet/openInfo). Хардкод на русском — файл пока без i18n (см. ROADMAP §10.19).
+const INFO: Record<string, { title: string; lines: string[] }> = {
+  type: {
+    title: 'Тип турнира',
+    lines: [
+      'SNG (Sit & Go) — один стол, старт сразу после заполнения всех мест.',
+      'MTT (мультистол) — несколько столов, старт вручную, столы объединяются по ходу выбывания игроков.',
+    ],
+  },
+  format: { title: 'Формат', lines: ['Правила игры за столом: NLH (классика, 52 карты) или Шорт-дэк (36 карт, без 2–5, другой рейтинг рук).'] },
+  tableSize: { title: 'Мест за столом', lines: ['Сколько игроков сидит за одним столом. Для MTT определяет, сколько столов создастся при старте (участники ÷ это число).'] },
+  buyIn: { title: 'Бай-ин', lines: ['Взнос за участие — уходит в призовой фонд (за вычетом рейка и доли на баунти, если включены). 0 — бесплатный турнир.'] },
+  blind: { title: 'Начальный блайнд', lines: ['Стартовый уровень малого/большого блайнда по стандартной лестнице. Дальше блайнды растут автоматически по расписанию уровней.'] },
+  stack: { title: 'Стартовый стек, BB', lines: ['Глубина стека на старте в больших блайндах — сколько фишек получит каждый игрок (= начальный BB × это число).'] },
+  speed: { title: 'Скорость блайндов', lines: ['Как быстро растут блайнды между уровнями: медленно/стандартно/турбо/гипер — влияет на общую длительность турнира.'] },
+  level: { title: 'Уровень, мин', lines: ['Сколько минут длится каждый уровень блайндов, прежде чем они вырастут до следующего.'] },
+  bounty: { title: 'Баунти / PKO', lines: ['Часть бай-ина каждого входа уходит не в общий призовой фонд, а в «цену за голову» — выплачивается тому, кто выбьет этого игрока.'] },
+  bountyType: {
+    title: 'Тип баунти',
+    lines: [
+      'Флэт — весь баунти жертвы сразу уходит убийце кэшем в банкролл.',
+      'Progressive (PKO) — половина кэшем убийце сразу, половина добавляется к его СОБСТВЕННОМУ баунти (растёт по ходу турнира у выживших).',
+    ],
+  },
+  bountyPercent: { title: 'Доля бай-ина в баунти, %', lines: ['Какой процент бай-ина каждого входа уходит в баунти-пул вместо обычного призового фонда.'] },
+  rake: { title: 'Рейк, %', lines: ['Комиссия рума — эта доля бай-ина каждого входа уходит мимо призового фонда (как в реальных румах: бай-ин = приз-часть + рейк).'] },
+  lateReg: { title: 'Поздняя рег., мин', lines: ['MTT: сколько минут после старта ещё можно зарегистрироваться (или сделать ре-энтри) — окно поздней регистрации.'] },
+  payoutMode: {
+    title: 'Призовые места',
+    lines: [
+      'ITM % — доля призовых мест считается от общего числа участников (напр. 15% от 40 = 6 мест).',
+      'Фикс. мест — строго заданное число призовых мест независимо от количества участников.',
+    ],
+  },
+  itm: { title: 'ITM%', lines: ['Какой процент участников получит приз. Свободная настройка — под любой стандарт рума (типично 10-20%).'] },
+  fixedPlaces: { title: 'Призовых мест', lines: ['Строго это число призовых мест, независимо от того, сколько игроков зарегистрировалось (не больше числа участников).'] },
+  curve: {
+    title: 'Форма распределения приза',
+    lines: [
+      'Насколько сильно 1-е место получает больше остальных призовых мест.',
+      '1.0 — стандартная кривая (как сейчас). Меньше 1 — площе, приз размазан ровнее по местам. Больше 1 — top-heavy, 1-е место забирает заметно больше (как в жёстких структурах WSOP-типа).',
+    ],
+  },
+  reentry: { title: 'Ре-энтри', lines: ['MTT: после вылета можно зайти в турнир заново (новый вход, полный стек), пока открыто окно поздней регистрации.'] },
+  maxReentries: { title: 'Макс. ре-энтри на игрока', lines: ['Сколько раз один игрок может воспользоваться ре-энтри за турнир (не считая самого первого входа).'] },
+  reentryFee: { title: 'Цена ре-энтри', lines: ['Взнос за повторный вход — можно сделать отличным от обычного бай-ина (например, бесплатный вход + платное ре-энтри).'] },
+  guarantee: { title: 'Гарантированный приз', lines: ['Минимальный призовой фонд. Если бай-инов участников не хватило до этой суммы — рум доплачивает разницу («оверлей»).'] },
+  guaranteeSum: { title: 'Сумма гарантии', lines: ['Целевой размер призового фонда — рум доплатит недостающее на финише турнира, если реальные бай-ины оказались меньше.'] },
+  schedule: {
+    title: 'Запланированный старт',
+    lines: [
+      'Включите, чтобы задать конкретное время открытия регистрации и/или старта турнира вместо обычной логики (SNG стартует по заполнению стола, MTT — только вручную кнопкой «Начать сейчас»).',
+      'Оба поля необязательны — можно задать только одно из них.',
+    ],
+  },
+  regOpensAt: { title: 'Открытие регистрации', lines: ['До этого момента турнир виден в лобби, но зарегистрироваться нельзя. Если не задано — регистрация открыта сразу после создания.'] },
+  scheduledStartAt: {
+    title: 'Время старта турнира',
+    lines: [
+      'Турнир стартует автоматически в это время. SNG ждёт точное время даже если стол уже заполнился раньше; для MTT это как обычный принудительный старт.',
+      'Если к этому моменту зарегистрировано меньше 2 игроков — турнир автоматически отменяется, все бай-ины возвращаются.',
+    ],
+  },
+  fillWithBots: {
+    title: 'Заполнить ботами',
+    lines: [
+      'Боты с человеческими именами регистрируются постепенно и в случайном порядке — часть на этапе обычной регистрации, часть на поздней (если она есть у турнира). Не все сразу.',
+      'Платят бай-ин и баунти как обычный участник (идёт в общий призовой фонд). Играют слабо и стабильно сливают стек — никогда не заходят повторно после вылета, даже если включено ре-энтри.',
+    ],
+  },
+};
 
 interface CreateTournamentModalProps {
   onClose: () => void;
@@ -66,17 +133,34 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
   const [blindSpeed, setBlindSpeed] = useState<BlindSpeed>('regular');
   const [levelUpMinutes, setLevelUpMinutes] = useState(12);
   const [lateRegMinutes, setLateRegMinutes] = useState(10);
-  const [itmPercent, setItmPercent] = useState<MttItmPercent>(15);
+  const [itmPercent, setItmPercent] = useState(15);
   const [payoutMode, setPayoutMode] = useState<MttPayoutMode>('itm');
   const [fixedPayoutPlaces, setFixedPayoutPlaces] = useState(9);
+  const [payoutCurveExponent, setPayoutCurveExponent] = useState(1);
   const [reEntryEnabled, setReEntryEnabled] = useState(false);
   const [maxReEntries, setMaxReEntries] = useState(1);
   const [reEntryFee, setReEntryFee] = useState(1000);
   const [guaranteeEnabled, setGuaranteeEnabled] = useState(false);
   const [guaranteedPrizePool, setGuaranteedPrizePool] = useState(10000);
+  const [rakePercent, setRakePercent] = useState(0);
   const [bountyEnabled, setBountyEnabled] = useState(false);
   const [bountyType, setBountyType] = useState<BountyType>('flat');
   const [bountyPercent, setBountyPercent] = useState(50);
+  const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  const [regOpensAt, setRegOpensAt] = useState(''); // datetime-local строка, пусто — не задано
+  const [scheduledStartAt, setScheduledStartAt] = useState('');
+  const [fillWithBots, setFillWithBots] = useState(false);
+  const [botFillTarget, setBotFillTarget] = useState(10);
+  const [infoKey, setInfoKey] = useState<string | null>(null);
+  const openInfo = (k: string) => () => setInfoKey(k);
+
+  // Мобильная клавиатура перекрывает сфокусированное поле, т.к. модалка центрируется по
+  // layout viewport, который браузер не сжимает под клавиатуру (fixed inset-0). Подскролливаем
+  // сам инпут в видимую область — с задержкой, чтобы дождаться анимации появления клавиатуры.
+  const onFieldFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    const target = e.target;
+    setTimeout(() => target.scrollIntoView({ block: 'center', behavior: 'smooth' }), 300);
+  };
 
   const [startingSmallBlind, startingBigBlind] = BLIND_LADDER[blindIdx];
   const startingStack = startingBigBlind * stackBb;
@@ -84,13 +168,17 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
+    const regOpensAtMs = scheduleEnabled && regOpensAt ? new Date(regOpensAt).getTime() : undefined;
+    const scheduledStartAtMs = scheduleEnabled && scheduledStartAt ? new Date(scheduledStartAt).getTime() : undefined;
     onSubmit({
       name: name.trim(), type, format, buyIn, startingStack, startingBigBlind, tableSize, blindSpeed, levelUpMinutes,
+      ...(rakePercent > 0 ? { rakePercent } : {}),
       ...(type === 'mtt'
         ? {
             lateRegMinutes,
             payoutMode,
             ...(payoutMode === 'fixed' ? { fixedPayoutPlaces } : { itmPercent }),
+            payoutCurveExponent,
             reEntryEnabled,
             ...(reEntryEnabled ? { maxReEntries, reEntryFee } : {}),
             ...(guaranteeEnabled ? { guaranteedPrizePool } : {}),
@@ -98,10 +186,18 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
         : {}),
       bountyEnabled,
       ...(bountyEnabled ? { bountyType, bountyPercent } : {}),
+      ...(regOpensAtMs ? { regOpensAt: regOpensAtMs } : {}),
+      ...(scheduledStartAtMs ? { scheduledStartAt: scheduledStartAtMs } : {}),
+      fillWithBots,
+      ...(fillWithBots ? { botFillTarget } : {}),
     });
   };
 
-  return (
+  // Portal в document.body: страницы-хосты (Tournaments.tsx и др.) оборачивают контент в
+  // `relative z-10`, что создаёт свой stacking context и «запирает» модалку внутри — снаружи
+  // это видно как единый блок с эффективным z=10, а нижний таб-бар (z-40) перекрывает её целиком
+  // независимо от z-index внутри (нашли живым тестом в браузере: подсказки уходили под таб-бар).
+  return createPortal(
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -130,19 +226,47 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
+            onFocus={onFieldFocus}
             placeholder="Название турнира"
             className="w-full bg-gray-800 border border-white/10 rounded-xl px-4 py-2.5 text-white outline-none focus:border-amber-500 mb-2"
           />
 
-          <SettingRow label="Тип турнира">
+          <SettingRow label="Запланировать старт" onInfo={openInfo('schedule')}>
+            <Toggle checked={scheduleEnabled} onChange={setScheduleEnabled} />
+          </SettingRow>
+
+          {scheduleEnabled && (
+            <>
+              <SettingRow label="Открытие регистрации" onInfo={openInfo('regOpensAt')} wrap>
+                <input
+                  type="datetime-local"
+                  aria-label="Открытие регистрации"
+                  value={regOpensAt}
+                  onChange={(e) => setRegOpensAt(e.target.value)}
+                  className="bg-gray-800 border border-white/10 rounded-lg px-2 py-1.5 text-white text-sm outline-none focus:border-amber-500 [color-scheme:dark]"
+                />
+              </SettingRow>
+              <SettingRow label="Старт турнира" onInfo={openInfo('scheduledStartAt')} wrap>
+                <input
+                  type="datetime-local"
+                  aria-label="Старт турнира"
+                  value={scheduledStartAt}
+                  onChange={(e) => setScheduledStartAt(e.target.value)}
+                  className="bg-gray-800 border border-white/10 rounded-lg px-2 py-1.5 text-white text-sm outline-none focus:border-amber-500 [color-scheme:dark]"
+                />
+              </SettingRow>
+            </>
+          )}
+
+          <SettingRow label="Тип турнира" onInfo={openInfo('type')} wrap>
             <Segmented options={TYPE_OPTIONS} value={type} onChange={setType} />
           </SettingRow>
 
-          <SettingRow label="Формат">
+          <SettingRow label="Формат" onInfo={openInfo('format')}>
             <Segmented options={FORMAT_OPTIONS} value={format} onChange={setFormat} />
           </SettingRow>
 
-          <SettingRow label="Мест за столом">
+          <SettingRow label="Мест за столом" onInfo={openInfo('tableSize')} wrap>
             <Stepper
               display={tableSize}
               onDec={() => setTableSize((v) => Math.max(2, v - 1))}
@@ -150,18 +274,27 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
             />
           </SettingRow>
 
-          <SettingRow label="Бай-ин (0 — бесплатно)">
+          <SettingRow label="Бай-ин (0 — бесплатно)" onInfo={openInfo('buyIn')}>
             <input
               type="number"
               min="0"
               step="0.01"
               value={buyIn / 100}
               onChange={(e) => setBuyIn(parseMoney(e.target.value))}
+              onFocus={onFieldFocus}
               className="w-24 text-right bg-gray-800 border border-white/10 rounded-lg px-2 py-1.5 text-white text-sm outline-none focus:border-amber-500"
             />
           </SettingRow>
 
-          <SettingRow label="Начальный блайнд">
+          <SettingRow label="Рейк, %" onInfo={openInfo('rake')} wrap>
+            <Stepper
+              display={rakePercent + '%'}
+              onDec={() => setRakePercent((v) => Math.max(0, v - 1))}
+              onInc={() => setRakePercent((v) => Math.min(50, v + 1))}
+            />
+          </SettingRow>
+
+          <SettingRow label="Начальный блайнд" onInfo={openInfo('blind')} wrap>
             <Stepper
               display={formatMoney(startingSmallBlind) + ' / ' + formatMoney(startingBigBlind)}
               onDec={() => setBlindIdx((v) => Math.max(0, v - 1))}
@@ -169,7 +302,7 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
             />
           </SettingRow>
 
-          <SettingRow label="Стартовый стек, BB">
+          <SettingRow label="Стартовый стек, BB" onInfo={openInfo('stack')} wrap>
             <Stepper
               display={stackBb}
               onDec={() => setStackBb((v) => Math.max(10, v - 10))}
@@ -181,11 +314,11 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
             = {formatMoney(startingStack)} фишек на старте
           </div>
 
-          <SettingRow label="Скорость блайндов">
+          <SettingRow label="Скорость блайндов" onInfo={openInfo('speed')} wrap>
             <Segmented options={SPEED_OPTIONS} value={blindSpeed} onChange={setBlindSpeed} />
           </SettingRow>
 
-          <SettingRow label="Уровень, мин">
+          <SettingRow label="Уровень, мин" onInfo={openInfo('level')} wrap>
             <Stepper
               display={levelUpMinutes}
               onDec={() => setLevelUpMinutes((v) => Math.max(1, v - 1))}
@@ -193,16 +326,16 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
             />
           </SettingRow>
 
-          <SettingRow label="Баунти / PKO">
+          <SettingRow label="Баунти / PKO" onInfo={openInfo('bounty')}>
             <Toggle checked={bountyEnabled} onChange={setBountyEnabled} />
           </SettingRow>
 
           {bountyEnabled && (
             <>
-              <SettingRow label="Тип баунти">
+              <SettingRow label="Тип баунти" onInfo={openInfo('bountyType')} wrap>
                 <Segmented options={BOUNTY_TYPE_OPTIONS} value={bountyType} onChange={setBountyType} />
               </SettingRow>
-              <SettingRow label="Доля бай-ина в баунти, %">
+              <SettingRow label="Доля бай-ина в баунти, %" onInfo={openInfo('bountyPercent')} wrap>
                 <Stepper
                   display={bountyPercent}
                   onDec={() => setBountyPercent((v) => Math.max(1, v - 5))}
@@ -214,7 +347,7 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
 
           {type === 'mtt' && (
             <>
-              <SettingRow label="Поздняя рег., мин">
+              <SettingRow label="Поздняя рег., мин" onInfo={openInfo('lateReg')} wrap>
                 <Stepper
                   display={lateRegMinutes}
                   onDec={() => setLateRegMinutes((v) => Math.max(0, v - 1))}
@@ -222,16 +355,20 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
                 />
               </SettingRow>
 
-              <SettingRow label="Призовые места">
+              <SettingRow label="Призовые места" onInfo={openInfo('payoutMode')} wrap>
                 <Segmented options={PAYOUT_MODE_OPTIONS} value={payoutMode} onChange={setPayoutMode} />
               </SettingRow>
 
               {payoutMode === 'itm' ? (
-                <SettingRow label="ITM%">
-                  <Segmented options={ITM_OPTIONS} value={itmPercent} onChange={setItmPercent} />
+                <SettingRow label="ITM%" onInfo={openInfo('itm')} wrap>
+                  <Stepper
+                    display={itmPercent + '%'}
+                    onDec={() => setItmPercent((v) => Math.max(1, v - 1))}
+                    onInc={() => setItmPercent((v) => Math.min(100, v + 1))}
+                  />
                 </SettingRow>
               ) : (
-                <SettingRow label="Призовых мест">
+                <SettingRow label="Призовых мест" onInfo={openInfo('fixedPlaces')} wrap>
                   <Stepper
                     display={fixedPayoutPlaces}
                     onDec={() => setFixedPayoutPlaces((v) => Math.max(1, v - 1))}
@@ -240,49 +377,73 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
                 </SettingRow>
               )}
 
-              <SettingRow label="Ре-энтри">
+              <SettingRow label="Форма распределения приза" onInfo={openInfo('curve')} wrap>
+                <Stepper
+                  display={payoutCurveExponent.toFixed(1)}
+                  onDec={() => setPayoutCurveExponent((v) => Math.max(0.1, Math.round((v - 0.1) * 10) / 10))}
+                  onInc={() => setPayoutCurveExponent((v) => Math.min(5, Math.round((v + 0.1) * 10) / 10))}
+                />
+              </SettingRow>
+
+              <SettingRow label="Ре-энтри" onInfo={openInfo('reentry')}>
                 <Toggle checked={reEntryEnabled} onChange={setReEntryEnabled} />
               </SettingRow>
 
               {reEntryEnabled && (
                 <>
-                  <SettingRow label="Макс. ре-энтри на игрока">
+                  <SettingRow label="Макс. ре-энтри на игрока" onInfo={openInfo('maxReentries')} wrap>
                     <Stepper
                       display={maxReEntries}
                       onDec={() => setMaxReEntries((v) => Math.max(1, v - 1))}
                       onInc={() => setMaxReEntries((v) => Math.min(10, v + 1))}
                     />
                   </SettingRow>
-                  <SettingRow label="Цена ре-энтри">
+                  <SettingRow label="Цена ре-энтри" onInfo={openInfo('reentryFee')}>
                     <input
                       type="number"
                       min="0"
                       step="0.01"
                       value={reEntryFee / 100}
                       onChange={(e) => setReEntryFee(parseMoney(e.target.value))}
+                      onFocus={onFieldFocus}
                       className="w-24 text-right bg-gray-800 border border-white/10 rounded-lg px-2 py-1.5 text-white text-sm outline-none focus:border-amber-500"
                     />
                   </SettingRow>
                 </>
               )}
 
-              <SettingRow label="Гарантированный приз">
+              <SettingRow label="Гарантированный приз" onInfo={openInfo('guarantee')}>
                 <Toggle checked={guaranteeEnabled} onChange={setGuaranteeEnabled} />
               </SettingRow>
 
               {guaranteeEnabled && (
-                <SettingRow label="Сумма гарантии">
+                <SettingRow label="Сумма гарантии" onInfo={openInfo('guaranteeSum')}>
                   <input
                     type="number"
                     min="0"
                     step="0.01"
                     value={guaranteedPrizePool / 100}
                     onChange={(e) => setGuaranteedPrizePool(parseMoney(e.target.value))}
+                    onFocus={onFieldFocus}
                     className="w-24 text-right bg-gray-800 border border-white/10 rounded-lg px-2 py-1.5 text-white text-sm outline-none focus:border-amber-500"
                   />
                 </SettingRow>
               )}
             </>
+          )}
+
+          <SettingRow label="Заполнить ботами" onInfo={openInfo('fillWithBots')}>
+            <Toggle checked={fillWithBots} onChange={setFillWithBots} />
+          </SettingRow>
+
+          {fillWithBots && (
+            <SettingRow label="Итоговое число ботов" wrap>
+              <Stepper
+                display={botFillTarget}
+                onDec={() => setBotFillTarget((v) => Math.max(1, v - 1))}
+                onInc={() => setBotFillTarget((v) => Math.min(100, v + 1))}
+              />
+            </SettingRow>
           )}
 
           <button
@@ -293,6 +454,17 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
           </button>
         </form>
       </motion.div>
-    </motion.div>
+
+      <AnimatePresence>
+        {infoKey && INFO[infoKey] && (
+          <InfoSheet title={INFO[infoKey].title} onClose={() => setInfoKey(null)}>
+            {INFO[infoKey].lines.map((l, i) => (
+              <p key={i}>{l}</p>
+            ))}
+          </InfoSheet>
+        )}
+      </AnimatePresence>
+    </motion.div>,
+    document.body,
   );
 };

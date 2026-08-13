@@ -44,12 +44,18 @@ function paidPlacesCount(totalEntries: number, itmPercent: MttItmPercent, fixedP
   return Math.max(1, Math.round((totalEntries * itmPercent) / 100));
 }
 
-// MTT: убывающая ITM-кривая (гармонический ряд 1, 1/2, 1/3, ... нормированный к 100%) —
-// 1-е место получает заметно больше последнего призового места, без скачков. Чистая функция.
-// fixedPlaces — см. paidPlacesCount (строгое число мест вместо доли от участников).
-export function getMttPayoutTiers(totalEntries: number, itmPercent: MttItmPercent, fixedPlaces?: number): PayoutTier[] {
+// MTT: убывающая ITM-кривая (вес места = 1/place^exponent, нормированный к 100%) — 1-е место
+// получает заметно больше последнего призового места, без скачков. exponent=1 (дефолт) — гармонический
+// ряд 1, 1/2, 1/3, ... (старое поведение); <1 — площе (flat), >1 — круче (top-heavy, больше 1-му месту).
+// Чистая функция. fixedPlaces — см. paidPlacesCount (строгое число мест вместо доли от участников).
+export function getMttPayoutTiers(
+  totalEntries: number,
+  itmPercent: MttItmPercent,
+  fixedPlaces?: number,
+  exponent = 1,
+): PayoutTier[] {
   const paidPlaces = paidPlacesCount(totalEntries, itmPercent, fixedPlaces);
-  const weights = Array.from({ length: paidPlaces }, (_, i) => 1 / (i + 1));
+  const weights = Array.from({ length: paidPlaces }, (_, i) => 1 / Math.pow(i + 1, exponent));
   const weightSum = weights.reduce((a, b) => a + b, 0);
   return weights.map((w, i) => ({ place: i + 1, percent: (w / weightSum) * 100 }));
 }
@@ -78,8 +84,9 @@ export function computeMttPayout(
   totalEntries: number,
   itmPercent: MttItmPercent,
   fixedPlaces?: number,
+  exponent = 1,
 ): Record<number, number> {
-  const tiers = getMttPayoutTiers(totalEntries, itmPercent, fixedPlaces);
+  const tiers = getMttPayoutTiers(totalEntries, itmPercent, fixedPlaces, exponent);
   const result: Record<number, number> = {};
   let distributed = 0;
   tiers.forEach(t => {

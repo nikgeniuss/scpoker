@@ -23,3 +23,12 @@ export function handHintName(hole: Card[], board: Card[], format: GameFormat = '
   }
   return name;
 }
+
+// Числовой ранг ТЕКУЩЕЙ комбинации 1..9 (для шкалы силы руки на клиенте, HandStrengthMeter):
+// 1 = старшая карта, ..., 9 = стрит-флеш/роял-флеш (роял объединён со стрит-флешем в одну
+// верхнюю ступень — см. hands.ts value=10 для роял, здесь ограничиваем до 9). Чистая обёртка.
+export function handRankValue(hole: Card[], board: Card[], format: GameFormat = 'nlh'): number | undefined {
+  if (hole.length < 2) return undefined;
+  const result = evaluateHand(hole, board, format);
+  return Math.min(result.value, 9);
+}

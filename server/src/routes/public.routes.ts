@@ -67,6 +67,13 @@ export function createPublicRouter(gameManager: GameManager): Router {
     res.json(readJSON('lobbyDesign.json'));
   });
 
+  // Какой визуальный скин приложения видят все игроки (poker-hub/ak) — переключатель в админке.
+  // НЕ путать с .theme-classic/.theme-clubgg в index.css — та система про фетр стола (GameRoom),
+  // не пересекается с этой (общий chrome + лобби/кошелёк/профиль вне стола).
+  router.get('/api/app-theme', (req, res) => {
+    res.json(readJSON('appTheme.json'));
+  });
+
   // Bad Beat Jackpot — публичная вьюшка для игрок-view/баннера: пул + флаг + таблица выплат.
   router.get('/api/badbeat', (req, res) => {
     res.json(getBadBeatPublic());

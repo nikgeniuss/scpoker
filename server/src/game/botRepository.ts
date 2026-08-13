@@ -2,7 +2,12 @@
 // Без зависимостей на GameManager / io. BotManager делегирует сюда всё storage.
 import { readJSON, writeJSON } from '../auth/storage.js';
 import { DEFAULT_BOT_PERSONAS } from './defaultBotPersonas.js';
-import { createBotRuntime, recordHandResult, type BotPersona, type BotRuntime } from './botBrain.js';
+import { TOURNAMENT_FILLER_NAMES, buildFillerPersona } from './tournamentFillerPersonas.js';
+import { createBotRuntime, recordHandResult, hashStr, type BotPersona, type BotRuntime } from './botBrain.js';
+
+// Незаметное заполнение турниров ботами (roadmap 2026-07-09) — id этих персон ИСКЛЮЧЕНЫ из
+// cash-пула BotManager.pickBotsForTable (как и bot:tt- у ручных тестовых ботов).
+export const FILLER_BOT_ID_PREFIX = 'bot:fill-';
 
 export type BotPnLTarget = 'zero' | 'plus' | 'minus';
 
@@ -43,12 +48,14 @@ export class BotRepository {
     }
     if (this.bots.size === 0) {
       this.seedDefaultPool();
+      this.seedFillerPool();
       this.save();
     } else {
       let dirty = false;
       if (this.bots.size < DEFAULT_BOT_PERSONAS.length) {
         dirty = this.mergeNewPersonas();
       }
+      dirty = this.mergeNewFillerPersonas() || dirty;
       dirty = this.syncTargetsFromDefaults() || dirty;
       if (dirty) this.save();
     }
@@ -77,6 +84,35 @@ export class BotRepository {
       added++;
     }
     if (added > 0) console.log(`🤖 Merged ${added} new personas → pool now ${this.bots.size}`);
+    return added > 0;
+  }
+
+  // Пул персон для незаметного заполнения турниров (roadmap 2026-07-09) — фиксированный, как
+  // кэш-пул выше, чтобы не расти бесконечно в bots.json. chips выставляются реально при
+  // регистрации в конкретный турнир (см. BotManager.prepareFillerBot / TournamentManager).
+  private seedFillerPool(): void {
+    const now = new Date().toISOString();
+    for (const name of TOURNAMENT_FILLER_NAMES) {
+      const id = FILLER_BOT_ID_PREFIX + name.toLowerCase();
+      const bot: BotInfo = { id, username: name, chips: 0, targetPnL: 'minus', persona: buildFillerPersona(hashStr(id)), createdAt: now, totalPnL: 0 };
+      this.bots.set(id, bot);
+      this.runtimes.set(id, createBotRuntime(bot.chips));
+    }
+    console.log(`🤖 Seeded ${TOURNAMENT_FILLER_NAMES.length} tournament filler personas`);
+  }
+
+  private mergeNewFillerPersonas(): boolean {
+    const now = new Date().toISOString();
+    let added = 0;
+    for (const name of TOURNAMENT_FILLER_NAMES) {
+      const id = FILLER_BOT_ID_PREFIX + name.toLowerCase();
+      if (this.bots.has(id)) continue;
+      const bot: BotInfo = { id, username: name, chips: 0, targetPnL: 'minus', persona: buildFillerPersona(hashStr(id)), createdAt: now, totalPnL: 0 };
+      this.bots.set(id, bot);
+      this.runtimes.set(id, createBotRuntime(bot.chips));
+      added++;
+    }
+    if (added > 0) console.log(`🤖 Merged ${added} new filler personas → filler pool now has more entries`);
     return added > 0;
   }
 

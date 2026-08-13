@@ -34,6 +34,7 @@ export interface Player {
   // кому карты видны (§0.1): своя — всегда, чужие — админу с peek / на showdown.
   handHint?: string;  // название текущей комбинации (у админа на своём месте — итоговая)
   winChance?: number; // 0..100, шанс выиграть раздачу (только своё место; считается против случайных)
+  handRank?: number;  // 1..9, категория текущей комбинации (для HandStrengthMeter на клиенте)
   // Добровольно показанные после раздачи карты (тап): длина 2, элемент = карта (видна всем) или null.
   shownCards?: (Card | null)[];
   revealedCards?: number[]; // индексы показанных карт (публично) — для UI владельца («показана»)
@@ -384,8 +385,9 @@ export interface PayoutTier {
 
 export type TournamentEntryStatus = 'registered' | 'playing' | 'eliminated';
 
-// Преднастройка ITM% для MTT (доля призовых мест от общего числа участников) — выбор админа при создании.
-export type MttItmPercent = 10 | 12 | 15 | 20;
+// ITM% для MTT (доля призовых мест от общего числа участников), 1-100 — свободно настраивается
+// админом при создании (см. CreateTournamentModal.tsx), под любой стандарт рума.
+export type MttItmPercent = number;
 
 // Режим определения числа призовых мест в MTT: 'itm' — доля от числа участников (itmPercent),
 // 'fixed' — строго фиксированное число мест (fixedPayoutPlaces), независимо от числа участников.
@@ -427,6 +429,13 @@ export interface TournamentInfo {
   itmPercent: MttItmPercent; // MTT: доля призовых мест от числа участников (используется при payoutMode==='itm')
   payoutMode: MttPayoutMode; // MTT: 'itm' (по умолчанию) или 'fixed' (строго fixedPayoutPlaces мест)
   fixedPayoutPlaces?: number; // MTT: число призовых мест при payoutMode==='fixed' (capped числом участников)
+  // Форма распределения приза между местами (MTT): вес места = 1/place^exponent, нормировано к 100%.
+  // 1 = гармонический ряд (дефолт, старое поведение). <1 — более плоско (флэт), >1 — более top-heavy
+  // (больше 1-му месту). Настраивается свободно (см. CreateTournamentModal.tsx).
+  payoutCurveExponent?: number;
+  // Рейк — доля бай-ина, уходящая руму МИМО призового фонда (SNG+MTT), 0-50%. buyIn = prizePool-часть +
+  // bounty-часть (если включено) + rake-часть. По умолчанию 0 (старое поведение, без рейка).
+  rakePercent?: number;
   // Ре-энтри (MTT, доделка §10.6): можно зайти заново после баста, в том же окне lateRegMinutes —
   // отдельная новая запись entries (прошлый бaст уже финализирован своим finishPlace), призовой
   // фонд растёт с каждым входом. maxReEntries — сколько раз можно зайти заново (доп. к первому входу).
@@ -442,6 +451,19 @@ export interface TournamentInfo {
   bountyEnabled: boolean;
   bountyType?: BountyType;   // задан только при bountyEnabled
   bountyPercent?: number;    // % от buyIn в баунти-пул (1..90), задан только при bountyEnabled
+  // Расписание старта (ROADMAP §10.19, 2026-07-07). Оба поля опциональны — без них старое поведение
+  // (SNG стартует по заполнению стола, MTT — только forceStart админом).
+  // regOpensAt: до этого момента турнир виден в лобби, но register() отклоняется ('registration-not-open').
+  regOpensAt?: number;
+  // scheduledStartAt: авто-старт турнира в это время (см. TournamentManager.scheduleStartTimer).
+  // SNG с этим полем НЕ стартует раньше даже при заполнении стола — ждёт точного времени.
+  // Если на момент старта зарегистрировано <2 игроков — турнир авто-отменяется (бай-ины возвращаются).
+  scheduledStartAt?: number;
+  // Незаметное заполнение ботами (roadmap 2026-07-09): боты регистрируются поэтапно (часть на
+  // registering, часть на поздней рег. MTT), платят бай-ин/баунти как обычный участник, никогда
+  // не докупаются после вылета. botFillTarget — итоговое целевое число (задано только при fillWithBots).
+  fillWithBots: boolean;
+  botFillTarget?: number;
   createdBy: string;
   createdAt: number;
   startedAt?: number;
@@ -459,16 +481,42 @@ export interface CreateTournamentOptions {
   blindSpeed: BlindSpeed;
   levelUpMinutes: number; // 1..60
   lateRegMinutes?: number;  // MTT, по умолчанию 0
-  itmPercent?: MttItmPercent; // MTT, по умолчанию 15 (используется при payoutMode==='itm', тоже по умолчанию)
+  itmPercent?: MttItmPercent; // MTT, целое 1..100, по умолчанию 15 (используется при payoutMode==='itm', тоже по умолчанию)
   payoutMode?: MttPayoutMode; // MTT, по умолчанию 'itm'
   fixedPayoutPlaces?: number; // MTT, при payoutMode==='fixed' — целое 1..1000
+  payoutCurveExponent?: number; // MTT, по умолчанию 1 (гармонический ряд, старое поведение)
   reEntryEnabled?: boolean;   // MTT, по умолчанию false
   maxReEntries?: number;      // MTT, при reEntryEnabled — целое 1..10, по умолчанию 1
   reEntryFee?: number;        // MTT, при reEntryEnabled — целое >=0, по умолчанию = buyIn
   guaranteedPrizePool?: number; // MTT, целое >=0, по умолчанию нет гарантии
+  rakePercent?: number;      // SNG+MTT, целое 0..50, по умолчанию 0 (нет рейка)
   bountyEnabled?: boolean;   // SNG+MTT, по умолчанию false
   bountyType?: BountyType;   // при bountyEnabled, по умолчанию 'flat'
   bountyPercent?: number;    // при bountyEnabled, целое 1..90, по умолчанию 50
+  regOpensAt?: number;       // timestamp мс, по умолчанию нет — регистрация открыта сразу
+  scheduledStartAt?: number; // timestamp мс, по умолчанию нет — старое поведение старта (см. TournamentInfo)
+  fillWithBots?: boolean;    // SNG+MTT, по умолчанию false — незаметное заполнение ботами
+  botFillTarget?: number;    // при fillWithBots — целое 1..100, итоговое число ботов-заполнителей
+}
+
+// Живой рэнкинг за столом турнира (ROADMAP §10.19, TableInfoModal) — только пока status==='running'.
+// place — ТЕКУЩАЯ позиция по фишкам прямо сейчас, не путать с TournamentEntry.finishPlace
+// (окончательное место, присваивается при выбывании/финише).
+export interface TournamentStandingsEntry {
+  userId: string;
+  username: string;
+  chips: number;
+  place: number;
+}
+
+export interface TournamentStandings {
+  entries: TournamentStandingsEntry[]; // только status==='playing', отсортированы по фишкам убыв.
+  totalEntries: number;      // все entries турнира (включая уже выбывших и ре-энтри)
+  playersRemaining: number;  // entries.length со status==='playing'
+  prizePool: number;
+  paidPlaces: number;        // сколько мест платят по текущей конфигурации
+  payout: Record<number, number>; // предпросмотр выплат по местам (текущий prizePool, без гарантии)
+  lateRegClosesAt: number | null; // timestamp конца поздней рег.; null — MTT-условие не выполнено (см. TournamentManager.getStandings)
 }
 
 export type JoinDeniedReason =

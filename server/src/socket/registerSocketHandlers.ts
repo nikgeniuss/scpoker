@@ -95,6 +95,7 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
           antiCollusionEnabled: data.antiCollusionEnabled,
         },
         user.username,
+        user.id,
       );
       if ('error' in result) {
         socket.emit(SOCKET_EVENTS.ERROR, { message: result.error });

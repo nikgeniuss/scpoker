@@ -59,6 +59,22 @@ export function createAdminRouter(gameManager: GameManager): Router {
     res.json({ design });
   });
 
+  // Визуальный скин всего приложения (poker-hub/ak) — глобальный тоггл, отдельный от lobby-design
+  // (тот только про структуру /lobby, этот — про весь chrome). См. комментарий в public.routes.ts.
+  router.get('/app-theme', (req, res) => {
+    res.json(readJSON('appTheme.json'));
+  });
+
+  router.put('/app-theme', (req, res) => {
+    const { theme } = req.body as { theme?: string };
+    if (theme !== 'poker-hub' && theme !== 'ak') {
+      res.status(400).json({ error: 'theme: "poker-hub" | "ak"' });
+      return;
+    }
+    writeJSON('appTheme.json', { theme });
+    res.json({ theme });
+  });
+
   // Список юзеров — без passwordHash, со статистикой за всё время (PnL/руки — для сортировки/деталей)
   router.get('/users', (req, res) => {
     const users = readJSON('users.json') as Array<{

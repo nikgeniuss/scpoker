@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { ChevronLeft } from 'lucide-react';
@@ -7,7 +8,7 @@ import { useTimebankConfig } from '../../hooks/useTimebankConfig';
 import { useAuthStore } from '../../store/authStore';
 import { useClubStore } from '../../store/clubStore';
 import type { CreateRoomOptions as CreateOptions, GameFormat } from '@poker-room/shared';
-import { Toggle, Stepper, Segmented, RangeSlider, DualRangeSlider, Dropdown, SettingRow, InfoSheet } from './createControls';
+import { Toggle, Stepper, Segmented, RangeSlider, DualRangeSlider, Dropdown, SettingRow, InfoSheet, InfoButton } from './createControls';
 import { fetchTemplates, putTemplates, type RoomTemplate } from '../../config/roomTemplates';
 import { formatMoney, parseMoney } from '../../config/chipFormat';
 
@@ -54,6 +55,27 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
     ev: { title: t('createRoomModal.infoEvTitle'), lines: [t('createRoomModal.infoEvLine')] },
     noturn: { title: t('createRoomModal.infoNoTurnTitle'), lines: [t('createRoomModal.infoNoTurnLine')] },
     runtable: { title: t('createRoomModal.infoRunTableTitle'), lines: [t('createRoomModal.infoRunTableLine')] },
+    clubonly: { title: t('createRoomModal.infoClubOnlyTitle'), lines: [t('createRoomModal.infoClubOnlyLine')] },
+    private: { title: t('createRoomModal.infoPrivateTitle'), lines: [t('createRoomModal.infoPrivateLine')] },
+    pin: { title: t('createRoomModal.infoPinTitle'), lines: [t('createRoomModal.infoPinLine')] },
+    tablesize: { title: t('createRoomModal.infoTableSizeTitle'), lines: [t('createRoomModal.infoTableSizeLine')] },
+    turnduration: { title: t('createRoomModal.infoTurnDurationTitle'), lines: [t('createRoomModal.infoTurnDurationLine')] },
+    timebank: { title: t('createRoomModal.infoTimebankTitle'), lines: [t('createRoomModal.infoTimebankLine')] },
+    timebankstart: { title: t('createRoomModal.infoTimebankStartTitle'), lines: [t('createRoomModal.infoTimebankStartLine')] },
+    timebankbonus: { title: t('createRoomModal.infoTimebankBonusTitle'), lines: [t('createRoomModal.infoTimebankBonusLine')] },
+    blinds: { title: t('createRoomModal.infoBlindsTitle'), lines: [t('createRoomModal.infoBlindsLine')] },
+    ante: { title: t('createRoomModal.infoAnteTitle'), lines: [t('createRoomModal.infoAnteLine')] },
+    buyin: { title: t('createRoomModal.infoBuyInTitle'), lines: [t('createRoomModal.infoBuyInLine')] },
+    rake: { title: t('createRoomModal.infoRakeTitle'), lines: [t('createRoomModal.infoRakeLine')] },
+    doubleboard: { title: t('createRoomModal.infoDoubleBoardTitle'), lines: [t('createRoomModal.infoDoubleBoardLine')] },
+    allininsurance: { title: t('createRoomModal.infoAllInInsuranceTitle'), lines: [t('createRoomModal.infoAllInInsuranceLine')] },
+    autostart: { title: t('createRoomModal.infoAutoStartTitle'), lines: [t('createRoomModal.infoAutoStartLine')] },
+    vpip: { title: t('createRoomModal.infoVpipTitle'), lines: [t('createRoomModal.infoVpipLine')] },
+    anticollusion: { title: t('createRoomModal.infoAntiCollusionTitle'), lines: [t('createRoomModal.infoAntiCollusionLine')] },
+    sessionduration: { title: t('createRoomModal.infoSessionDurationTitle'), lines: [t('createRoomModal.infoSessionDurationLine')] },
+    autoextend: { title: t('createRoomModal.infoAutoExtendTitle'), lines: [t('createRoomModal.infoAutoExtendLine')] },
+    sitout: { title: t('createRoomModal.infoSitOutTitle'), lines: [t('createRoomModal.infoSitOutLine')] },
+    waitlist: { title: t('createRoomModal.infoWaitlistTitle'), lines: [t('createRoomModal.infoWaitlistLine')] },
   };
 
   const [format] = useState<FormatTab>('cash'); // SNG/Турнир — disabled (memory game_formats)
@@ -231,7 +253,11 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
     onSubmit(buildOpts());
   };
 
-  return (
+  // Portal в document.body: страницы-хосты (Lobby.tsx classic-вариант и др.) могут оборачивать
+  // контент в `relative z-N`, что создаёт свой stacking context и «запирает» модалку внутри —
+  // нижний таб-бар (z-40) перекрывал бы её независимо от z-index внутри (см. тот же фикс в
+  // CreateTournamentModal.tsx, найден живым тестом в браузере).
+  return createPortal(
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -391,11 +417,11 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
 
             {/* Базовые тогглы (часть — «скоро») */}
             {myClub && (
-              <SettingRow label={t('createRoomModal.clubOnlyLabel') + ' ' + myClub.name}>
+              <SettingRow label={t('createRoomModal.clubOnlyLabel') + ' ' + myClub.name} onInfo={openInfo('clubonly')}>
                 <Toggle checked={clubOnly} onChange={setClubOnly} />
               </SettingRow>
             )}
-            <SettingRow label={t('createRoomModal.privateGames')}>
+            <SettingRow label={t('createRoomModal.privateGames')} onInfo={openInfo('private')}>
               <Toggle checked={isPrivate} onChange={setIsPrivate} />
             </SettingRow>
             {isPrivate && (
@@ -408,7 +434,7 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
               />
             )}
             {isAdmin && (
-              <SettingRow label={t('createRoomModal.pinToTop')}>
+              <SettingRow label={t('createRoomModal.pinToTop')} onInfo={openInfo('pin')}>
                 <Toggle checked={pinned} onChange={setPinned} />
               </SettingRow>
             )}
@@ -423,7 +449,7 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
             </SettingRow>
 
             {/* Размер стола + время действия */}
-            <SettingRow label={t('createRoomModal.tableSize')}>
+            <SettingRow label={t('createRoomModal.tableSize')} onInfo={openInfo('tablesize')}>
               <Stepper
                 display={t('createRoomModal.maxPlayersStepper', { count: maxPlayers })}
                 onDec={() => setMaxPlayers((v) => Math.max(2, v - 1))}
@@ -431,12 +457,15 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
               />
             </SettingRow>
             <div className="py-3 border-b border-white/5">
-              <div className="text-sm text-white mb-2">{t('createRoomModal.turnDuration')}</div>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-sm text-white">{t('createRoomModal.turnDuration')}</span>
+                <InfoButton onClick={openInfo('turnduration')} />
+              </div>
               <Segmented options={TURN_DURATION_OPTS} value={turnDurationSec} onChange={setTurnDurationSec} />
             </div>
 
             {/* Таймбанк */}
-            <SettingRow label={t('createRoomModal.timebank')}>
+            <SettingRow label={t('createRoomModal.timebank')} onInfo={openInfo('timebank')}>
               <Toggle
                 checked={!!tbLocal?.enabled}
                 onChange={(v) => tbLocal && setTbLocal({ ...tbLocal, enabled: v })}
@@ -445,7 +474,7 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
             </SettingRow>
             {tbLocal?.enabled && (
               <>
-                <SettingRow label={t('createRoomModal.timebankStart')} disabled={!showTimebank}>
+                <SettingRow label={t('createRoomModal.timebankStart')} disabled={!showTimebank} onInfo={openInfo('timebankstart')}>
                   <Dropdown
                     value={tbLocal.startSec}
                     disabled={!showTimebank}
@@ -454,7 +483,10 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
                   />
                 </SettingRow>
                 <div className={'py-3 border-b border-white/5 ' + (!showTimebank ? 'opacity-50' : '')}>
-                  <div className="text-sm text-white mb-2">{t('createRoomModal.timebankBonusAfter')}</div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-sm text-white">{t('createRoomModal.timebankBonusAfter')}</span>
+                    <InfoButton onClick={openInfo('timebankbonus')} />
+                  </div>
                   <div className="grid grid-cols-2 gap-2">
                     <Dropdown
                       value={tbLocal.bonusEveryHands}
@@ -475,7 +507,10 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
 
             {/* Блайнды */}
             <div className="flex items-center justify-between py-2 text-sm pt-3">
-              <span className="text-gray-400">{t('createRoomModal.blindsLabel')}</span>
+              <span className="text-gray-400 flex items-center gap-1.5">
+                {t('createRoomModal.blindsLabel')}
+                <InfoButton onClick={openInfo('blinds')} />
+              </span>
               <span className="text-white font-bold tabular-nums">{formatMoney(smallBlind)} / {formatMoney(bigBlind)}</span>
             </div>
             <div className="py-2">
@@ -516,7 +551,7 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
                 />
               </div>
             </div>
-            <SettingRow label={t('createRoomModal.ante')}>
+            <SettingRow label={t('createRoomModal.ante')} onInfo={openInfo('ante')}>
               <Stepper
                 display={ante === 0 ? t('createRoomModal.anteNone') : formatMoney(ante)}
                 onDec={() => setAnte((v) => Math.max(0, v - Math.max(1, Math.round(bigBlind / 4))))}
@@ -529,7 +564,10 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
 
             {/* Бай-ин */}
             <div className="flex items-center justify-between py-2 text-sm pt-3">
-              <span className="text-gray-400">{t('createRoomModal.buyInBb')}</span>
+              <span className="text-gray-400 flex items-center gap-1.5">
+                {t('createRoomModal.buyInBb')}
+                <InfoButton onClick={openInfo('buyin')} />
+              </span>
               <span className="text-white font-bold tabular-nums">{buyInMinBb} / {buyInMaxBb}</span>
             </div>
             <div className="py-3 border-b border-white/5">
@@ -547,7 +585,10 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
             </div>
             {/* Рейк (функционально) — два дропдауна: процент + Cap. 0% = выключен. */}
             <div className="py-3 border-b border-white/5 flex items-center justify-between gap-2">
-              <span className="text-sm text-white shrink-0">{t('createRoomModal.rake')}</span>
+              <span className="text-sm text-white shrink-0 flex items-center gap-1.5">
+                {t('createRoomModal.rake')}
+                <InfoButton onClick={openInfo('rake')} />
+              </span>
               <div className="flex gap-2">
                 <Dropdown
                   value={rakePercent}
@@ -575,10 +616,10 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
             <SettingRow label={t('createRoomModal.bombPot')} onInfo={openInfo('bombpot')}>
               <Toggle checked={bombPotEnabled} onChange={setBombPotEnabled} />
             </SettingRow>
-            <SettingRow label={t('createRoomModal.doubleBoard')}>
+            <SettingRow label={t('createRoomModal.doubleBoard')} onInfo={openInfo('doubleboard')}>
               <Toggle checked={doubleBoardEnabled} onChange={setDoubleBoardEnabled} />
             </SettingRow>
-            <SettingRow label={t('createRoomModal.allInInsurance')} soon disabled>
+            <SettingRow label={t('createRoomModal.allInInsurance')} soon disabled onInfo={openInfo('allininsurance')}>
               <Toggle checked={false} onChange={noop} disabled />
             </SettingRow>
             <SettingRow label={t('createRoomModal.evCashout')} onInfo={openInfo('ev')}>
@@ -587,44 +628,44 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
             <SettingRow label={t('createRoomModal.noTurnNoShow')} onInfo={openInfo('noturn')}>
               <Toggle checked={noTurnNoShowEnabled} onChange={setNoTurnNoShowEnabled} />
             </SettingRow>
-            <SettingRow label={t('createRoomModal.autoStart')}>
+            <SettingRow label={t('createRoomModal.autoStart')} onInfo={openInfo('autostart')}>
               <Stepper
                 display={t('createRoomModal.playersStepper', { count: autoStartPlayers })}
                 onDec={() => setAutoStartPlayers((v) => Math.max(2, v - 1))}
                 onInc={() => setAutoStartPlayers((v) => Math.min(maxPlayers, v + 1))}
               />
             </SettingRow>
-            <SettingRow label={t('createRoomModal.requiredVpip')} soon disabled>
+            <SettingRow label={t('createRoomModal.requiredVpip')} soon disabled onInfo={openInfo('vpip')}>
               <Toggle checked={false} onChange={noop} disabled />
             </SettingRow>
 
             {/* Ограничение / организация */}
-            <SettingRow label={t('createRoomModal.gameRestriction')}>
+            <SettingRow label={t('createRoomModal.gameRestriction')} onInfo={openInfo('anticollusion')}>
               <Toggle checked={antiCollusionEnabled} onChange={setAntiCollusionEnabled} />
             </SettingRow>
             <SettingRow label={t('createRoomModal.runItTwice')} onInfo={openInfo('runtable')}>
               <Toggle checked={rimtEnabled} onChange={setRimtEnabled} />
             </SettingRow>
-            <SettingRow label={t('createRoomModal.sessionDuration')}>
+            <SettingRow label={t('createRoomModal.sessionDuration')} onInfo={openInfo('sessionduration')}>
               <span className="text-sm text-white">{sessionHours === 0 ? t('createRoomModal.noLimit') : sessionHours + ':00'}</span>
             </SettingRow>
             <div className="pb-3 border-b border-white/5">
               <RangeSlider min={0} max={12} step={1} value={sessionHours} onChange={setSessionHours} />
             </div>
-            <SettingRow label={t('createRoomModal.autoExtend')} disabled={sessionHours === 0}>
+            <SettingRow label={t('createRoomModal.autoExtend')} disabled={sessionHours === 0} onInfo={openInfo('autoextend')}>
               <Toggle
                 checked={autoExtendSession}
                 onChange={setAutoExtendSession}
                 disabled={sessionHours === 0}
               />
             </SettingRow>
-            <SettingRow label={t('createRoomModal.sitOutTimeout')}>
+            <SettingRow label={t('createRoomModal.sitOutTimeout')} onInfo={openInfo('sitout')}>
               <span className="text-sm text-white">{t('createRoomModal.minutesValue', { count: sitOutTimeoutMin })}</span>
             </SettingRow>
             <div className="pb-3 border-b border-white/5">
               <RangeSlider min={5} max={30} step={1} value={sitOutTimeoutMin} onChange={setSitOutTimeoutMin} />
             </div>
-            <SettingRow label={t('createRoomModal.waitlistDelay')}>
+            <SettingRow label={t('createRoomModal.waitlistDelay')} onInfo={openInfo('waitlist')}>
               <span className="text-sm text-white">{t('createRoomModal.minutesValue', { count: waitlistDelayMin })}</span>
             </SettingRow>
             <div className="pb-3 border-b border-white/5">
@@ -674,6 +715,7 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
           </InfoSheet>
         )}
       </AnimatePresence>
-    </motion.div>
+    </motion.div>,
+    document.body,
   );
 };

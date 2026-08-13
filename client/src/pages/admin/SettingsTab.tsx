@@ -5,6 +5,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useAdminApi } from '../../hooks/useAdminApi';
 import { parseMoney } from '../../config/chipFormat';
 import { useLobbyDesignStore } from '../../store/lobbyDesignStore';
+import { useAppThemeStore } from '../../store/appThemeStore';
 import type { GameSettings, TimebankSettings, BotModeSettings, ResponsibleGamblingSettings } from './types';
 
 export const SettingsTab = () => {
@@ -170,6 +171,8 @@ export const SettingsTab = () => {
 
       <LobbyDesignSection />
 
+      <AppThemeSection />
+
       <motion.button
         whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.98 }}
@@ -225,6 +228,49 @@ const LobbyDesignSection = () => {
           }
         >
           Редизайн
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// Переключатель «какой визуальный скин приложения видят все игроки» — poker-hub (текущий) или ak
+// (по образцу AK Poker). Своя независимая персистентность (server/data/appTheme.json), сохраняется
+// сразу по клику. НЕ путать с «Дизайн лобби» выше — тот только про структуру /lobby.
+const AppThemeSection = () => {
+  const { token } = useAuthStore();
+  const theme = useAppThemeStore((s) => s.theme);
+  const loadAdmin = useAppThemeStore((s) => s.loadAdmin);
+  const setTheme = useAppThemeStore((s) => s.setTheme);
+
+  useEffect(() => {
+    loadAdmin(token);
+  }, [loadAdmin, token]);
+
+  return (
+    <div className="bg-gray-800 rounded-2xl p-4 border border-white/10 space-y-3">
+      <div>
+        <h3 className="text-white font-bold text-lg mb-1">Визуальный скин приложения</h3>
+        <p className="text-sm text-gray-500">Какой общий дизайн (chrome, лобби, кошелёк, профиль) видят все игроки.</p>
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={() => setTheme(token, 'poker-hub')}
+          className={
+            'px-4 py-2 rounded-lg font-bold text-sm transition-all ' +
+            (theme === 'poker-hub' ? 'bg-poker-gold text-black' : 'bg-gray-900 text-gray-300 border border-white/10 hover:bg-gray-700')
+          }
+        >
+          POKER HUB
+        </button>
+        <button
+          onClick={() => setTheme(token, 'ak')}
+          className={
+            'px-4 py-2 rounded-lg font-bold text-sm transition-all ' +
+            (theme === 'ak' ? 'bg-poker-gold text-black' : 'bg-gray-900 text-gray-300 border border-white/10 hover:bg-gray-700')
+          }
+        >
+          AK
         </button>
       </div>
     </div>

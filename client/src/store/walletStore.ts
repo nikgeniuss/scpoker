@@ -63,14 +63,20 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   },
 
   requestWithdrawal: async (token, chain, amountUsdt, payoutAddress) => {
-    const r = await fetch(`${API_URL}/payments/withdraw`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chain, amountUsdt, payoutAddress }),
-    });
-    const data = await r.json();
-    if (!r.ok) return { ok: false, error: data.error || 'Ошибка' };
-    set({ withdrawals: [data as WithdrawalRequest, ...get().withdrawals] });
-    return { ok: true };
+    try {
+      const r = await fetch(`${API_URL}/payments/withdraw`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chain, amountUsdt, payoutAddress }),
+      });
+      const data = await r.json();
+      if (!r.ok) return { ok: false, error: data.error || 'Ошибка' };
+      set({ withdrawals: [data as WithdrawalRequest, ...get().withdrawals] });
+      return { ok: true };
+    } catch {
+      // Разрыв сети/сервер недоступен — fetch() реджектится, а не резолвится с r.ok=false.
+      // Без этого catch промис улетал бы необработанным, и игрок не узнавал бы, ушла ли заявка.
+      return { ok: false, error: 'Не удалось отправить запрос. Проверьте соединение и попробуйте снова.' };
+    }
   },
 }));

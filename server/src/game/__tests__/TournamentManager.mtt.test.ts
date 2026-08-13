@@ -247,6 +247,58 @@ describe('TournamentManager — MTT, мультистол', () => {
     expect(total).toBe(finished.prizePool);
   });
 
+  it('payoutCurveExponent: top-heavy (>1) даёт 1-му месту больше, чем дефолтная гармоническая кривая', async () => {
+    const { gm } = await createTestGameManager();
+    const tm = new TournamentManager(gm as unknown as GameManager);
+
+    const created = tm.create(
+      {
+        name: 'Top Heavy MTT', type: 'mtt', format: 'nlh', buyIn: 1000, startingStack: 1000,
+        tableSize: 2, blindSpeed: 'turbo', levelUpMinutes: 10, itmPercent: 50, payoutCurveExponent: 3,
+      },
+      'admin1',
+    );
+    if ('error' in created) throw new Error(created.error);
+    expect(created.payoutCurveExponent).toBe(3);
+    const id = created.id;
+
+    ['A', 'B', 'C', 'D', 'E', 'F'].forEach((u) => {
+      const r = tm.register(id, u, u);
+      if ('error' in r) throw new Error(r.error);
+    });
+    const started = tm.forceStart(id);
+    if ('error' in started) throw new Error(started.error);
+
+    let guard = 0;
+    while (aliveEntries(tm, id).length > 1 && guard < 10) {
+      const victim = aliveEntries(tm, id)[0];
+      gm.removePlayer(victim.tableId!, victim.userId);
+      guard++;
+    }
+    expect(guard).toBeLessThan(10);
+
+    const finished = tm.get(id)!;
+    const winner = finished.entries.find((e) => e.finishPlace === 1)!;
+    const harmonic = computeMttPayout(finished.prizePool, 6, 50);
+    // top-heavy (exponent=3) даёт 1-му месту заметно больше доли, чем гармоническая кривая (exponent=1).
+    expect(winner.prize!).toBeGreaterThan(harmonic[1]);
+    const total = finished.entries.reduce((a, e) => a + (e.prize ?? 0), 0);
+    expect(total).toBe(finished.prizePool); // без потерь на округлении
+  });
+
+  it('itmPercent/payoutCurveExponent вне диапазона — отказ создания', async () => {
+    const { gm } = await createTestGameManager();
+    const tm = new TournamentManager(gm as unknown as GameManager);
+    const base = { name: 'Bad Params', type: 'mtt' as const, format: 'nlh' as const, buyIn: 1000, startingStack: 1000, tableSize: 2, blindSpeed: 'turbo' as const, levelUpMinutes: 10 };
+    expect(tm.create({ ...base, itmPercent: 0 }, 'admin1')).toEqual({ error: 'invalid-itm-percent' });
+    expect(tm.create({ ...base, itmPercent: 101 }, 'admin1')).toEqual({ error: 'invalid-itm-percent' });
+    expect(tm.create({ ...base, itmPercent: 33.5 }, 'admin1')).toEqual({ error: 'invalid-itm-percent' });
+    expect(tm.create({ ...base, payoutCurveExponent: 0.05 }, 'admin1')).toEqual({ error: 'invalid-payout-curve-exponent' });
+    expect(tm.create({ ...base, payoutCurveExponent: 6 }, 'admin1')).toEqual({ error: 'invalid-payout-curve-exponent' });
+    // 33% — раньше был вне жёсткого списка [10,12,15,20], теперь допустим (свободный диапазон 1-100).
+    expect(tm.create({ ...base, itmPercent: 33 }, 'admin1')).not.toHaveProperty('error');
+  });
+
   it('гарантированный приз: бай-инов не хватает — рум доплачивает оверлей в prizePool на финише', async () => {
     const { gm } = await createTestGameManager();
     const tm = new TournamentManager(gm as unknown as GameManager);
@@ -503,5 +555,54 @@ describe('TournamentManager — MTT, мультистол', () => {
     // lateRegMinutes=0 — окно уже закрыто сразу после старта.
     expect(tm.register(created.id, 'C', 'Carol')).toEqual({ error: 'late-reg-closed' });
     expect(usersChips()).toMatchObject({ C: 5000 }); // не дебетован
+  });
+
+  it('getStandings: null до старта и после финиша, живой рэнкинг по фишкам + payout-превью во время running', async () => {
+    const { gm } = await createTestGameManager();
+    const tm = new TournamentManager(gm as unknown as GameManager);
+    const created = tm.create(
+      {
+        name: 'Standings MTT', type: 'mtt', format: 'nlh', buyIn: 1000, startingStack: 1000,
+        tableSize: 2, blindSpeed: 'turbo', levelUpMinutes: 10, lateRegMinutes: 20, itmPercent: 100,
+      },
+      'admin1',
+    );
+    if ('error' in created) throw new Error(created.error);
+    const id = created.id;
+
+    // До старта — нет ни одного живого стола, standings недоступны.
+    ['A', 'B', 'C', 'D'].forEach((u) => { const r = tm.register(id, u, u); if ('error' in r) throw new Error(r.error); });
+    expect(tm.getStandings(id)).toBeNull();
+
+    const started = tm.forceStart(id);
+    if ('error' in started) throw new Error(started.error);
+
+    const standings = tm.getStandings(id)!;
+    expect(standings).not.toBeNull();
+    expect(standings.totalEntries).toBe(4);
+    expect(standings.playersRemaining).toBe(4);
+    expect(standings.prizePool).toBe(4000);
+    expect(standings.entries).toHaveLength(4);
+    // Стартовый стек 1000, но блайнды+анте уже списаны на старте (heads-up на каждом из 2 столов) —
+    // стеки НЕ ровно 1000, но каждый положителен и меньше стартового.
+    expect(standings.entries.every((e) => e.chips > 0 && e.chips < 1000)).toBe(true);
+    // Отсортировано по убыванию фишек, места 1..4 по порядку.
+    expect(standings.entries.map((e) => e.place)).toEqual([1, 2, 3, 4]);
+    expect(standings.entries.map((e) => e.chips)).toEqual([...standings.entries.map((e) => e.chips)].sort((a, b) => b - a));
+    // itmPercent=100 → все 4 места платят.
+    expect(standings.paidPlaces).toBe(4);
+    expect(Object.values(standings.payout).reduce((a, b) => a + b, 0)).toBe(4000);
+    // lateRegMinutes=20 → окно ещё открыто на момент старта.
+    expect(standings.lateRegClosesAt).toBe(tm.get(id)!.startedAt! + 20 * 60_000);
+
+    // Форфейт до финиша (остался 1) — после finished снова null.
+    let guard = 0;
+    while (aliveEntries(tm, id).length > 1 && guard < 10) {
+      const victim = aliveEntries(tm, id)[0];
+      gm.removePlayer(victim.tableId!, victim.userId);
+      guard++;
+    }
+    expect(tm.get(id)!.status).toBe('finished');
+    expect(tm.getStandings(id)).toBeNull();
   });
 });

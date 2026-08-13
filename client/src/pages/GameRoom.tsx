@@ -26,6 +26,10 @@ import { buildDealCards } from '../components/game/dealLayout';
 import { HandHistoryModal } from '../components/game/HandHistoryModal';
 import { PlayerInfoPopup } from '../components/game/PlayerInfoPopup';
 import { MobilePlayerSeat } from '../components/game/MobilePlayerSeat';
+import { HandStrengthMeter } from '../components/game/HandStrengthMeter';
+import { avatarColor } from '../components/game/seatColors';
+import ReactNiceAvatar from 'react-nice-avatar';
+import { avatarConfig } from '../utils/avatar';
 import { DEFAULT_DESIGN } from '../config/design';
 import { loadBetPresets, saveBetPresets } from '../config/betPresets';
 import type { BetPresets } from '../config/betPresets';
@@ -46,6 +50,7 @@ import { useEphemeralBubbles } from '../hooks/useEphemeralBubbles';
 import { useTableClock } from '../hooks/useTableClock';
 import { useBlindLevelCountdown } from '../hooks/useBlindLevelCountdown';
 import { useTableGeometry } from '../hooks/useTableGeometry';
+import { useBetSweepAnimation } from '../hooks/useBetSweepAnimation';
 import { computeBlindSeats } from '../utils/blinds';
 
 // Админ-кнопки за столом — lazy-чанк, грузится только для админа (код не в бандле игрока).
@@ -55,15 +60,6 @@ const AdminTableControls = lazy(() => import('../components/admin/AdminTableCont
 
 // Фетр стола — фиксированный (тёмно-зелёный GG). Настройки темы/сукна из админки убраны.
 const TABLE_FELT_CLASS = 'bg-[radial-gradient(ellipse_at_center,_#0e5e2e_0%,_#0a3d1d_70%,_#06281a_100%)]';
-
-const PHASE_LABEL_KEY: Record<GamePhase, string> = {
-  waiting: 'game.phaseWaiting',
-  preflop: 'game.phasePreflop',
-  flop: 'game.phaseFlop',
-  turn: 'game.phaseTurn',
-  river: 'game.phaseRiver',
-  showdown: 'game.phaseShowdown',
-};
 
 export const GameRoom = () => {
   const { t } = useTranslation();
@@ -166,6 +162,9 @@ export const GameRoom = () => {
   // Анимация фишек pot → победитель (desktop и mobile, отдельные координатные пространства)
   const { flyChips: desktopFlyChips, clearFlyChips: clearDesktopFly } = useChipFlyAnimation(winners, seatPositions);
   const { flyChips: mobileFlyChips, clearFlyChips: clearMobileFly } = useChipFlyAnimation(winners, mobileSeatPositions, 50, 48);
+  // Ставки → банк: снэпшот ставок последней улицы на короткое время после смены фазы (сервер уже
+  // обнулил их) — по нему фишки визуально «уезжают» в центр стола и растворяются.
+  const sweepingBets = useBetSweepAnimation(state);
 
   const isMyTurn =
     !!state &&
@@ -414,10 +413,6 @@ export const GameRoom = () => {
         </div>
 
         <div className="absolute top-[65%] left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-2 z-10">
-          {/* Фаза игры — переехала сюда из верхнего бара */}
-          <div className="text-poker-gold text-xs font-bold uppercase tracking-widest">
-            {t(PHASE_LABEL_KEY[state.phase])}
-          </div>
           {/* Метаданные стола — серым над банком */}
           <div className="text-white/40 text-xs font-semibold tracking-wide max-w-[280px] truncate -mt-1">
             {state.roomName}
@@ -446,6 +441,9 @@ export const GameRoom = () => {
           >
             {t('game.pot')}: {formatChips(state.pot, state.bigBlind, chipDisplay)}
           </motion.div>
+          {state.pot > 0 && state.phase !== 'showdown' && (
+            <ChipStack amount={state.pot} bigBlind={state.bigBlind} displayMode={chipDisplay} hideLabel />
+          )}
           <div className="flex gap-1.5 mt-2">
             {state.communityCards.map((c, i) => (
               <Card
@@ -518,26 +516,29 @@ export const GameRoom = () => {
           )}
         </div>
 
-        {/* Фишки ставок — между seat и центром. На showdown анимированно стягиваются
-            к центру (имитирует «банк уезжает к победителю»). Используем чистый CSS
-            transition — Framer Motion плохо интерполирует left/top в `%`-строках. */}
+        {/* Фишки ставок — между seat и центром. По завершении улицы (и на showdown) анимированно
+            стягиваются к банку в центре и растворяются (sweepingBets — снэпшот сервером уже
+            обнулённых ставок, см. useBetSweepAnimation). Используем чистый CSS transition —
+            Framer Motion плохо интерполирует left/top в `%`-строках. */}
         {seatPositions.map(({ player, chipLeft, chipTop }) => {
-          if (player.currentBet <= 0) return null;
-          const isShowdown = state.phase === 'showdown';
+          const sweepAmount = sweepingBets[player.id];
+          const amount = player.currentBet > 0 ? player.currentBet : sweepAmount;
+          if (!amount) return null;
+          const sweeping = player.currentBet <= 0 && !!sweepAmount;
           return (
             <div
               key={'chips-' + player.id}
               className="absolute z-10"
               style={{
-                left: isShowdown ? '50%' : chipLeft + '%',
-                top: isShowdown ? '50%' : chipTop + '%',
-                opacity: isShowdown ? 0 : 1,
-                transform: 'translate(-50%, -50%)' + (isShowdown ? ' scale(0.5)' : ' scale(1)'),
-                transition: 'left 1.4s ease-in-out, top 1.4s ease-in-out, opacity 1.4s ease-in-out, transform 1.4s ease-in-out',
+                left: sweeping ? '50%' : chipLeft + '%',
+                top: sweeping ? '50%' : chipTop + '%',
+                opacity: sweeping ? 0 : 1,
+                transform: 'translate(-50%, -50%)' + (sweeping ? ' scale(0.5)' : ' scale(1)'),
+                transition: 'left 0.9s ease-in-out, top 0.9s ease-in-out, opacity 0.9s ease-in-out, transform 0.9s ease-in-out',
               }}
             >
               <ChipStack
-                amount={player.currentBet}
+                amount={amount}
                 bigBlind={state.bigBlind}
                 displayMode={chipDisplay}
               />
@@ -723,10 +724,13 @@ export const GameRoom = () => {
               </div>
             )}
             {state.pot > 0 && state.phase !== 'showdown' && (
-              <div className="pot-plate-mobile">
-                <div className="pot-label">{t('game.potMobile')}</div>
-                <div className="pot-value">{formatChips(state.pot, state.bigBlind, chipDisplay)}</div>
-              </div>
+              <>
+                <div className="pot-plate-mobile">
+                  <div className="pot-label">{t('game.potMobile')}</div>
+                  <div className="pot-value">{formatChips(state.pot, state.bigBlind, chipDisplay)}</div>
+                </div>
+                <ChipStack amount={state.pot} bigBlind={state.bigBlind} displayMode={chipDisplay} hideLabel />
+              </>
             )}
             {state.communityCards.length > 0 || (peekOn && state.futureBoard && state.futureBoard.length > 0) ? (
               <div className="flex gap-1 flex-wrap justify-center max-w-full mt-1">
@@ -849,22 +853,33 @@ export const GameRoom = () => {
             );
           })}
 
-          {/* Layer 3: bet chips между seat и центром (z-10 < z-20 seats) */}
-          {mobileSeatPositions.map(({ player, chipLeft, chipTop }) =>
-            player.currentBet > 0 && state.phase !== 'showdown' ? (
+          {/* Layer 3: bet chips между seat и центром (z-10 < z-20 seats). По завершении улицы
+              (и на showdown) анимированно стягиваются к банку в центре и растворяются —
+              sweepingBets, см. useBetSweepAnimation/desktop-слой выше. */}
+          {mobileSeatPositions.map(({ player, chipLeft, chipTop }) => {
+            const sweepAmount = sweepingBets[player.id];
+            const amount = player.currentBet > 0 ? player.currentBet : sweepAmount;
+            if (!amount) return null;
+            const sweeping = player.currentBet <= 0 && !!sweepAmount;
+            return (
               <div
                 key={'chip-' + player.id}
                 className="absolute -translate-x-1/2 -translate-y-1/2 z-10 pointer-events-none"
-                style={{ left: chipLeft + '%', top: chipTop + '%' }}
+                style={{
+                  left: sweeping ? '50%' : chipLeft + '%',
+                  top: sweeping ? '50%' : chipTop + '%',
+                  opacity: sweeping ? 0 : 1,
+                  transition: 'left 0.9s ease-in-out, top 0.9s ease-in-out, opacity 0.9s ease-in-out',
+                }}
               >
                 <ChipStack
-                  amount={player.currentBet}
+                  amount={amount}
                   bigBlind={state.bigBlind}
                   displayMode={chipDisplay}
                 />
               </div>
-            ) : null,
-          )}
+            );
+          })}
 
           {/* Layer 4: D/SB/BB-бейдж прижат к плашке со стороны центра стола (10% пути от seat) */}
           {/* Мой бейдж — не здесь, а в fixed-блоке моих карт (см. ниже). */}
@@ -928,65 +943,108 @@ export const GameRoom = () => {
           Кладём cards bottom-[108px] чтобы низ карт сидел чуть выше top-edge action-box.
           На showdown — не рендерим (showdown-карты уже в MobilePlayerSeat overlay'е). */}
       {me && state.phase !== 'showdown' && (
-        <div className="md:hidden fixed bottom-[82px] left-1/2 -translate-x-1/2 z-30 flex flex-col items-center pointer-events-none scale-[0.69] origin-bottom">
-          {/* Мой стек — над картами (перенесён сюда из плашки seat'а) */}
-          <span className="mb-1.5 px-3 py-0.5 rounded-full bg-black/70 backdrop-blur border border-white/15 text-amber-300 text-xl font-black tabular-nums whitespace-nowrap">
-            {formatChips(me.chips, state.bigBlind, chipDisplay)}
-          </span>
-          {me.cards.length > 0 && (
-            <div className="relative flex gap-1.5">
-              {me.cards.map((c, i) => (
-                <Card
-                  key={i}
-                  card={c}
-                  faceStyle="classic"
-                  backStyle={design.cardBackStyle}
-                  deck={cardDeck}
-                  size="lg"
-                  delay={i * 0.05}
-                />
-              ))}
-              {/* Таймер своего хода — рамка вокруг моих карт (аватарки нет; см. CardsTurnTimer). */}
-              {isMyTurn && timebankSecondsLeft != null && timebankPercent != null ? (
-                <CardsTurnTimer percent={timebankPercent} secondsLeft={timebankSecondsLeft} variant="timebank" />
-              ) : isMyTurn && turnSecondsLeft != null && turnPercent != null ? (
-                <CardsTurnTimer
-                  percent={turnPercent}
-                  secondsLeft={turnSecondsLeft}
-                  variant={turnSecondsLeft <= 5 ? 'turn-urgent' : 'turn'}
-                />
-              ) : null}
-              {/* D/SB/BB — в правом верхнем углу моих карт */}
-              {(() => {
-                const role =
-                  myId === dealerPlayerId ? 'D'
-                  : myId === sbPlayerId && myId !== dealerPlayerId ? 'SB'
-                  : myId === bbPlayerId ? 'BB'
-                  : null;
-                if (!role) return null;
-                const cls =
-                  role === 'D'
-                    ? 'bg-white text-gray-900 ring-2 ring-gray-300/80 min-w-[33px] h-[33px] text-[17px]'
-                    : role === 'SB'
-                    ? 'bg-sky-500 text-white ring-1 ring-black/30 min-w-[29px] h-[29px] text-[14px]'
-                    : 'bg-purple-500 text-white ring-1 ring-black/30 min-w-[29px] h-[29px] text-[14px]';
-                return (
-                  <div
-                    className={'absolute -top-3 -right-3 z-10 px-1 rounded-full font-black flex items-center justify-center shadow-lg pointer-events-none ' + cls}
-                  >
-                    {role}
-                  </div>
-                );
-              })()}
+        <div className="md:hidden fixed bottom-[82px] left-1/2 -translate-x-1/2 z-30 flex items-end gap-2.5 pointer-events-none scale-[0.69] origin-bottom">
+          {/* Слева: аватар + тег последнего действия (единый зелёный, референс AK Poker) + ник/стек. */}
+          <div className="relative flex flex-col items-center shrink-0">
+            <div
+              className={
+                'relative w-14 h-14 rounded-full bg-gradient-to-br overflow-hidden shadow ' +
+                avatarColor(me.username) + ' ' +
+                (isMyTurn ? 'ring-2 ring-poker-gold' : me.disconnected ? 'ring-1 ring-orange-500/60' : 'ring-1 ring-white/15')
+              }
+            >
+              <ReactNiceAvatar className="w-full h-full" shape="circle" {...avatarConfig(me.avatar || me.id)} />
             </div>
-          )}
-          {/* Подсказка под моими картами: текущая комбинация + шанс на выигрыш (по тумблеру). */}
-          {gameSettings.handHintEnabled && me.handHint && (
-            <span className="mt-1.5 px-3 py-0.5 rounded-full bg-black/75 backdrop-blur border border-emerald-400/30 text-emerald-300 text-[15px] font-bold whitespace-nowrap">
-              {me.handHint}
-              {typeof me.winChance === 'number' ? ' · ' + me.winChance + '%' : ''}
-            </span>
-          )}
+            {/* Тег действия — оверлап на аватаре снизу-слева, как на референсе. Та же эфемерная
+                бабл-система, что и у соперников (useEphemeralBubbles), но единый зелёный вариант. */}
+            <div className="absolute -bottom-1 -left-1.5 z-10">
+              <AnimatePresence mode="popLayout">
+                {actionBubbles[me.id] && (
+                  <ActionBubble
+                    key={'a-' + actionBubbles[me.id].key}
+                    action={actionBubbles[me.id].action}
+                    amount={actionBubbles[me.id].amount}
+                    bigBlind={state.bigBlind}
+                    displayMode={chipDisplay}
+                    variant="hero"
+                  />
+                )}
+              </AnimatePresence>
+            </div>
+            {/* Ник + стек — чёрная плашка под аватаром (перенесена из отдельной жёлтой пилюли). */}
+            <div className="mt-1 px-2.5 py-1 rounded-lg bg-black/70 backdrop-blur border border-white/15 flex flex-col items-center leading-tight min-w-[64px]">
+              <span className="text-[11px] font-semibold text-white truncate max-w-[76px]">
+                {me.displayName || me.username}
+              </span>
+              <span className="text-[13px] font-black text-amber-300 tabular-nums">
+                {formatChips(me.chips, state.bigBlind, chipDisplay)}
+              </span>
+            </div>
+          </div>
+
+          {/* Справа: карты + подсказка + шкала. */}
+          <div className="flex flex-col items-center">
+            {me.cards.length > 0 && (
+              <div className="relative flex gap-1.5">
+                {me.cards.map((c, i) => (
+                  <Card
+                    key={i}
+                    card={c}
+                    faceStyle="classic"
+                    backStyle={design.cardBackStyle}
+                    deck={cardDeck}
+                    size="lg"
+                    delay={i * 0.05}
+                  />
+                ))}
+                {/* Таймер своего хода — рамка вокруг моих карт (см. CardsTurnTimer). */}
+                {isMyTurn && timebankSecondsLeft != null && timebankPercent != null ? (
+                  <CardsTurnTimer percent={timebankPercent} secondsLeft={timebankSecondsLeft} variant="timebank" />
+                ) : isMyTurn && turnSecondsLeft != null && turnPercent != null ? (
+                  <CardsTurnTimer
+                    percent={turnPercent}
+                    secondsLeft={turnSecondsLeft}
+                    variant={turnSecondsLeft <= 5 ? 'turn-urgent' : 'turn'}
+                  />
+                ) : null}
+                {/* D/SB/BB — в правом верхнем углу моих карт */}
+                {(() => {
+                  const role =
+                    myId === dealerPlayerId ? 'D'
+                    : myId === sbPlayerId && myId !== dealerPlayerId ? 'SB'
+                    : myId === bbPlayerId ? 'BB'
+                    : null;
+                  if (!role) return null;
+                  const cls =
+                    role === 'D'
+                      ? 'bg-white text-gray-900 ring-2 ring-gray-300/80 min-w-[33px] h-[33px] text-[17px]'
+                      : role === 'SB'
+                      ? 'bg-sky-500 text-white ring-1 ring-black/30 min-w-[29px] h-[29px] text-[14px]'
+                      : 'bg-purple-500 text-white ring-1 ring-black/30 min-w-[29px] h-[29px] text-[14px]';
+                  return (
+                    <div
+                      className={'absolute -top-3 -right-3 z-10 px-1 rounded-full font-black flex items-center justify-center shadow-lg pointer-events-none ' + cls}
+                    >
+                      {role}
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+            {/* Подсказка под моими картами: текущая комбинация + шанс на выигрыш (по тумблеру). */}
+            {gameSettings.handHintEnabled && me.handHint && (
+              <span className="mt-1.5 px-3 py-0.5 rounded-full bg-black/75 backdrop-blur border border-emerald-400/30 text-emerald-300 text-[15px] font-bold whitespace-nowrap">
+                {me.handHint}
+                {typeof me.winChance === 'number' ? ' · ' + me.winChance + '%' : ''}
+              </span>
+            )}
+            {/* Шкала силы руки — сегментированный индикатор (референс AK Poker), под подсказкой. */}
+            {gameSettings.handHintEnabled && me.handHint && typeof me.handRank === 'number' && (
+              <div className="mt-1.5">
+                <HandStrengthMeter rank={me.handRank} />
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -1070,7 +1128,7 @@ export const GameRoom = () => {
         />
       )}
 
-      {me && !isMyTurn && state && state.phase !== 'waiting' && state.phase !== 'showdown' && (
+      {me && !me.isFolded && !isMyTurn && state && state.phase !== 'waiting' && state.phase !== 'showdown' && (
         <PreSelectPanel value={preselect} onChange={setPreselect} />
       )}
 
@@ -1090,6 +1148,8 @@ export const GameRoom = () => {
           myChips={me?.chips ?? 0}
           myCurrentBet={me?.currentBet ?? 0}
           displayMode={chipDisplay}
+          tournamentId={state.tournamentId}
+          myId={myId}
           onClose={() => setInfoModalOpen(false)}
         />
       )}

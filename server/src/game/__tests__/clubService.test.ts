@@ -16,6 +16,8 @@ import {
   handleJoinRequest,
   regenerateInviteCode,
   updateClub,
+  leaveClub,
+  getMyPendingRequest,
 } from '../clubService.js';
 
 beforeEach(() => clearStorage());
@@ -191,5 +193,51 @@ describe('regenerateInviteCode', () => {
   it('запрещает не-владельцу', () => {
     const club = createClub('owner', 'Delta') as Club;
     expect(regenerateInviteCode(club.id, 'hacker')).toEqual({ error: 'forbidden' });
+  });
+});
+
+describe('leaveClub', () => {
+  it('участник покидает клуб', () => {
+    const club = createClub('owner', 'Epsilon') as Club;
+    joinByCode('member1', club.inviteCode);
+    const result = leaveClub(club.id, 'member1') as Club;
+    expect('error' in result).toBe(false);
+    expect(result.members.some((m: ClubMember) => m.userId === 'member1')).toBe(false);
+  });
+
+  it('владелец не может покинуть клуб', () => {
+    const club = createClub('owner', 'Epsilon') as Club;
+    expect(leaveClub(club.id, 'owner')).toEqual({ error: 'owner-cannot-leave' });
+  });
+
+  it('не-участник не может покинуть', () => {
+    const club = createClub('owner', 'Epsilon') as Club;
+    expect(leaveClub(club.id, 'stranger')).toEqual({ error: 'not-member' });
+  });
+
+  it('несуществующий клуб — ошибка', () => {
+    expect(leaveClub('nope', 'user1')).toEqual({ error: 'not-found' });
+  });
+});
+
+describe('getMyPendingRequest', () => {
+  it('возвращает заявку пользователя, если она есть', () => {
+    const club = createClub('owner', 'Zeta') as Club;
+    submitJoinRequest('applicant', club.id);
+    const req = getMyPendingRequest('applicant');
+    expect(req?.clubId).toBe(club.id);
+    expect(req?.clubName).toBe('Zeta');
+  });
+
+  it('возвращает null, если заявок нет', () => {
+    createClub('owner', 'Zeta');
+    expect(getMyPendingRequest('nobody')).toBeNull();
+  });
+
+  it('заявка исчезает после одобрения/отклонения', () => {
+    const club = createClub('owner', 'Zeta') as Club;
+    submitJoinRequest('applicant', club.id);
+    handleJoinRequest(club.id, 'owner', 'applicant', false);
+    expect(getMyPendingRequest('applicant')).toBeNull();
   });
 });

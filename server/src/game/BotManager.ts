@@ -3,7 +3,7 @@
 import { nanoid } from 'nanoid';
 import { isBot as isBotId } from './botIdentity.js';
 import { makeSeededRng, hashStr, type BotDecisionContext, type BotDecision, type BotPersona } from './botBrain.js';
-import { BotRepository, type BotInfo } from './botRepository.js';
+import { BotRepository, FILLER_BOT_ID_PREFIX, type BotInfo } from './botRepository.js';
 import { BotDecisionScheduler } from './botDecisionScheduler.js';
 
 // Re-export для обратной совместимости (GameManager и admin-роуты импортируют отсюда).
@@ -174,6 +174,22 @@ export class BotManager {
     return created;
   }
 
+  // Незаметное заполнение турниров ботами (roadmap 2026-07-09) — фиксированный пул человеческих
+  // персон (см. tournamentFillerPersonas.ts), исключён из pickBotsForTable (как и bot:tt-).
+  // Список свободен от бронирования TournamentManager'ом (какие id сейчас заняты в других турнирах).
+  getFillerPersonaPool(): BotInfo[] {
+    return this.repo.getAll().filter((b) => b.id.startsWith(FILLER_BOT_ID_PREFIX));
+  }
+
+  // Подготовить персону к посадке в конкретный турнир: выставить стартовый стек турнира и
+  // сбросить runtime (PnL/hands с прошлого использования этой персоны — repo.setChips делает это).
+  prepareFillerBot(botId: string, chips: number): BotInfo | null {
+    const bot = this.repo.get(botId);
+    if (!bot || !bot.id.startsWith(FILLER_BOT_ID_PREFIX)) return null;
+    this.repo.setChips(botId, chips);
+    return bot;
+  }
+
   // ===== Включить / выключить режим =====
 
   enableMode(): void {
@@ -191,7 +207,12 @@ export class BotManager {
     this.refillTimer = null;
     if (this.rotationTimer) clearInterval(this.rotationTimer);
     this.rotationTimer = null;
-    for (const roomId of new Set(this.botTable.values())) {
+    // botTableLevels — все авто-столы (регистрируется при СОЗДАНИИ стола); botTable — только уже
+    // подсевшие боты (заезжают волнами со сдвигом, могут ещё не подсесть). Закрывать нужно по
+    // объединению, иначе свежесозданный стол без подсевших ботов переживает disable (найдено
+    // 2026-07-07: только что созданные столы «Уютный стол»/«Кэш-комната»/«Средние блайнды» не
+    // закрылись при выключении режима, т.к. боты ещё не подсели — botTable был пуст).
+    for (const roomId of new Set([...this.botTableLevels.keys(), ...this.botTable.values()])) {
       this.gm.forceCloseRoom(roomId);
     }
     this.botTable.clear();
@@ -207,14 +228,20 @@ export class BotManager {
   private ensureTables(): void {
     if (!this.settings.enabled) return;
     for (const profile of AUTO_TABLE_PROFILES) {
-      if (!this.gm.hasOpenAutoBotTable(profile.level)) {
-        this.createTableWithBots(profile.level, profile.name, profile.smallBlind, profile.bigBlind);
-        continue;
-      }
-      const existingRoomId = Array.from(this.botTableLevels.entries())
-        .find(([, lvl]) => lvl === profile.level)?.[0];
-      if (existingRoomId) {
-        this.fillExistingTable(existingRoomId, profile.bigBlind);
+      try {
+        if (!this.gm.hasOpenAutoBotTable(profile.level)) {
+          this.createTableWithBots(profile.level, profile.name, profile.smallBlind, profile.bigBlind);
+          continue;
+        }
+        const existingRoomId = Array.from(this.botTableLevels.entries())
+          .find(([, lvl]) => lvl === profile.level)?.[0];
+        if (existingRoomId) {
+          this.fillExistingTable(existingRoomId, profile.bigBlind);
+        }
+      } catch (err) {
+        // Guard: ошибка на одном уровне не должна тихо гасить весь цикл заполнения навсегда
+        // (interval молча падает без этого catch — следующий тик просто не происходит).
+        console.error(`🤖 [ensureTables] ошибка на уровне ${profile.level}:`, err);
       }
     }
   }
@@ -348,7 +375,7 @@ export class BotManager {
   }
 
   private pickBotsForTable(n: number, buyIn: number): import('./botRepository.js').BotInfo[] {
-    const free = this.repo.getAll().filter((b) => !this.botTable.has(b.id) && b.chips >= buyIn && !b.id.startsWith(TEST_BOT_ID_PREFIX));
+    const free = this.repo.getAll().filter((b) => !this.botTable.has(b.id) && b.chips >= buyIn && !b.id.startsWith(TEST_BOT_ID_PREFIX) && !b.id.startsWith(FILLER_BOT_ID_PREFIX));
     const minus = free.filter((b) => b.targetPnL === 'minus');
     const others = free.filter((b) => b.targetPnL !== 'minus');
     this.shuffleArray(minus);
@@ -374,7 +401,13 @@ export class BotManager {
   }
 
   private autoRefillForBuyIn(buyIn: number, needed: number): void {
-    const free = this.repo.getAll().filter((b) => !this.botTable.has(b.id));
+    // Тот же фильтр префиксов, что и в pickBotsForTable — иначе тут "eligible" считает
+    // богатых bot:fill-/bot:tt- (не годны для кэш-стола), рефилл кажется не нужен, а реальный
+    // кэш-пул (50 обычных персон) навсегда остаётся без чипов (найдено 2026-08-11: боты не
+    // подсаживались, chips у кэш-пула стабильно у нуля несмотря на "работающий" auto-refill).
+    const free = this.repo.getAll().filter(
+      (b) => !this.botTable.has(b.id) && !b.id.startsWith(TEST_BOT_ID_PREFIX) && !b.id.startsWith(FILLER_BOT_ID_PREFIX),
+    );
     const eligible = free.filter((b) => b.chips >= buyIn);
     if (eligible.length >= needed) return;
     const refillTarget = buyIn * 2;

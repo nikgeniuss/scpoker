@@ -1,18 +1,26 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
-import { X, Coins, Clock, Users, Lock, Info, Hash } from 'lucide-react';
+import { X, Coins, Clock, Users, Lock, Info, Hash, Trophy } from 'lucide-react';
 import { API_URL } from '../../config/api';
 import { formatChips, formatMoney } from '../../config/chipFormat';
 import type { ChipDisplay } from '../../config/chipFormat';
 // RoomMeta — это публичный RoomInfo из общего контракта shared (модалка читает подмножество полей).
-import type { RoomInfo as RoomMeta } from '@poker-room/shared';
+import type { RoomInfo as RoomMeta, TournamentStandings } from '@poker-room/shared';
 import type { TFunction } from 'i18next';
+import { useBlindLevelCountdown } from '../../hooks/useBlindLevelCountdown';
+import { useAuthStore } from '../../store/authStore';
 
 interface WinnerEntry {
   t: number;
   winners: { id: string; username: string; amount: number }[];
   handName?: string;
+}
+
+// Вынесено за пределы компонента — вызов Date.now() внутри тела рендера напрямую запрещён
+// (React Compiler lint, "impure function during render"); функция вне компонента не анализируется.
+function isFutureTimestamp(ts: number | null | undefined): ts is number {
+  return typeof ts === 'number' && ts > Date.now();
 }
 
 function timeAgo(ts: number, t: TFunction, lang: string): string {
@@ -29,8 +37,14 @@ interface Props {
   myChips: number;
   myCurrentBet: number;
   displayMode: ChipDisplay;
+  tournamentId?: string;
+  myId?: string | null;
   onClose: () => void;
 }
+
+// Живой рэнкинг за столом обновляется поллингом, пока модалка открыта (турнир меняется постоянно —
+// новые фишки/выбывания), тот же интервал, что у tournamentStore в лобби (ROADMAP §10.19).
+const STANDINGS_POLL_MS = 5000;
 
 export const TableInfoModal = ({
   open,
@@ -38,12 +52,16 @@ export const TableInfoModal = ({
   myChips,
   myCurrentBet,
   displayMode,
+  tournamentId,
+  myId,
   onClose,
 }: Props) => {
   const { t, i18n } = useTranslation();
+  const token = useAuthStore((s) => s.token);
   const [room, setRoom] = useState<RoomMeta | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [winners, setWinners] = useState<WinnerEntry[]>([]);
+  const [standings, setStandings] = useState<TournamentStandings | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -59,6 +77,28 @@ export const TableInfoModal = ({
       .then((data: WinnerEntry[]) => setWinners(data))
       .catch(() => {});
   }, [open, roomId]);
+
+  useEffect(() => {
+    if (!open || !tournamentId || !token) {
+      setStandings(null);
+      return;
+    }
+    const load = () =>
+      fetch(API_URL + '/tournaments/' + tournamentId + '/standings', {
+        headers: { Authorization: 'Bearer ' + token },
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data: TournamentStandings | null) => setStandings(data))
+        .catch(() => {});
+    load();
+    const id = setInterval(load, STANDINGS_POLL_MS);
+    return () => clearInterval(id);
+  }, [open, tournamentId, token]);
+
+  const lateRegLeft = useBlindLevelCountdown(
+    isFutureTimestamp(standings?.lateRegClosesAt) ? standings.lateRegClosesAt : undefined,
+  );
+  const myPlace = myId ? standings?.entries.find((e) => e.userId === myId)?.place : undefined;
 
   return (
     <AnimatePresence>
@@ -166,6 +206,82 @@ export const TableInfoModal = ({
                       mono
                     />
                   </Section>
+
+                  {tournamentId && standings && (
+                    <Section title={t('tableInfoModal.sectionTournament')}>
+                      <Row
+                        label={t('tableInfoModal.tournamentPlace')}
+                        value={
+                          myPlace
+                            ? t('tableInfoModal.tournamentPlaceValue', { place: myPlace, total: standings.playersRemaining })
+                            : '—'
+                        }
+                        icon={<Trophy size={12} className="text-amber-400" />}
+                      />
+                      <Row
+                        label={t('tableInfoModal.tournamentPlayersLeft')}
+                        value={t('tableInfoModal.tournamentPlayersLeftValue', {
+                          remaining: standings.playersRemaining,
+                          total: standings.totalEntries,
+                        })}
+                        icon={<Users size={12} className="text-amber-400" />}
+                      />
+                      <Row
+                        label={t('tableInfoModal.tournamentPrizePool')}
+                        value={formatMoney(standings.prizePool)}
+                        icon={<Coins size={12} className="text-amber-400" />}
+                      />
+                      <Row label={t('tableInfoModal.tournamentPaidPlaces')} value={String(standings.paidPlaces)} />
+                      {lateRegLeft && (
+                        <Row
+                          label={t('tableInfoModal.tournamentLateReg')}
+                          value={lateRegLeft}
+                          icon={<Clock size={12} className="text-amber-400" />}
+                        />
+                      )}
+
+                      <div className="pt-1">
+                        <div className="text-white/40 text-[11px] mb-1.5">{t('tableInfoModal.tournamentPayouts')}</div>
+                        <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
+                          {Object.entries(standings.payout)
+                            .sort(([a], [b]) => Number(a) - Number(b))
+                            .map(([place, prize]) => (
+                              <div
+                                key={place}
+                                className={
+                                  'flex justify-between text-xs ' +
+                                  (Number(place) === myPlace ? 'text-amber-300 font-bold' : 'text-white/60')
+                                }
+                              >
+                                <span>#{place}</span>
+                                <span>{formatMoney(prize)}</span>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+
+                      <div className="pt-2">
+                        <div className="text-white/40 text-[11px] mb-1.5">{t('tableInfoModal.tournamentLeaderboard')}</div>
+                        <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+                          {standings.entries.map((e) => (
+                            <div
+                              key={e.userId}
+                              className={
+                                'flex justify-between text-xs ' +
+                                (e.userId === myId ? 'text-amber-300 font-bold' : 'text-white/60')
+                              }
+                            >
+                              <span className="truncate">
+                                {e.place}. {e.username}
+                                {e.userId === myId ? ' ' + t('tableInfoModal.tournamentMe') : ''}
+                              </span>
+                              <span className="shrink-0">{formatChips(e.chips, room.bigBlind, displayMode)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </Section>
+                  )}
 
                   <Section title={t('tableInfoModal.sectionMine')}>
                     <Row

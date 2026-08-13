@@ -238,28 +238,33 @@ export const InfoButton = ({ onClick }: { onClick: () => void }) => {
 };
 
 // Строка настройки: label (+ инфо/«скоро») слева, контрол справа, нижний разделитель.
+// wrap — контрол не помещается рядом с лейблом на узких экранах (напр. 4-опционный Segmented) —
+// переносится на свою строку под лейблом на всю ширину, вместо схлопывания лейбла в 0 и вылезания
+// контрола за край экрана (найдено живым тестом на «Скорость блайндов», 2026-07-07).
 export const SettingRow = ({
   label,
   onInfo,
   soon,
   disabled,
+  wrap,
   children,
 }: {
   label: string;
   onInfo?: () => void;
   soon?: boolean;
   disabled?: boolean;
+  wrap?: boolean;
   children: ReactNode;
 }) => {
   const { t } = useTranslation();
   return (
-    <div className={'flex items-center justify-between gap-3 py-3 border-b border-white/5 ' + (disabled ? 'opacity-50' : '')}>
+    <div className={'flex items-center justify-between gap-3 py-3 border-b border-white/5 ' + (wrap ? 'flex-wrap ' : '') + (disabled ? 'opacity-50' : '')}>
       <div className="flex items-center gap-2 min-w-0">
         <span className="text-sm text-white truncate">{label}</span>
         {onInfo && <InfoButton onClick={onInfo} />}
         {soon && <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-700 text-gray-400 shrink-0">{t('lobby.soon')}</span>}
       </div>
-      <div className="shrink-0">{children}</div>
+      <div className={wrap ? 'w-full' : 'shrink-0'}>{children}</div>
     </div>
   );
 };
