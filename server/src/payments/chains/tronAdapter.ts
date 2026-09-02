@@ -55,13 +55,17 @@ export function createTronAdapter(config: TronAdapterConfig): ChainAdapter {
 
     // TronGrid REST API — история TRC-20 переводов на адрес, отфильтрованная по контракту USDT.
     // Подтверждения (минимум блоков) проверяем через текущую высоту блокчейна.
+    // Блочный курсор здесь не нужен и не поддерживается (scannedToBlock всегда null): выборка
+    // идёт не по диапазону блоков, а по последним переводам самого адреса, поэтому простой
+    // сервера не создаёт «слепого» диапазона — после рестарта те же переводы придут снова
+    // (в отличие от eth_getLogs в evmAdapter, см. ROADMAP §9.2).
     async getIncomingUsdtTransfers(address, minConfirmations) {
       const url = `${config.fullHost}/v1/accounts/${address}/transactions/trc20?contract_address=${config.usdtContractAddress}&limit=50&only_to=true`;
       const res = await fetch(url, { headers });
       if (!res.ok) throw new Error(`TronGrid ${res.status}: ${await res.text().catch(() => '')}`);
       const data = (await res.json()) as { data?: Array<{ transaction_id: string; value: string; block_timestamp: number }> };
       const list = data.data ?? [];
-      if (list.length === 0) return [];
+      if (list.length === 0) return { transfers: [], scannedToBlock: null };
 
       let currentBlock = 0;
       try {
@@ -85,7 +89,7 @@ export function createTronAdapter(config: TronAdapterConfig): ChainAdapter {
         }
         result.push({ txid: tx.transaction_id, amountRaw: BigInt(tx.value), blockNumber, confirmed });
       }
-      return result;
+      return { transfers: result, scannedToBlock: null };
     },
 
     async sendUsdt(privateKey, toAddress, amountRaw) {

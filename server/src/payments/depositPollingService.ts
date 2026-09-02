@@ -1,6 +1,7 @@
 import { getAllChainAdapters, chainFamilyOf } from './chains/index.js';
 import { getAllDepositAddresses, getDepositPrivateKey } from './walletService.js';
 import { readDeposits, writeDeposits } from './depositsStorage.js';
+import { readCursors, writeCursors, cursorKey } from './depositCursorStorage.js';
 import { paymentsBankroll } from './paymentsBankroll.js';
 import { notifyPaymentsInbox } from './paymentsInbox.js';
 import { usdtRawToChips, usdtRawToUsdt } from './exchange.js';
@@ -49,13 +50,19 @@ async function trySweep(deposit: DepositRecord, wallets: WalletMapping[]): Promi
     return true;
   } catch (err) {
     // Свип — best-effort; ошибка здесь НИКОГДА не должна откатывать уже начисленный кредит чипов
-    // или терять запись депозита (см. вызовы в pollOnce — trySweep идёт до deposits.push).
+    // или терять запись депозита (см. вызовы в runPoll — запись фиксируется ДО свипа).
     console.error(`⚠️ [payments] свип упал с исключением ${deposit.chain} ${deposit.address}:`, err);
     return false;
   }
 }
 
 let timer: NodeJS.Timeout | null = null;
+
+// Guard от наложения циклов опроса. Свип ждёт подтверждения фандинга газа до ~60с
+// (FUND_POLL_INTERVAL_MS * FUND_POLL_MAX_ATTEMPTS в sweepService.ts), а тик планировщика приходит
+// каждые 30с (index.ts) — без этого флага второй тик стартовал ВНУТРИ первого, читал ещё не
+// дописанный deposits.json, считал уже зачисленный перевод новым и начислял чипы ПОВТОРНО.
+let polling = false;
 
 // Один проход опроса: все сконфигурированные сети × все известные депозитные адреса.
 // Ошибка на одном адресе/сети не должна прерывать остальные (try/catch внутри цикла) —
@@ -64,10 +71,27 @@ export async function pollOnce(
   getSettings: () => PaymentsSettings,
   getRgSettings: () => ResponsibleGamblingSettings = () => NO_RG_SETTINGS,
 ): Promise<void> {
+  if (polling) {
+    console.warn('⏭️ [payments] предыдущий цикл опроса ещё не завершён — тик пропущен');
+    return;
+  }
+  polling = true;
+  try {
+    await runPoll(getSettings, getRgSettings);
+  } finally {
+    polling = false;
+  }
+}
+
+async function runPoll(
+  getSettings: () => PaymentsSettings,
+  getRgSettings: () => ResponsibleGamblingSettings,
+): Promise<void> {
   const settings = getSettings();
   if (!settings.enabled) return;
 
   const deposits = readDeposits();
+  const cursors = readCursors(); // читаем один раз на проход, пишем по мере продвижения адресов
   let changed = false;
   const allWallets = [...getAllDepositAddresses('tron'), ...getAllDepositAddresses('evm')];
 
@@ -87,8 +111,13 @@ export async function pollOnce(
 
     const wallets = getAllDepositAddresses(chainFamilyOf(chain));
     for (const wallet of wallets) {
+      const cursorId = cursorKey(chain, wallet.address);
       try {
-        const transfers = await adapter.getIncomingUsdtTransfers(wallet.address, chainSettings.minConfirmations);
+        const { transfers, scannedToBlock } = await adapter.getIncomingUsdtTransfers(
+          wallet.address,
+          chainSettings.minConfirmations,
+          cursors[cursorId],
+        );
         for (const t of transfers) {
           if (!t.confirmed) continue;
           // Идемпотентность: один и тот же (chain, txid) кредитуется ровно один раз.
@@ -112,10 +141,14 @@ export async function pollOnce(
             creditedAt: new Date().toISOString(),
             swept: false,
           };
+          // Запись фиксируется СРАЗУ, до свипа: между начислением чипов и попаданием записи в
+          // deposits.json не должно быть ни одного await — иначе это окно (на свипе до минуты)
+          // переживает рестарт процесса, и тот же перевод зачисляется повторно.
+          deposits.push(deposit);
+          writeDeposits(deposits);
+          changed = true;
           // Свип — best-effort прямо здесь же; неудача не теряет депозит (см. ретрай выше).
           await trySweep(deposit, wallets);
-          deposits.push(deposit);
-          changed = true;
           notifyPaymentsInbox(wallet.userId, 'deposit', `Депозит зачислен: ${usdtRawToUsdt(t.amountRaw).toFixed(2)} USDT`);
 
           // Лимит на депозит (ROADMAP §11.2) — только предупреждение, кредит чипов уже применён выше.
@@ -130,6 +163,15 @@ export async function pollOnce(
               }
             }
           }
+        }
+
+        // Курсор двигаем только после того, как ВСЕ переводы адреса обработаны: исключение выше
+        // оставит его на месте, и следующий тик пересканирует диапазон заново (повторного
+        // зачисления при этом не будет — дедуп по (chain, txid) выше). Пишем сразу, а не в конце
+        // прохода: writeJSON дебаунсится 200мс и всё равно схлопнет записи в одну.
+        if (scannedToBlock !== null) {
+          cursors[cursorId] = scannedToBlock;
+          writeCursors(cursors);
         }
       } catch (err) {
         console.error(`⚠️ [payments] ошибка опроса ${chain} ${wallet.address}:`, err);

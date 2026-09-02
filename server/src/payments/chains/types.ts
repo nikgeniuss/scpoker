@@ -8,6 +8,16 @@ export interface IncomingTransfer {
   confirmed: boolean; // confirmations адаптера >= configured minConfirmations
 }
 
+// Результат одного опроса адреса. `scannedToBlock` — докуда РЕАЛЬНО просканирована сеть за этот
+// вызов: вызывающий (depositPollingService) сохраняет его как курсор и передаёт обратно на
+// следующем тике, чтобы простой сервера не оставлял непросмотренных диапазонов блоков.
+// `null` — сеть не адресуется по блокам (Tron: TronGrid отдаёт последние переводы на адрес
+// целиком, независимо от простоя) либо сканировать было нечего; курсор тогда не двигается.
+export interface IncomingTransfersResult {
+  transfers: IncomingTransfer[];
+  scannedToBlock: number | null;
+}
+
 // Общий интерфейс блокчейн-сети для платежей (§11.1 ROADMAP). Один адаптер на сеть;
 // ethereum/bsc — оба через EvmAdapter (один код, разные RPC/контракт), tron — через TronAdapter.
 export interface ChainAdapter {
@@ -18,7 +28,14 @@ export interface ChainAdapter {
   isValidAddress(address: string): boolean;
   // minConfirmations передаётся явно (из settings.payments.chains[chain]), чтобы адаптер
   // не хранил собственное состояние конфига — конфиг живёт только в GameManager.settings.
-  getIncomingUsdtTransfers(address: string, minConfirmations: number): Promise<IncomingTransfer[]>;
+  // fromCursor — последний уже обработанный блок этого адреса (deposit-cursors.json), по той же
+  // причине приходит снаружи: адаптер остаётся stateless, состояние опроса хранит сервис.
+  // undefined — адрес опрашивается впервые, адаптер берёт дефолтное окно назад от головы сети.
+  getIncomingUsdtTransfers(
+    address: string,
+    minConfirmations: number,
+    fromCursor?: number,
+  ): Promise<IncomingTransfersResult>;
   sendUsdt(privateKey: string, toAddress: string, amountRaw: bigint): Promise<{ txid: string }>;
   getNativeBalance(address: string): Promise<bigint>;
   getUsdtBalance(address: string): Promise<bigint>;
