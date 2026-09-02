@@ -10,12 +10,15 @@ import { TurnProgressRing } from './TurnProgressRing';
 import ReactNiceAvatar from 'react-nice-avatar';
 import { avatarConfig } from '../../utils/avatar';
 import { avatarColor } from './seatColors';
+import { frameRingClass } from '../../config/cosmetics';
 
 export interface PlayerView {
   id: string;
   username: string;
   displayName?: string; // имя из Telegram — показываем вместо username
   avatar?: string; // выбранный seed аватара (из AVATAR_PRESETS); '' / не задан = фоллбэк на id
+  frame?: string;  // ключ стиля рамки аватара (инвентарь косметики, ROADMAP §10.21.11)
+  title?: string;  // текст титула под ником (инвентарь косметики, ROADMAP §10.21.11)
   chips: number;
   cards: CardData[];
   isFolded: boolean;
@@ -185,7 +188,8 @@ const PlayerSeatImpl = ({
               'w-10 h-10 rounded-full bg-gradient-to-br ' +
               avatarGrad +
               ' shadow-md overflow-hidden' +
-              (!isSelf && onAvatarClick ? ' cursor-pointer' : '')
+              (!isSelf && onAvatarClick ? ' cursor-pointer' : '') +
+              ' ' + frameRingClass(player.frame)
             }
             onClick={!isSelf && onAvatarClick ? () => onAvatarClick(player) : undefined}
           >
@@ -201,6 +205,7 @@ const PlayerSeatImpl = ({
               {player.cards.map((c, i) => {
                 const total = player.cards.length;
                 const angle = total <= 1 ? 0 : (i / (total - 1) - 0.5) * 24;
+                const spreadX = total <= 1 ? 0 : (i - (total - 1) / 2) * 14;
                 const inWinningCombo = !!winningCards?.some((w) => w.suit === c.suit && w.rank === c.rank);
                 const showdownActive = showHand && !!winningCards && winningCards.length > 0;
                 const highlight = isWinner && showHand && inWinningCombo;
@@ -212,7 +217,7 @@ const PlayerSeatImpl = ({
                     style={{
                       bottom: 0,
                       left: '50%',
-                      transform: `translateX(-50%) rotate(${angle}deg)`,
+                      transform: `translateX(calc(-50% + ${spreadX}px)) rotate(${angle}deg)`,
                       transformOrigin: 'bottom center',
                       zIndex: i,
                     }}
@@ -238,6 +243,7 @@ const PlayerSeatImpl = ({
               {player.shownCards!.map((c, i) => {
                 const total = player.shownCards!.length;
                 const angle = total <= 1 ? 0 : (i / (total - 1) - 0.5) * 24;
+                const spreadX = total <= 1 ? 0 : (i - (total - 1) / 2) * 14;
                 return (
                   <div
                     key={i}
@@ -245,7 +251,7 @@ const PlayerSeatImpl = ({
                     style={{
                       bottom: 0,
                       left: '50%',
-                      transform: `translateX(-50%) rotate(${angle}deg)`,
+                      transform: `translateX(calc(-50% + ${spreadX}px)) rotate(${angle}deg)`,
                       transformOrigin: 'bottom center',
                       zIndex: i,
                     }}
@@ -284,6 +290,11 @@ const PlayerSeatImpl = ({
           {!isSelf && (
             <span className="text-sm font-semibold text-white">
               {player.displayName || player.username}
+            </span>
+          )}
+          {!isSelf && player.title && (
+            <span className="text-[9px] font-bold text-amber-300/90 leading-tight truncate max-w-[90px]">
+              {player.title}
             </span>
           )}
           <span className="text-xs text-gray-300">

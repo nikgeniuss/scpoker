@@ -5,8 +5,12 @@ import { isSessionValid } from '../auth/sessionStore.js';
 import { forceDisconnectOtherSessions, hasOtherActiveSocket } from './sessionManager.js';
 import type { SocketUser } from './types.js';
 import { SOCKET_EVENTS } from '@poker-room/shared';
+import { isEmojiOwned } from '../game/inventoryService.js';
 
-// Emoji-реакции: список разрешённых + кулдаун 2 сек на пользователя (см. roadmap 10.12)
+// Emoji-реакции: список разрешённых + кулдаун 2 сек на пользователя (см. roadmap 10.12).
+// Сверх базового набора — эксклюзивные эмодзи из магазина косметики (ROADMAP §10.21.12):
+// isEmojiOwned проверяет владение НА СЕРВЕРЕ (не просто UI-гейт в палитре) — иначе можно
+// подделать сокет-пакет и слать премиум-эмодзи бесплатно.
 const ALLOWED_EMOJI = ['👍', '❤️', '😂', '😮', '😢', '👏', '🔥', '🤔', '😎', '🤑', '😠', '🎲'];
 const EMOJI_COOLDOWN_MS = 2000;
 const lastEmojiAt = new Map<string, number>();
@@ -56,7 +60,8 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
       socket.leave('lobby');
     });
 
-    socket.on(SOCKET_EVENTS.CREATE_ROOM, (data: { name: string; description?: string; smallBlind: number; bigBlind: number; maxPlayers: number; password?: string; turnDurationSec?: number; buyInMinBb?: number; buyInMaxBb?: number; timebank?: { enabled: boolean; startSec: number; bonusSec: number; bonusEveryHands: number; capSec: number }; sitOutTimeoutMin?: number; waitlistDelayMin?: number; format?: 'nlh' | 'shortdeck'; rake?: { percent: number; capBb: number }; ante?: number; sessionDurationHours?: number; autoStartPlayers?: number; pinned?: boolean; autoExtendSession?: boolean; clubId?: string; straddleEnabled?: boolean; bombPotEnabled?: boolean; doubleBoardEnabled?: boolean; rimtEnabled?: boolean; evCashoutEnabled?: boolean; noTurnNoShowEnabled?: boolean; antiCollusionEnabled?: boolean }) => {
+    socket.on(SOCKET_EVENTS.CREATE_ROOM, (data: { name: string; description?: string; smallBlind: number; bigBlind: number; maxPlayers: number; password?: string; turnDurationSec?: number; buyInMinBb?: number; buyInMaxBb?: number; timebank?: { enabled: boolean; startSec: number; bonusSec: number; bonusEveryHands: number; capSec: number }; sitOutTimeoutMin?: number; waitlistDelayMin?: number; format?: 'nlh' | 'shortdeck'; rake?: { percent: number; capBb: number }; ante?: number; sessionDurationHours?: number; autoStartPlayers?: number; pinned?: boolean; autoExtendSession?: boolean; clubId?: string; straddleEnabled?: boolean; bombPotEnabled?: boolean; doubleBoardEnabled?: boolean; rimtEnabled?: boolean; evCashoutEnabled?: boolean; noTurnNoShowEnabled?: boolean }) => {
+      if (!data || typeof data.name !== 'string') return;
       // Если клиент не прислал turnDurationSec — берём глобальный settings (legacy-клиенты)
       const defaultTurnSec = Math.round(gameManager.getSettings().turnDurationMs / 1000);
       const result = gameManager.createRoom(
@@ -92,7 +97,6 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
           rimtEnabled: data.rimtEnabled,
           evCashoutEnabled: data.evCashoutEnabled,
           noTurnNoShowEnabled: data.noTurnNoShowEnabled,
-          antiCollusionEnabled: data.antiCollusionEnabled,
         },
         user.username,
         user.id,
@@ -115,11 +119,13 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
     });
 
     socket.on(SOCKET_EVENTS.LEAVE_ROOM, (data: { roomId: string }) => {
+      if (!data || typeof data.roomId !== 'string') return;
       socket.leave(data.roomId);
       gameManager.removePlayer(data.roomId, user.id);
     });
 
     socket.on(SOCKET_EVENTS.REQUEST_GAME_STATE, (data: { roomId: string }) => {
+      if (!data || typeof data.roomId !== 'string') return;
       // Базовая проверка — комната существует и юзер в ней
       const baseState = gameManager.getGameState(data.roomId);
       if (!baseState) {
@@ -134,7 +140,7 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
       socket.join(data.roomId);
       gameManager.addPlayer(data.roomId, user.id, socket.id, user.username);
       // Персональный state с учётом viewer + admin-peek (если включён)
-      const withPeek = gameManager.isAdminPeekSocket(socket.id);
+      const withPeek = gameManager.isAdminPeekUser(user.id);
       const personalState = gameManager.getGameState(data.roomId, user.id, withPeek);
       if (personalState) socket.emit(SOCKET_EVENTS.GAME_UPDATE, personalState);
       const endsAt = gameManager.getCountdownEndsAt(data.roomId);
@@ -147,6 +153,7 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
     // peek включается автоматически (решение пользователя 2026-06-12). Реального места не занимает,
     // на счётчики/автостарт/раздачу не влияет (он не игрок).
     socket.on(SOCKET_EVENTS.OBSERVE_ROOM, (data: { roomId: string }) => {
+      if (!data || typeof data.roomId !== 'string') return;
       const baseState = gameManager.getGameState(data.roomId);
       if (!baseState) {
         socket.emit(SOCKET_EVENTS.JOIN_DENIED, { reason: 'not-found' });
@@ -154,8 +161,8 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
       }
       socket.join(data.roomId);
       gameManager.addObserver(data.roomId, socket.id, user.id, user.username);
-      if (user.role === 'admin') gameManager.setAdminPeek(socket.id, true);
-      const withPeek = gameManager.isAdminPeekSocket(socket.id);
+      if (user.role === 'admin') gameManager.setAdminPeek(user.id, true);
+      const withPeek = gameManager.isAdminPeekUser(user.id);
       // viewer=user.id: наблюдатель не среди игроков → своих карт нет; админ-peek отдаёт все.
       const personalState = gameManager.getGameState(data.roomId, user.id, withPeek);
       if (personalState) socket.emit(SOCKET_EVENTS.GAME_UPDATE, personalState);
@@ -170,16 +177,17 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
         socket.emit(SOCKET_EVENTS.ERROR, { message: 'Только для админа' });
         return;
       }
-      gameManager.setAdminPeek(socket.id, !!data?.enabled);
+      gameManager.setAdminPeek(user.id, !!data?.enabled);
       // Сразу пушим этому сокету свежий state — чтобы переключение мгновенно отразилось в UI
       if (data?.roomId) {
-        const withPeek = gameManager.isAdminPeekSocket(socket.id);
+        const withPeek = gameManager.isAdminPeekUser(user.id);
         const state = gameManager.getGameState(data.roomId, user.id, withPeek);
         if (state) socket.emit(SOCKET_EVENTS.GAME_UPDATE, state);
       }
     });
 
     socket.on(SOCKET_EVENTS.JOIN_ROOM, (data: { roomId: string; password?: string; buyInAmount?: number }) => {
+      if (!data || typeof data.roomId !== 'string') return;
       const denyReason = gameManager.canJoinRoom(data.roomId, user.id, data.password, data.buyInAmount, networkInfo);
       if (denyReason) {
         // Для временного кика добавляем остаток в секундах — клиент покажет «через N мин».
@@ -200,6 +208,7 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
 
     // Встать в очередь на полный стол (авто-посадка при освобождении места через задержку стола).
     socket.on(SOCKET_EVENTS.JOIN_WAITLIST, (data: { roomId: string; password?: string; buyInAmount?: number }) => {
+      if (!data || typeof data.roomId !== 'string') return;
       const result = gameManager.joinWaitlist(data.roomId, user.id, user.username, socket, data.password, data.buyInAmount);
       if ('error' in result) {
         socket.emit(SOCKET_EVENTS.JOIN_DENIED, { reason: result.error });
@@ -213,11 +222,17 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
     });
 
     socket.on(SOCKET_EVENTS.LEAVE_WAITLIST, (data: { roomId: string }) => {
+      if (!data || typeof data.roomId !== 'string') return;
       gameManager.leaveWaitlist(data.roomId, user.id);
     });
 
     socket.on(SOCKET_EVENTS.PLAYER_ACTION, (data: { roomId: string; action: string; amount?: number }) => {
-      gameManager.handlePlayerAction(data.roomId, user.id, data.action, data.amount);
+      if (!data || typeof data.roomId !== 'string' || typeof data.action !== 'string') return;
+      // amount не проверяется рантаймом socket.io (TS-тип — только компайл-тайм): нечисловое
+      // значение (строка/объект) иначе попадёт в room.currentBet и сломает арифметику ниже
+      // по стеку (minRaiseTo делает currentBet + lastRaiseSize — конкатенация вместо сложения).
+      const amount = typeof data.amount === 'number' && Number.isFinite(data.amount) ? data.amount : undefined;
+      gameManager.handlePlayerAction(data.roomId, user.id, data.action, amount);
     });
 
     // Авто-докупка стека: клиент присылает свою преференцию (живёт в localStorage), сервер
@@ -251,6 +266,7 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
     });
 
     socket.on(SOCKET_EVENTS.START_GAME, (data: { roomId: string }) => {
+      if (!data || typeof data.roomId !== 'string') return;
       gameManager.startGame(data.roomId);
     });
 
@@ -258,7 +274,7 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
     // Rate-limit: 1 реакция в EMOJI_COOLDOWN_MS на пользователя.
     socket.on(SOCKET_EVENTS.SEND_EMOJI, (data: { roomId: string; emoji: string }) => {
       if (!data || typeof data.roomId !== 'string' || typeof data.emoji !== 'string') return;
-      if (!ALLOWED_EMOJI.includes(data.emoji)) return;
+      if (!ALLOWED_EMOJI.includes(data.emoji) && !isEmojiOwned(user.id, data.emoji)) return;
       if (!socket.rooms.has(data.roomId)) return;
       const now = Date.now();
       const last = lastEmojiAt.get(user.id) || 0;
@@ -269,9 +285,8 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
 
     socket.on('disconnect', () => {
       console.log('User disconnected:', socket.id, user.username);
-      // Admin-peek привязан к socketId — на disconnect снимаем сразу,
-      // иначе Set растёт навсегда (старые мёртвые socketId'ы остаются).
-      gameManager.clearAdminPeek(socket.id);
+      // Admin-peek привязан к userId (не socketId) — намеренно НЕ снимаем на disconnect,
+      // иначе сворачивание ТГ (пересоздание сокета) молча гасило peek (баг 2026-08-27).
       gameManager.removeObserverSocket(socket.id);
       // Защита от гонки с single-session middleware: при refresh старый сокет получает
       // disconnect, но новый сокет того же юзера уже подключился (или вот-вот подключится).

@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { Card } from './Card';
 import type { CardData } from './Card';
 import { avatarColor } from './seatColors';
+import { frameRingClass } from '../../config/cosmetics';
 import type { PlayerView } from './PlayerSeat';
 import ReactNiceAvatar from 'react-nice-avatar';
 import { avatarConfig } from '../../utils/avatar';
@@ -61,6 +62,9 @@ interface MobilePlayerSeatProps {
   hideRoleBadge?: boolean;
   showHint?: boolean; // показывать подсказку комбинации у чужих аватаров (своя — в блоке карт GameRoom)
   onAvatarClick?: (player: PlayerView) => void;
+  // AK-стол (admin-тоггл) — тёмная плашка-капсула под ником/стеком + бейдж-капсула Пас
+  // вместо plain-текста (референс AK Poker). Остальная структура не меняется.
+  akSkin?: boolean;
 }
 
 const MobilePlayerSeatImpl = ({
@@ -91,6 +95,7 @@ const MobilePlayerSeatImpl = ({
   hideRoleBadge,
   showHint,
   onAvatarClick,
+  akSkin,
 }: MobilePlayerSeatProps) => {
   const { t } = useTranslation();
   const grad = avatarColor(player.username);
@@ -181,11 +186,12 @@ const MobilePlayerSeatImpl = ({
       <div className="player-avatar-wrap relative shrink-0" style={{ width: avatarPx, height: avatarPx }}>
         <div
           className={
-            'w-full h-full rounded-full bg-gradient-to-br overflow-hidden ' +
+            'relative z-10 w-full h-full rounded-full bg-gradient-to-br overflow-hidden ' +
             grad +
             ' shadow ' +
             avatarRing +
-            (onAvatarClick ? ' cursor-pointer' : '')
+            (onAvatarClick ? ' cursor-pointer' : '') +
+            ' ' + frameRingClass(player.frame)
           }
           onClick={onAvatarClick ? () => onAvatarClick(player) : undefined}
         >
@@ -196,43 +202,71 @@ const MobilePlayerSeatImpl = ({
           />
         </div>
 
-        {/* Карты противника веером поверх аватарки */}
-        {hasCardsInHand && !player.isFolded && (
-          <div className="absolute inset-0 pointer-events-none" style={showHand ? { zIndex: 35 } : undefined}>
-            {showHand && player.cards.length > 0
-              ? player.cards.map((c, i) => {
-                  const total = player.cards.length;
-                  const angle = total <= 1 ? 0 : (i / (total - 1) - 0.5) * 24;
-                  const inWinningCombo = isWinningCard(c);
-                  const showdownActive = !!winningCards && winningCards.length > 0;
-                  const highlight = isWinner && inWinningCombo;
-                  const dim = showdownActive && !highlight;
-                  return (
-                    <div key={i} className="absolute" style={{ bottom: 0, left: '50%', transform: `translateX(-50%) rotate(${angle}deg)`, transformOrigin: 'bottom center', zIndex: i }}>
-                      <Card card={c} faceStyle={faceStyle} backStyle={backStyle} deck={deck} size="sm" delay={i * 0.05} highlight={highlight} dim={dim} />
-                    </div>
-                  );
-                })
-              : [0, 1].map((i) => {
-                  const angle = (i / 1 - 0.5) * 24;
-                  return (
-                    <div key={i} className="absolute" style={{ bottom: 0, left: '50%', transform: `translateX(-50%) rotate(${angle}deg)`, transformOrigin: 'bottom center', zIndex: i }}>
-                      <Card faceStyle={faceStyle} backStyle={backStyle} deck={deck} size="sm" delay={i * 0.05} />
-                    </div>
-                  );
-                })
-            }
+        {/* Карты противника на стадии игры — выглядывают из-под аватарки сбоку (z-index ниже
+            аватара, у которого z-10 выше). Полностью раскрываются только когда реально нужно
+            показать: см. блок ниже. */}
+        {hasCardsInHand && !player.isFolded && (!showHand || player.cards.length === 0) && (
+          <div className="absolute inset-0 pointer-events-none">
+            {[0, 1].map((i) => (
+              <div
+                key={i}
+                className="absolute bottom-0 left-1/2 -translate-x-1/2"
+                style={{
+                  transformOrigin: 'bottom center',
+                  transform: `translate(${12 + i * 4}px, ${-18 + i * 4}px) rotate(${8 + i * 6}deg) scale(0.5103)`,
+                  zIndex: i,
+                }}
+              >
+                <Card faceStyle={faceStyle} backStyle={backStyle} deck={deck} size="sm" delay={i * 0.05} />
+              </div>
+            ))}
           </div>
         )}
-        {/* shownCards соперника веером */}
+        {/* Раскрытие карт противника — шоудаун (подтверждение победителя): анимированный «выезд»
+            из-под аватарки в развёрнутое положение. Admin-peek (isAdminPeek) — сразу полностью
+            видно, без анимации: админу нужна мгновенная полная видимость, это не игровой момент. */}
+        {hasCardsInHand && !player.isFolded && showHand && player.cards.length > 0 && (
+          <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 35 }}>
+            {player.cards.map((c, i) => {
+              const total = player.cards.length;
+              const angle = total <= 1 ? 0 : (i / (total - 1) - 0.5) * 24;
+              const spreadX = total <= 1 ? 0 : (i - (total - 1) / 2) * 14;
+              const inWinningCombo = isWinningCard(c);
+              const showdownActive = !!winningCards && winningCards.length > 0;
+              const highlight = isWinner && inWinningCombo;
+              const dim = showdownActive && !highlight;
+              const peekState = { x: 12 + i * 4, y: -18 + i * 4, rotate: 8 + i * 6, scale: 0.5103 };
+              const fanState = { x: spreadX, y: 0, rotate: angle, scale: 0.5103 };
+              return (
+                <div key={i} className="absolute bottom-0 left-1/2 -translate-x-1/2" style={{ transformOrigin: 'bottom center' }}>
+                  <motion.div
+                    initial={isAdminPeek ? fanState : peekState}
+                    animate={fanState}
+                    transition={{ duration: 0.35, ease: 'easeOut' }}
+                  >
+                    <Card card={c} faceStyle={faceStyle} backStyle={backStyle} deck={deck} size="sm" delay={i * 0.05} highlight={highlight} dim={dim} />
+                  </motion.div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {/* shownCards соперника — добровольный показ после раздачи (тап "показать карту" на
+            своём клиенте). К этому моменту hasCardsInHand уже false (фолднул) — той же «выездной»
+            анимацией из-под аватарки для единообразия визуального языка. */}
         {!hasCardsInHand && player.shownCards?.some(Boolean) && (
           <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 35 }}>
             {player.shownCards!.map((c, i) => {
               const total = player.shownCards!.length;
               const angle = total <= 1 ? 0 : (i / (total - 1) - 0.5) * 24;
+              const spreadX = total <= 1 ? 0 : (i - (total - 1) / 2) * 14;
+              const peekState = { x: 12 + i * 4, y: -18 + i * 4, rotate: 8 + i * 6, scale: 0.5103 };
+              const fanState = { x: spreadX, y: 0, rotate: angle, scale: 0.5103 };
               return (
-                <div key={i} className="absolute" style={{ bottom: 0, left: '50%', transform: `translateX(-50%) rotate(${angle}deg)`, transformOrigin: 'bottom center', zIndex: i }}>
-                  <Card card={c ?? undefined} faceStyle={faceStyle} backStyle={backStyle} deck={deck} size="sm" delay={i * 0.05} />
+                <div key={i} className="absolute bottom-0 left-1/2 -translate-x-1/2" style={{ transformOrigin: 'bottom center' }}>
+                  <motion.div initial={peekState} animate={fanState} transition={{ duration: 0.35, ease: 'easeOut' }}>
+                    <Card card={c ?? undefined} faceStyle={faceStyle} backStyle={backStyle} deck={deck} size="sm" delay={i * 0.05} />
+                  </motion.div>
                 </div>
               );
             })}
@@ -260,11 +294,22 @@ const MobilePlayerSeatImpl = ({
       </div>
       )}
 
-      {/* Плашка username + chips */}
-      <div className="mobile-seat-nameplate flex flex-col items-center leading-tight">
+      {/* Плашка username + chips. Под AK-скином — тёмная плашка-капсула (референс), иначе plain-текст. */}
+      <div
+        className={
+          akSkin
+            ? 'flex flex-col items-center leading-tight bg-[rgba(20,22,28,0.85)] border border-[#3f4352] rounded-md px-1.5 py-0.5'
+            : 'mobile-seat-nameplate flex flex-col items-center leading-tight'
+        }
+      >
         {!isMe && (
           <span className="text-[10px] font-semibold truncate max-w-[78px] text-white">
             {player.displayName || player.username}
+          </span>
+        )}
+        {!isMe && player.title && (
+          <span className="text-[8px] font-bold text-amber-300/90 leading-tight truncate max-w-[78px] [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]">
+            {player.title}
           </span>
         )}
         {/* Мой стек на мобиле показан над картами (GameRoom), в плашке seat'а — только у соперников. */}
@@ -288,9 +333,16 @@ const MobilePlayerSeatImpl = ({
       </div>
 
 
-      {/* FOLD pill НАД аватаром (для me — низ занят fixed-cards блоком) */}
+      {/* FOLD pill НАД аватаром (для me — низ занят fixed-cards блоком).
+          AK-скин: серая бейдж-капсула (badge-fold референса) вместо plain-текста. */}
       {player.isFolded && (
-        <div className="absolute -top-3 left-1/2 -translate-x-1/2 text-red-400 text-[10px] font-black whitespace-nowrap z-10 [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]">
+        <div
+          className={
+            akSkin
+              ? 'absolute -top-3 left-1/2 -translate-x-1/2 bg-gray-600 border border-gray-700 text-gray-300 text-[9px] font-bold px-2 py-0.5 rounded shadow-sm z-10 whitespace-nowrap'
+              : 'absolute -top-3 left-1/2 -translate-x-1/2 text-red-400 text-[10px] font-black whitespace-nowrap z-10 [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]'
+          }
+        >
           {t('game.actionFold')}
         </div>
       )}

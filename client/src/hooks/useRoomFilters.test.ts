@@ -101,24 +101,21 @@ describe('useRoomFilters', () => {
     expect(result.current.filtered.map((r) => r.id).sort()).toEqual(['nl', 'sd']);
   });
 
-  it('blindPreset фильтрует по диапазону bigBlind', () => {
+  it('blindPreset фильтрует по диапазону bigBlind (До $1 / $1-5 / $5+)', () => {
     const rooms = [
-      makeRoom({ id: 'micro',  bigBlind: 2,    smallBlind: 1    }), // 0.02 BB
-      makeRoom({ id: 'low',    bigBlind: 50,   smallBlind: 25   }), // 0.50 BB
-      makeRoom({ id: 'medium', bigBlind: 200,  smallBlind: 100  }), // 2.00 BB
-      makeRoom({ id: 'high',   bigBlind: 5000, smallBlind: 2500 }), // 50.00 BB
+      makeRoom({ id: 'upTo1',     bigBlind: 50,   smallBlind: 25   }), // $0.50 BB
+      makeRoom({ id: 'oneToFive', bigBlind: 200,  smallBlind: 100  }), // $2.00 BB
+      makeRoom({ id: 'fivePlus',  bigBlind: 5000, smallBlind: 2500 }), // $50.00 BB
     ];
     const { result } = renderHook(() => useRoomFilters(rooms, null));
-    act(() => result.current.setBlindPreset('micro'));
-    expect(result.current.filtered.map((r) => r.id)).toEqual(['micro']);
-    act(() => result.current.setBlindPreset('low'));
-    expect(result.current.filtered.map((r) => r.id)).toEqual(['low']);
-    act(() => result.current.setBlindPreset('medium'));
-    expect(result.current.filtered.map((r) => r.id)).toEqual(['medium']);
-    act(() => result.current.setBlindPreset('high'));
-    expect(result.current.filtered.map((r) => r.id)).toEqual(['high']);
+    act(() => result.current.setBlindPreset('upTo1'));
+    expect(result.current.filtered.map((r) => r.id)).toEqual(['upTo1']);
+    act(() => result.current.setBlindPreset('oneToFive'));
+    expect(result.current.filtered.map((r) => r.id)).toEqual(['oneToFive']);
+    act(() => result.current.setBlindPreset('fivePlus'));
+    expect(result.current.filtered.map((r) => r.id)).toEqual(['fivePlus']);
     act(() => result.current.setBlindPreset('all'));
-    expect(result.current.filtered).toHaveLength(4);
+    expect(result.current.filtered).toHaveLength(3);
   });
 
   it('счётчики: myRoomsCount и onlineCount (уникальные игроки)', () => {

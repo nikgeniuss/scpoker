@@ -10,6 +10,12 @@ import { aggregateUserStats, aggregateAllUsers, overviewStats, tableStats, forma
 import { getHandsForUser } from '../game/handHistory.js';
 import { getBadBeatState, updateBadBeat, topUpBadBeat, sumBadBeatHits } from '../game/badBeatService.js';
 import { getRakebackState, updateRakebackSettings } from '../game/rakebackService.js';
+import { getStreakConfig, updateStreakSettings } from '../game/streakService.js';
+import { getAchievementsCatalog, updateAchievementsSettings } from '../game/achievementsService.js';
+import { getRaceConfig, updateRaceSettings } from '../game/raceService.js';
+import { getReferralConfig, updateReferralSettings } from '../game/referralService.js';
+import { getShopCatalog, updateShopSettings } from '../game/loyaltyShopService.js';
+import { getCatalog as getInventoryCatalog, updateInventorySettings } from '../game/inventoryService.js';
 import { countTablesOpened, roomNameMap, readRoomEvents } from '../game/roomEvents.js';
 import { readFrozenTableEvents } from '../game/frozenTableLog.js';
 import { recordChipOp, getChipOpsLog } from '../game/chipOpsLog.js';
@@ -73,6 +79,38 @@ export function createAdminRouter(gameManager: GameManager): Router {
     }
     writeJSON('appTheme.json', { theme });
     res.json({ theme });
+  });
+
+  // AK-стол — отдельный тоггл только для визуального скина мобильного стола (GameRoom),
+  // независимый от app-theme выше. Источник правды — server/data/akTable.json.
+  router.get('/ak-table', (req, res) => {
+    res.json(readJSON('akTable.json'));
+  });
+
+  router.put('/ak-table', (req, res) => {
+    const { enabled } = req.body as { enabled?: boolean };
+    if (typeof enabled !== 'boolean') {
+      res.status(400).json({ error: 'enabled: boolean' });
+      return;
+    }
+    writeJSON('akTable.json', { enabled });
+    res.json({ enabled });
+  });
+
+  // Дебаг-оверлей (FPS/PING/NET, верхний левый угол) — по умолчанию скрыт, включается
+  // здесь для всех игроков разом. Источник правды — server/data/debugOverlay.json.
+  router.get('/debug-overlay', (req, res) => {
+    res.json(readJSON('debugOverlay.json'));
+  });
+
+  router.put('/debug-overlay', (req, res) => {
+    const { enabled } = req.body as { enabled?: boolean };
+    if (typeof enabled !== 'boolean') {
+      res.status(400).json({ error: 'enabled: boolean' });
+      return;
+    }
+    writeJSON('debugOverlay.json', { enabled });
+    res.json({ enabled });
   });
 
   // Список юзеров — без passwordHash, со статистикой за всё время (PnL/руки — для сортировки/деталей)
@@ -382,6 +420,55 @@ export function createAdminRouter(gameManager: GameManager): Router {
 
   router.put('/rakeback', (req, res) => {
     res.json(updateRakebackSettings(req.body as Record<string, unknown>));
+  });
+
+  // ===== Награды: визит-бонус/стрик (§10.21.2) =====
+  router.get('/streak', (req, res) => {
+    res.json(getStreakConfig());
+  });
+
+  router.put('/streak', (req, res) => {
+    res.json(updateStreakSettings(req.body as Record<string, unknown>));
+  });
+
+  router.get('/achievements', (req, res) => {
+    res.json(getAchievementsCatalog());
+  });
+
+  router.put('/achievements', (req, res) => {
+    res.json(updateAchievementsSettings(req.body as Record<string, unknown>));
+  });
+
+  router.get('/race', (req, res) => {
+    res.json(getRaceConfig());
+  });
+
+  router.put('/race', (req, res) => {
+    res.json(updateRaceSettings(req.body as Record<string, unknown>));
+  });
+
+  router.get('/referral', (req, res) => {
+    res.json(getReferralConfig());
+  });
+
+  router.put('/referral', (req, res) => {
+    res.json(updateReferralSettings(req.body as Record<string, unknown>));
+  });
+
+  router.get('/shop', (req, res) => {
+    res.json(getShopCatalog());
+  });
+
+  router.put('/shop', (req, res) => {
+    res.json(updateShopSettings(req.body as Record<string, unknown>));
+  });
+
+  router.get('/inventory', (req, res) => {
+    res.json(getInventoryCatalog());
+  });
+
+  router.put('/inventory', (req, res) => {
+    res.json(updateInventorySettings(req.body as Record<string, unknown>));
   });
 
   router.put('/settings', (req, res) => {

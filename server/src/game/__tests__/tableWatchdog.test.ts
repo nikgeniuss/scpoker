@@ -19,8 +19,13 @@ const fixtureRoom = (over: Partial<Room> = {}): Room =>
   } as unknown as Room);
 
 describe('tableWatchdog — getFreezeInfo / isRoomFrozen', () => {
-  it('бот-стол никогда не считается зависшим', () => {
+  it('бот-стол проверяется наравне с обычным (2026-08-23: инцидент — стол завис без единого пути восстановления)', () => {
     const room = fixtureRoom({ isBotTable: true, lastProgressAt: Date.now() - FREEZE_THRESHOLD_MS * 10 });
+    expect(isRoomFrozen(room, Date.now())).toBe(true);
+  });
+
+  it('бот-стол с недавним прогрессом — не зависание (обычная игра ботов)', () => {
+    const room = fixtureRoom({ isBotTable: true, lastProgressAt: Date.now() - 5000 });
     expect(isRoomFrozen(room, Date.now())).toBe(false);
   });
 

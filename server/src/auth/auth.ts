@@ -6,11 +6,18 @@ import { readJSON, writeJSON } from './storage.js';
 import { JWT_SECRET } from '../config.js';
 import { generateTotpSecret, verifyTotp, formatSecretForDisplay } from './totp.js';
 import { createSession } from './sessionStore.js';
+import { processLogin, getStreakConfig, rewardForDay, type StreakReward } from '../game/streakService.js';
+import { getReferrerIdForCode, linkReferral } from '../game/referralService.js';
+import { credit as creditRewardsWallet } from '../game/rewardsWalletService.js';
+import { sendNotification } from '../game/inboxService.js';
 
-// Device info при реальном логине — для записи в sessions.json («Мои устройства», §10.15).
+// Device info при реальном логине — для записи в sessions.json («Мои устройства», §10.15) и
+// анти-фарм проверки визит-бонуса (§10.21.2). deviceId — тот же localStorage UUID, что клиент
+// уже шлёт на сокет для anti-collusion за столом (client/src/lib/deviceId.ts), здесь — заголовком.
 export interface DeviceInfo {
   userAgent?: string;
   ip?: string;
+  deviceId?: string;
 }
 
 export interface User {
@@ -33,6 +40,10 @@ export interface User {
   opponentNotes?: Record<string, string>; // приватные заметки на оппонентов: targetUserId → текст (≤300 симв.)
   avatarSeed?: string; // выбранный seed аватара (из AVATAR_PRESETS); не задан = фоллбэк на id
   dateOfBirth?: string; // ISO-дата 'YYYY-MM-DD', обязательна при регистрации email/паролем (KYC-basic, §11.2); TG-регистрация её не собирает
+  lastLoginDate?: string; // 'YYYY-MM-DD', для визит-бонуса (§10.21.2) — НЕ то же, что lastLogin (ISO-время)
+  streakDays?: number; // текущая серия дней подряд со входом (§10.21.2)
+  regIp?: string;       // сеть на момент РЕГИСТРАЦИИ (не логина) — для анти-фарма рефералки (§10.21.5)
+  regDeviceId?: string;
   responsibleGambling?: ResponsibleGamblingState;
   tosAcceptedAt?: string; // ISO-время согласия с ToS/Privacy при регистрации
   twoFactorEnabled?: boolean; // 2FA (TOTP) включена и подтверждена
@@ -154,6 +165,54 @@ function loginBlockReason(
   return null;
 }
 
+// Визит-бонус/стрик (§10.21.2) — единая точка для всех 3 мест реального завершения входа
+// (loginUser/completeTwoFactorLogin/loginOrRegisterTelegramUser). Мутирует user.lastLoginDate/
+// streakDays — вызывающий обязан writeJSON после (как и с user.lastLogin рядом). Награда — в
+// отдельный HUB-коин кошелёк (НЕ в user.chips), тихое начисление сопровождается уведомлением
+// во «Входящие» (в отличие от рейкбэка — вход раз в день, спама не будет).
+function applyLoginStreak(user: User, device: DeviceInfo): void {
+  const now = new Date();
+  const todayDate = now.toISOString().slice(0, 10);
+  const result = processLogin(
+    user.id,
+    user.lastLoginDate,
+    user.streakDays ?? 0,
+    { ip: device.ip ?? '', deviceId: device.deviceId ?? '' },
+    now,
+  );
+  if (!result) return;
+  user.lastLoginDate = todayDate;
+  user.streakDays = result.streakDays;
+  if (result.reward > 0) {
+    creditRewardsWallet(user.id, result.reward, 'streak');
+    sendNotification(user.id, 'reward', `Бонус за визит: +${result.reward} HUB (день серии: ${result.streakDays})`);
+  }
+}
+
+// Личный кабинет визит-бонуса (§10.21.2, GET /api/streak/me). currentReward — награда, уже
+// закреплённая за текущим днём серии (0, если фича выключена/серии ещё нет).
+export function getUserStreakInfo(userId: string): {
+  enabled: boolean;
+  streakDays: number;
+  claimedToday: boolean;
+  currentReward: number;
+  rewards: StreakReward[];
+} | { error: 'not-found' } {
+  const users = readJSON('users.json') as User[];
+  const user = users.find((u) => u.id === userId);
+  if (!user) return { error: 'not-found' };
+  const cfg = getStreakConfig();
+  const todayDate = new Date().toISOString().slice(0, 10);
+  const streakDays = user.streakDays ?? 0;
+  return {
+    enabled: cfg.enabled,
+    streakDays,
+    claimedToday: user.lastLoginDate === todayDate,
+    currentReward: rewardForDay(cfg.rewards, streakDays),
+    rewards: cfg.rewards,
+  };
+}
+
 const DOB_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 // Формат + разумные границы (не будущее, не >120 лет назад). Чистая функция — тестируется отдельно.
@@ -180,6 +239,8 @@ export function registerUser(
   password: string,
   email: string,
   dateOfBirth: string,
+  device: DeviceInfo = {},
+  refCode?: string,
 ): { user: User } | { error: 'username-taken' | 'email-taken' | 'invalid-dob' | 'underage' } {
   if (!isValidDateOfBirth(dateOfBirth)) return { error: 'invalid-dob' };
   if (!isAdult(dateOfBirth)) return { error: 'underage' };
@@ -210,10 +271,28 @@ export function registerUser(
     publicId: generatePublicId(existingPublicIds),
     tosAcceptedAt: new Date().toISOString(),
     dateOfBirth,
+    regIp: device.ip || undefined,
+    regDeviceId: device.deviceId || undefined,
   };
 
   users.push(newUser);
   writeJSON('users.json', users);
+
+  // Реферальная привязка (§10.21.5) — только здесь, на регистрации, задним числом не применяется.
+  // Молча игнорируем невалидный/чужой-себе код — регистрация не должна падать из-за реферальной мелочи.
+  if (typeof refCode === 'string' && refCode.trim()) {
+    const referrerId = getReferrerIdForCode(refCode);
+    const referrer = referrerId ? users.find((u) => u.id === referrerId) : undefined;
+    if (referrer) {
+      linkReferral(
+        newUser.id,
+        referrer.id,
+        { ip: device.ip ?? '', deviceId: device.deviceId ?? '' },
+        { ip: referrer.regIp ?? '', deviceId: referrer.regDeviceId ?? '' },
+      );
+    }
+  }
+
   return { user: newUser };
 }
 
@@ -247,6 +326,7 @@ export function loginUser(
 
   // Фиксируем время входа (для админ-карточки игрока)
   user.lastLogin = new Date().toISOString();
+  applyLoginStreak(user, device);
   writeJSON('users.json', users);
 
   const sid = createSession(user.id, device.userAgent ?? '', device.ip ?? '');
@@ -274,9 +354,20 @@ export function setupTwoFactor(userId: string): { secret: string } | { error: 'n
   return { secret: formatSecretForDisplay(secret) };
 }
 
+// Криптостойкий вариант randomChunk — backup-код обходит 2FA, значит сам должен быть
+// непредсказуем (Math.random — обычный PRNG движка, не для секретов; crypto.randomInt — без
+// modulo-bias, в отличие от randomBytes()[i] % n).
+function secureRandomChunk(n: number): string {
+  let s = '';
+  for (let i = 0; i < n; i++) {
+    s += PUBLIC_ID_ALPHABET[crypto.randomInt(PUBLIC_ID_ALPHABET.length)];
+  }
+  return s;
+}
+
 // Backup-коды на случай утери устройства — формат как у publicId, отдаются в открытом виде ОДИН раз.
 function generateBackupCodes(count = 8): string[] {
-  return Array.from({ length: count }, () => `${randomChunk(4)}-${randomChunk(4)}`);
+  return Array.from({ length: count }, () => `${secureRandomChunk(4)}-${secureRandomChunk(4)}`);
 }
 
 // Шаг 2 подключения: код из приложения должен совпасть с pending-секретом — переносим его
@@ -364,6 +455,7 @@ export function completeTwoFactorLogin(
   if (!verifyTwoFactorCode(user, code)) return { error: 'invalid-code' };
 
   user.lastLogin = new Date().toISOString();
+  applyLoginStreak(user, device);
   writeJSON('users.json', users);
 
   const sid = createSession(user.id, device.userAgent ?? '', device.ip ?? '');
@@ -658,6 +750,7 @@ export function loginOrRegisterTelegramUser(
   user.displayName = tgDisplayName(tg);
   // Фиксируем время входа (новый или существующий TG-юзер)
   user.lastLogin = new Date().toISOString();
+  applyLoginStreak(user, device);
   writeJSON('users.json', users);
 
   const sid = createSession(user.id, device.userAgent ?? '', device.ip ?? '');

@@ -122,3 +122,77 @@ describe('serializeGameState — защита карт (§0.1)', () => {
     expect(a.shownCards).toBeUndefined();
   });
 });
+
+// willWin — детерминированный сигнал «выиграю ли я» для админа на своём месте (admin-peek).
+// Отдельная колода, подобранная так, чтобы известный itog-борд (finalBoard = futureBoard, т.к.
+// communityCards пуст) был предсказуем: preflop-паттерн getFutureBoardCards читает с вершины
+// колоды burn→flop×3→burn→turn→burn→river, т.е. при deck длины 8 индексы [7,3,1] сгорают,
+// а finalBoard = [deck[6], deck[5], deck[4], deck[2], deck[0]].
+describe('serializeGameState — willWin (§0.1, только admin-peek на своём месте)', () => {
+  // index0 = burn(river), index2 = turn, index4/5/6 = flop3/flop2/flop1, index1/3/7 = burn(нейтральные).
+  // Дефолтная колода → итоговый борд 2h 5d 9c Ks 3s (рэйнбоу, но содержит Ks — даёт Bob трипс
+  // с карманными Kd Kc). Для чистого сравнения пар (без трипса у Bob) тест передаёт колоду без короля.
+  const DEFAULT_DECK = '3s Th Ks Jd 9c 5d 2h Qc';
+
+  function makeWillWinRoom(aHole: string, bHole: string, deckStr: string = DEFAULT_DECK) {
+    const mkPlayer = (id: string, name: string, hole: string, pos: number, folded = false) => ({
+      id, username: name, chips: 1000, cards: cards(hole),
+      isActive: true, isFolded: folded, currentBet: 0, position: pos, avatar: '',
+      disconnected: false, timebank: 30,
+    });
+    const players = new Map([
+      ['A', mkPlayer('A', 'Alice', aHole, 0)],
+      ['B', mkPlayer('B', 'Bob', bHole, 1)],
+    ]);
+    const deck = cards(deckStr);
+    return {
+      id: 'room1', name: 'T', players,
+      communityCards: [], deck,
+      pot: 0, currentBet: 0, dealerIndex: 0, currentPlayerIndex: 0,
+      phase: 'preflop',
+      turnEndsAt: null, turnDurationMs: 30000, turnTimebankEndsAt: null, turnTimebankStartedAt: null,
+      smallBlind: 5, bigBlind: 10,
+      timebank: { enabled: true, startSec: 30, bonusSec: 10, bonusEveryHands: 10, capSec: 60 },
+      rake: { percent: 5, capBb: 3 },
+    } as unknown as Parameters<typeof serializeGameState>[0];
+  }
+
+  const willWinOf = (s: ReturnType<typeof serializeGameState>, id: string) =>
+    s.players.find((p) => p.id === id)!.willWin;
+
+  it('пара тузов бьёт пару королей на безопасном борде → willWin=true', () => {
+    // Колода без короля (Ks→7c на позиции turn) → итоговый борд 2h 5d 9c 7c 3s, без пары/трипса
+    // ни для чьих карманных. AA даёт старшую пару, KK — вторую пару, выше не поднимается.
+    const room = makeWillWinRoom('Ah As', 'Kd Kc', '3s Th 7c Jd 9c 5d 2h Qc');
+    const s = serializeGameState(room, 'A', true); // A смотрит с peek
+    expect(willWinOf(s, 'A')).toBe(true);
+  });
+
+  it('трипс королей (карман + борд) бьёт пару тузов → willWin=false', () => {
+    // Борд содержит Ks — у Bob (Kd Kc) трипс, у Alice (AA) только пара.
+    const room = makeWillWinRoom('Ah As', 'Kd Kc');
+    const s = serializeGameState(room, 'B', true); // теперь смотрит B (у него трипс)
+    expect(willWinOf(s, 'B')).toBe(true);
+    expect(willWinOf(s, 'A')).toBeUndefined(); // чужое willWin не считается и не отдаётся
+  });
+
+  it('без peek (обычный игрок, даже свой viewerId) → willWin всегда undefined', () => {
+    const room = makeWillWinRoom('Ah As', 'Kd Kc');
+    const s = serializeGameState(room, 'A', false);
+    expect(willWinOf(s, 'A')).toBeUndefined();
+  });
+
+  it('сфолдивший (даже с peek) → willWin undefined — раздача для него уже решена', () => {
+    const room = makeWillWinRoom('Ah As', 'Kd Kc');
+    (room as unknown as { players: Map<string, { isFolded: boolean }> }).players.get('A')!.isFolded = true;
+    const s = serializeGameState(room, 'A', true);
+    expect(willWinOf(s, 'A')).toBeUndefined();
+  });
+
+  it('все остальные сфолдили → willWin=true (банк мой без вскрытия)', () => {
+    const room = makeWillWinRoom('Ah As', 'Kd Kc');
+    (room as unknown as { players: Map<string, { isFolded: boolean }> }).players.get('B')!.isFolded = true;
+    const s = serializeGameState(room, 'A', true);
+    expect(willWinOf(s, 'A')).toBe(true);
+  });
+});

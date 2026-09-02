@@ -18,6 +18,9 @@ interface MobileTableMenuProps {
   onOpenSettings: () => void;
   onLeave: () => void;
   hideTrigger?: boolean; // прячем кнопку-вызов (напр. когда раскрыт блок рейза), чтобы не мешала
+  // AK-стол (admin-тоггл) — кнопка-вызов переезжает под иконку «Настройки» AkTableTopBar
+  // (top-right), вместо кружка в правом нижнем углу.
+  akTrigger?: boolean;
 }
 
 // Нижнее меню стола для mobile/TWA: верхний бар спрятан, его кнопки (баланс, админ, инфо,
@@ -36,6 +39,7 @@ export const MobileTableMenu = ({
   onOpenSettings,
   onLeave,
   hideTrigger,
+  akTrigger,
 }: MobileTableMenuProps) => {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -107,18 +111,23 @@ export const MobileTableMenu = ({
         </div>
       </div>
 
-      {/* Кнопка-вызов меню: правый нижний угол, над кнопками хода. Компактная, иконка-меню
-          интуитивна. Доступна в любой момент (и на своём ходу). Прячется пока меню открыто
-          или когда раскрыт блок рейза (hideTrigger), чтобы не мешать. */}
+      {/* Кнопка-вызов меню. По умолчанию — правый нижний угол, над кнопками хода (кружок).
+          AK-скин (akTrigger): под иконкой «Настройки» AkTableTopBar (top-right), квадратная
+          иконка. Доступна в любой момент (и на своём ходу). Прячется пока меню открыто или когда
+          раскрыт блок рейза (hideTrigger), чтобы не мешать. */}
       {!open && !hideTrigger && (
         <button
           type="button"
           onClick={() => setOpen(true)}
           aria-label={t('mobileTableMenu.tableMenu')}
           title={t('mobileTableMenu.tableMenu')}
-          className="fixed right-3 bottom-[calc(env(safe-area-inset-bottom)+84px)] z-40 flex items-center justify-center w-10 h-10 rounded-full bg-black/60 backdrop-blur border border-white/15 text-white/85 active:text-white shadow-lg shadow-black/40"
+          className={
+            akTrigger
+              ? "overflow-hidden fixed top-16 right-1 z-40 flex items-center justify-center w-9 h-9 bg-black/40 rounded border border-white/10 text-white before:content-[''] before:absolute before:inset-x-0.5 before:top-0.5 before:h-1/2 before:rounded-t before:bg-gradient-to-b before:from-white/40 before:to-transparent before:pointer-events-none"
+              : 'fixed right-3 bottom-[calc(env(safe-area-inset-bottom)+84px)] z-40 flex items-center justify-center w-10 h-10 rounded-full bg-black/60 backdrop-blur border border-white/15 text-white/85 active:text-white shadow-lg shadow-black/40'
+          }
         >
-          <Menu size={20} />
+          <Menu size={akTrigger ? 18 : 20} />
         </button>
       )}
     </div>

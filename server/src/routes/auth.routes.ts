@@ -21,19 +21,32 @@ import { listSessions, revokeSession } from '../auth/sessionStore.js';
 import { AVATAR_PRESETS } from '@poker-room/shared';
 import { TELEGRAM_BOT_TOKEN, JWT_SECRET } from '../config.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rateLimit.js';
 import { readJSON } from '../auth/storage.js';
 
-// Device info логина («Мои устройства», §10.15) — из заголовков запроса, без доп. библиотек.
+// Лимиты на перебор пароля/2FA-кода (CWE-307) — по IP, см. rateLimit.ts.
+const loginLimiter = rateLimit('login', 10, 5 * 60_000);
+const twoFaLimiter = rateLimit('2fa', 10, 5 * 60_000);
+const registerLimiter = rateLimit('register', 20, 10 * 60_000);
+
+// Device info логина («Мои устройства», §10.15; deviceId — анти-фарм визит-бонуса §10.21.2) —
+// из заголовков запроса, без доп. библиотек. x-device-id — тот же localStorage UUID, что клиент
+// уже шлёт на сокет для anti-collusion за столом (client/src/lib/deviceId.ts), сюда — заголовком.
 function deviceInfoFrom(req: Request): DeviceInfo {
-  return { userAgent: req.headers['user-agent'] ?? '', ip: req.ip ?? '' };
+  const deviceIdHeader = req.headers['x-device-id'];
+  return {
+    userAgent: req.headers['user-agent'] ?? '',
+    ip: req.ip ?? '',
+    deviceId: typeof deviceIdHeader === 'string' ? deviceIdHeader : '',
+  };
 }
 
 // Роуты авторизации (/api/auth/*). Вынесено из index.ts (ROADMAP §9.3-C).
 export function createAuthRouter(gameManager: GameManager): Router {
   const router = Router();
 
-  router.post('/register', (req, res) => {
-    const { username, password, email, tosAccepted, dateOfBirth } = req.body;
+  router.post('/register', registerLimiter, (req, res) => {
+    const { username, password, email, tosAccepted, dateOfBirth, refCode } = req.body;
 
     // Проверяем, что все поля пришли
     if (!username || !password || !email || !dateOfBirth) {
@@ -45,8 +58,16 @@ export function createAuthRouter(gameManager: GameManager): Router {
       return;
     }
 
-    // Передаём email и дату рождения в registerUser (возраст 18+ проверяется там)
-    const result = registerUser(username, password, email, dateOfBirth);
+    // Передаём email и дату рождения в registerUser (возраст 18+ проверяется там); refCode —
+    // реферальная привязка (§10.21.5), опциональна, невалидный код молча игнорируется.
+    const result = registerUser(
+      username,
+      password,
+      email,
+      dateOfBirth,
+      deviceInfoFrom(req),
+      typeof refCode === 'string' ? refCode : undefined,
+    );
 
     if ('error' in result) {
       const messages: Record<typeof result.error, string> = {
@@ -76,7 +97,7 @@ export function createAuthRouter(gameManager: GameManager): Router {
     });
   });
 
-  router.post('/login', (req, res) => {
+  router.post('/login', loginLimiter, (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) { res.status(400).json({ error: 'Username and password required' }); return; }
     const result = loginUser(username, password, deviceInfoFrom(req));
@@ -104,7 +125,7 @@ export function createAuthRouter(gameManager: GameManager): Router {
   });
 
   // Шаг 2 логина при включённой 2FA: pendingToken из /login + код из приложения-аутентификатора (или backup-код).
-  router.post('/login/2fa', (req, res) => {
+  router.post('/login/2fa', twoFaLimiter, (req, res) => {
     const { pendingToken, code } = req.body as { pendingToken?: string; code?: string };
     if (typeof pendingToken !== 'string' || typeof code !== 'string') {
       res.status(400).json({ error: 'pendingToken и code обязательны' });
@@ -292,7 +313,7 @@ export function createAuthRouter(gameManager: GameManager): Router {
   });
 
   // Отключение 2FA самим игроком — требует текущий TOTP-код или backup-код.
-  router.post('/2fa/disable', authMiddleware, (req, res) => {
+  router.post('/2fa/disable', authMiddleware, twoFaLimiter, (req, res) => {
     const userId = (req as unknown as { user: { id: string } }).user.id;
     const { code } = req.body as { code?: string };
     if (typeof code !== 'string') {

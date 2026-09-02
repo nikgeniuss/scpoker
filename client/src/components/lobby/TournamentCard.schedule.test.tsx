@@ -43,6 +43,7 @@ function renderCard(tournament: TournamentInfo) {
       onCancel={vi.fn()}
       onGoToTable={vi.fn()}
       onAddBots={vi.fn()}
+      onRedeemPromo={vi.fn().mockResolvedValue({ ok: true })}
     />,
   );
 }

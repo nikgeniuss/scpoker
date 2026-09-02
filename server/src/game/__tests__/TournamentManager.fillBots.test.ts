@@ -19,6 +19,7 @@ describe('TournamentManager — незаметное заполнение бот
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 

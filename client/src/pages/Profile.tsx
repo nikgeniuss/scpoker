@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import ReactNiceAvatar from 'react-nice-avatar';
 import { AnimatePresence } from 'framer-motion';
-import { ChevronRight, History, Settings2, Inbox, Globe, HelpCircle, Wallet as WalletIcon, Gem, ShieldAlert } from 'lucide-react';
+import { ChevronRight, History, Settings2, Inbox, Globe, HelpCircle, Wallet as WalletIcon, Gem, Trophy, ShieldAlert, LogOut, Gift } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
+import { useRakebackStore } from '../store/rakebackStore';
 import { countryFlag } from '../utils/country';
 import { formatMoney } from '../config/chipFormat';
 import { avatarConfig } from '../utils/avatar';
@@ -15,12 +16,14 @@ import { loadBetPresets, saveBetPresets } from '../config/betPresets';
 import { loadChipDisplay, saveChipDisplay } from '../config/chipFormat';
 import { loadCardDeck, saveCardDeck } from '../config/cardDeck';
 import { loadGameSettings, saveGameSettings } from '../config/gameSettings';
+import { useHandsChart } from '../hooks/useHandsChart';
 
 export function Profile() {
   const { t } = useTranslation();
   const user = useAuthStore(s => s.user);
   const token = useAuthStore(s => s.token);
   const setAvatarSeed = useAuthStore(s => s.setAvatarSeed);
+  const logout = useAuthStore(s => s.logout);
   const navigate = useNavigate();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -28,10 +31,18 @@ export function Profile() {
   const [chipDisplay, setChipDisplay] = useState(() => loadChipDisplay());
   const [cardDeck, setCardDeck] = useState(() => loadCardDeck());
   const [gameSettings, setGameSettings] = useState(() => loadGameSettings());
+  const { totalHands } = useHandsChart();
+  const { enabled: rakebackEnabled, tier, loadMine } = useRakebackStore();
+
+  useEffect(() => {
+    loadMine(token);
+  }, [loadMine, token]);
 
   const MENU_ITEMS = [
     { icon: <WalletIcon size={20} />, label: t('profile.wallet'), sub: null, to: '/wallet' },
     { icon: <Gem size={20} />, label: t('profile.rakeback'), sub: null, to: '/rakeback' },
+    { icon: <Trophy size={20} />, label: t('profile.rewards'), sub: null, to: '/rewards' },
+    { icon: <Gift size={20} />, label: t('profile.referral'), sub: null, to: '/referral' },
     { icon: <ShieldAlert size={20} />, label: t('profile.responsibleGambling'), sub: null, to: '/responsible-gambling' },
     { icon: <History size={20} />, label: t('profile.pokerCraft'), sub: t('profile.pokerCraftSub'), to: '/pokercraft' },
     { icon: <Settings2 size={20} />, label: t('profile.gameSettings'), sub: null, to: null, onClick: () => setSettingsOpen(true) },
@@ -84,9 +95,14 @@ export function Profile() {
           {user.publicId && (
             <span className="text-white/40 text-sm font-mono tracking-wider">{user.publicId}</span>
           )}
-          <div className="mt-1 px-4 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-sm font-bold">
-            {formatMoney(user.chips ?? 0)}
-          </div>
+          {rakebackEnabled && tier && (
+            <span className="mt-1 inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-500/15 border border-emerald-500/30">
+              <Gem size={11} className="text-emerald-400" />
+              <span className="text-[10px] font-black tracking-wider text-emerald-400">
+                {t('profile.vip')} {tier.name.toUpperCase()}
+              </span>
+            </span>
+          )}
         </div>
 
         <button
@@ -95,6 +111,43 @@ export function Profile() {
         >
           {t('profile.accountData')}
         </button>
+      </div>
+
+      <div className="px-4 flex flex-col gap-3 mb-5">
+        {/* Баланс */}
+        <div className="rounded-2xl bg-white/5 p-4 flex items-center justify-between gap-3">
+          <div>
+            <div className="text-white/40 text-xs mb-1">{t('profile.balance')}</div>
+            <div className="text-2xl font-black tabular-nums">{formatMoney(user.chips ?? 0)}</div>
+          </div>
+          <button
+            className="px-5 py-2.5 rounded-xl font-bold text-sm bg-gradient-to-r from-emerald-500 to-green-600 text-white flex-shrink-0"
+            onClick={() => navigate('/wallet')}
+          >
+            {t('profile.deposit')}
+          </button>
+        </div>
+
+        {/* Статистика — «Рук сыграно» реальные (см. useHandsChart), остальные три пока не
+            трекаются в БД (см. UserStats в statsService.ts) — TODO(roadmap): см. ROADMAP §9.1 */}
+        <div className="grid grid-cols-2 gap-2.5">
+          <div className="rounded-2xl bg-white/5 p-3.5">
+            <div className="text-white/40 text-[10px] mb-1">{t('profile.handsPlayed')}</div>
+            <div className="text-lg font-bold tabular-nums">{totalHands}</div>
+          </div>
+          <div className="rounded-2xl bg-white/5 p-3.5">
+            <div className="text-white/40 text-[10px] mb-1">{t('profile.wins')}</div>
+            <div className="text-lg font-bold tabular-nums text-white/30">—</div>
+          </div>
+          <div className="rounded-2xl bg-white/5 p-3.5">
+            <div className="text-white/40 text-[10px] mb-1">{t('profile.roi')}</div>
+            <div className="text-lg font-bold tabular-nums text-white/30">—</div>
+          </div>
+          <div className="rounded-2xl bg-white/5 p-3.5">
+            <div className="text-white/40 text-[10px] mb-1">{t('profile.hoursAtTable')}</div>
+            <div className="text-lg font-bold tabular-nums text-white/30">—</div>
+          </div>
+        </div>
       </div>
 
       {/* Menu */}
@@ -114,6 +167,13 @@ export function Profile() {
               <ChevronRight size={16} className="text-white/20 flex-shrink-0" />
             </button>
           ))}
+          <button
+            className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-white/5 transition-colors"
+            onClick={() => { logout(); navigate('/'); }}
+          >
+            <span className="text-red-400"><LogOut size={20} /></span>
+            <span className="flex-1 text-sm font-medium text-red-400">{t('nav.logout')}</span>
+          </button>
         </div>
       </div>
 

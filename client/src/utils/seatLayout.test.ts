@@ -21,12 +21,12 @@ describe('buildSeatLayout', () => {
     expect(me.dealerLeft).toBe(50);
   });
 
-  it('chipTop/dealerTop интерполируются к центру (48% и 30% пути)', () => {
+  it('chipTop/dealerTop интерполируются к центру (48% и 22% пути)', () => {
     const me = buildSeatLayout(6)[0]; // top=85
     // chipTop = top - (top-50)*0.48
     expect(me.chipTop).toBeCloseTo(85 - (85 - 50) * 0.48, 5);
-    // dealerTop = top - (top-50)*0.30
-    expect(me.dealerTop).toBeCloseTo(85 - (85 - 50) * 0.3, 5);
+    // dealerTop = top - (top-50)*0.22
+    expect(me.dealerTop).toBeCloseTo(85 - (85 - 50) * 0.22, 5);
   });
 
   it('для бокового места стопка смещается к центру по обеим осям', () => {

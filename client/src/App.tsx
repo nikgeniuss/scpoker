@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { MotionConfig } from 'framer-motion';
 import { Toaster } from 'react-hot-toast';
 import { Layout } from './components/layout/Layout';
+import { AppThemeGate } from './components/layout/AppThemeGate';
 import { ScrollToTop } from './components/ScrollToTop';
 import { RequireAuth } from './components/auth/RequireAuth';
 import { RequireAdmin } from './components/auth/RequireAdmin';
@@ -29,9 +30,17 @@ import { SeatingPreview } from './pages/SeatingPreview';
 import { Tournaments } from './pages/Tournaments';
 import { ClubHome } from './pages/club/ClubHome';
 import { RakebackInfo } from './pages/RakebackInfo';
+import { Rewards } from './pages/Rewards';
+import { Referral } from './pages/Referral';
+import { LoyaltyShop } from './pages/LoyaltyShop';
 import { ResponsibleGambling } from './pages/ResponsibleGambling';
 import { Terms } from './pages/Terms';
 import { Privacy } from './pages/Privacy';
+import { AkMainMenu } from './pages/AkMainMenu';
+import { AkWallet } from './pages/AkWallet';
+import { AkProfile } from './pages/AkProfile';
+import { AkClub } from './pages/AkClub';
+import { AkPromotions } from './pages/AkPromotions';
 
 // Админка — отдельный lazy-чанк: код админ-панели (управление юзерами/комнатами/ботами/настройками)
 // НЕ попадает в основной бандл игрока. Загружается только когда админ заходит на /admin (за RequireAdmin).
@@ -53,20 +62,25 @@ function App() {
       <TelegramAutoLogin />
       <Layout>
         <Routes>
-          <Route path="/" element={<ErrorBoundary><MainMenu /></ErrorBoundary>} />
+          <Route path="/" element={<ErrorBoundary><AppThemeGate classic={<MainMenu />} ak={<AkMainMenu />} /></ErrorBoundary>} />
           <Route path="/lobby" element={<ErrorBoundary><RequireAuth><LobbyGate /></RequireAuth></ErrorBoundary>} />
           <Route path="/tournaments" element={<ErrorBoundary><RequireAuth><Tournaments /></RequireAuth></ErrorBoundary>} />
           <Route path="/game/:roomId" element={<ErrorBoundary><RequireAuth><GameRoom /></RequireAuth></ErrorBoundary>} />
-          <Route path="/profile" element={<ErrorBoundary><RequireAuth><Profile /></RequireAuth></ErrorBoundary>} />
+          <Route path="/profile" element={<ErrorBoundary><RequireAuth><AppThemeGate classic={<Profile />} ak={<AkProfile />} /></RequireAuth></ErrorBoundary>} />
           <Route path="/account" element={<ErrorBoundary><RequireAuth><AccountData /></RequireAuth></ErrorBoundary>} />
           <Route path="/devices" element={<ErrorBoundary><RequireAuth><MyDevices /></RequireAuth></ErrorBoundary>} />
-          <Route path="/wallet" element={<ErrorBoundary><RequireAuth><Wallet /></RequireAuth></ErrorBoundary>} />
+          <Route path="/wallet" element={<ErrorBoundary><RequireAuth><AppThemeGate classic={<Wallet />} ak={<AkWallet />} /></RequireAuth></ErrorBoundary>} />
+          <Route path="/ak-club" element={<ErrorBoundary><RequireAuth><AkClub /></RequireAuth></ErrorBoundary>} />
+          <Route path="/ak-promotions" element={<ErrorBoundary><RequireAuth><AkPromotions /></RequireAuth></ErrorBoundary>} />
           <Route path="/language" element={<ErrorBoundary><RequireAuth><Language /></RequireAuth></ErrorBoundary>} />
           <Route path="/help" element={<ErrorBoundary><RequireAuth><Help /></RequireAuth></ErrorBoundary>} />
           <Route path="/pokercraft" element={<ErrorBoundary><RequireAuth><PokerCraft /></RequireAuth></ErrorBoundary>} />
           <Route path="/inbox" element={<ErrorBoundary><RequireAuth><Inbox /></RequireAuth></ErrorBoundary>} />
           <Route path="/leaderboard" element={<ErrorBoundary><RequireAuth><Leaderboard /></RequireAuth></ErrorBoundary>} />
           <Route path="/rakeback" element={<ErrorBoundary><RequireAuth><RakebackInfo /></RequireAuth></ErrorBoundary>} />
+          <Route path="/rewards" element={<ErrorBoundary><RequireAuth><Rewards /></RequireAuth></ErrorBoundary>} />
+          <Route path="/referral" element={<ErrorBoundary><RequireAuth><Referral /></RequireAuth></ErrorBoundary>} />
+          <Route path="/shop" element={<ErrorBoundary><RequireAuth><LoyaltyShop /></RequireAuth></ErrorBoundary>} />
           <Route path="/responsible-gambling" element={<ErrorBoundary><RequireAuth><ResponsibleGambling /></RequireAuth></ErrorBoundary>} />
           <Route path="/terms" element={<ErrorBoundary><Terms /></ErrorBoundary>} />
           <Route path="/privacy" element={<ErrorBoundary><Privacy /></ErrorBoundary>} />

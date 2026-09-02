@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
 import { API_URL } from '../../config/api';
 import { getTelegramInitData, getTelegramStartParam } from '../../lib/telegram';
+import { getDeviceId } from '../../lib/deviceId';
 
 // Внутри Telegram Mini App автоматически логинит юзера через initData → JWT.
 // Если уже есть token в localStorage — ничего не делает.
@@ -20,6 +21,13 @@ export function TelegramAutoLogin() {
 
   useEffect(() => {
     if (triedRef.current) return;
+    // Уже залогинены в этой сессии Mini App — ни автологин, ни повторную привязку не запускаем.
+    // Раньше проверка token стояла только у автологина ниже, а ветка startParam срабатывала
+    // безусловно — из-за этого повторное открытие Mini App с «залипшим» start_param (например,
+    // у постоянной кнопки «Старт» бота) на каждый заход заново дёргало /auth/link/confirm и
+    // перезаписывало токен, из-за чего рвался текущий сокет (single-session guard, §0.6) —
+    // выглядело как сброс сессии по кнопке «Старт».
+    if (token) return;
 
     const initData = getTelegramInitData();
     if (!initData) return; // не TG или нет initData
@@ -33,7 +41,7 @@ export function TelegramAutoLogin() {
         try {
           const res = await fetch(API_URL + '/auth/link/confirm', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-Device-Id': getDeviceId() },
             body: JSON.stringify({ initData, code: startParam }),
           });
           const data = await res.json().catch(() => ({}));
@@ -51,14 +59,13 @@ export function TelegramAutoLogin() {
       return;
     }
 
-    // Обычный автологин по initData (если ещё не залогинен).
-    if (token) return;
+    // Обычный автологин по initData (token уже проверен выше — сюда доходим, только если пусто).
     triedRef.current = true;
     (async () => {
       try {
         const res = await fetch(API_URL + '/auth/telegram', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-Device-Id': getDeviceId() },
           body: JSON.stringify({ initData }),
         });
         if (!res.ok) {

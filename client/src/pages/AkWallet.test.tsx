@@ -1,0 +1,137 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { AkWallet } from './AkWallet';
+import { useAuthStore } from '../store/authStore';
+import { useWalletStore } from '../store/walletStore';
+import type { WithdrawalRequest, WithdrawalStatus } from '@poker-room/shared';
+
+// AK-версия кошелька переиспользует ту же бизнес-логику подтверждения вывода и цветовое
+// кодирование статусов, что классический Wallet.tsx (см. Wallet.test.tsx) — форма вывода тут
+// открывается через модалку по кнопке «Вывод».
+
+const WALLET_INFO = {
+  enabled: true,
+  exchangeRateCentsPerUsdt: 100,
+  minWithdrawalUsdt: 5,
+  maxWithdrawalUsdt: 1000,
+  chains: {
+    tron: { enabled: false, address: null },
+    ethereum: { enabled: true, address: '0x' + 'a'.repeat(40) },
+    bsc: { enabled: false, address: null },
+  },
+};
+
+const VALID_ADDRESS = '0x' + '1'.repeat(40);
+
+function withdrawal(status: WithdrawalStatus, id: string, createdAt: string): WithdrawalRequest {
+  return {
+    id,
+    userId: 'u1',
+    username: 'Player',
+    chain: 'ethereum',
+    amountChips: 1000,
+    amountUsdtRaw: '10000000',
+    payoutAddress: VALID_ADDRESS,
+    status,
+    createdAt,
+  };
+}
+
+function renderAkWallet() {
+  return render(<AkWallet />);
+}
+
+describe('<AkWallet />', () => {
+  beforeEach(() => {
+    useAuthStore.setState({ token: 'tok', user: { id: 'me', username: 'Me', role: 'user', chips: 500 }, isAdmin: false });
+  });
+
+  afterEach(() => {
+    useWalletStore.setState({
+      wallet: null,
+      deposits: [],
+      withdrawals: [],
+      loaded: false,
+      loading: false,
+      fetchWallet: async () => {},
+      fetchHistory: async () => {},
+      requestWithdrawal: async () => ({ ok: true }),
+    });
+  });
+
+  it('клик по «Подать заявку на вывод» в модалке — не отправляет запрос сразу, а показывает подтверждение', () => {
+    const requestWithdrawal = vi.fn(async () => ({ ok: true as const }));
+    useWalletStore.setState({
+      wallet: WALLET_INFO, deposits: [], withdrawals: [], loaded: true, loading: false,
+      fetchWallet: async () => {}, fetchHistory: async () => {}, requestWithdrawal,
+    });
+
+    renderAkWallet();
+    fireEvent.click(screen.getByText('Вывод'));
+    fireEvent.change(screen.getByPlaceholderText('Сумма (USDT)'), { target: { value: '10' } });
+    fireEvent.change(screen.getByPlaceholderText('Адрес кошелька в выбранной сети'), { target: { value: VALID_ADDRESS } });
+    fireEvent.click(screen.getByText('Подать заявку на вывод'));
+
+    expect(screen.getByText('Проверьте перед отправкой — вывод необратим')).toBeInTheDocument();
+    expect(requestWithdrawal).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText('Подтвердить вывод'));
+    expect(requestWithdrawal).toHaveBeenCalledWith('tok', 'ethereum', 10, VALID_ADDRESS);
+  });
+
+  it('невалидный адрес — показывает ошибку формата и не переходит к подтверждению', () => {
+    const requestWithdrawal = vi.fn(async () => ({ ok: true as const }));
+    useWalletStore.setState({
+      wallet: WALLET_INFO, deposits: [], withdrawals: [], loaded: true, loading: false,
+      fetchWallet: async () => {}, fetchHistory: async () => {}, requestWithdrawal,
+    });
+
+    renderAkWallet();
+    fireEvent.click(screen.getByText('Вывод'));
+    fireEvent.change(screen.getByPlaceholderText('Сумма (USDT)'), { target: { value: '10' } });
+    fireEvent.change(screen.getByPlaceholderText('Адрес кошелька в выбранной сети'), { target: { value: '0x123' } });
+    fireEvent.click(screen.getByText('Подать заявку на вывод'));
+
+    expect(screen.getByText('Проверьте формат адреса для выбранной сети')).toBeInTheDocument();
+    expect(screen.queryByText('Проверьте перед отправкой — вывод необратим')).not.toBeInTheDocument();
+    expect(requestWithdrawal).not.toHaveBeenCalled();
+  });
+
+  it('статус «Отклонено» — красный, «Выплачено» — зелёный (не одинаковый нейтральный цвет)', () => {
+    useWalletStore.setState({
+      wallet: WALLET_INFO,
+      deposits: [],
+      withdrawals: [
+        withdrawal('rejected', 'w1', '2026-01-01T00:00:00.000Z'),
+        withdrawal('paid', 'w2', '2026-01-02T00:00:00.000Z'),
+      ],
+      loaded: true, loading: false,
+      fetchWallet: async () => {}, fetchHistory: async () => {}, requestWithdrawal: async () => ({ ok: true }),
+    });
+
+    renderAkWallet();
+
+    expect(screen.getByText('Отклонено').className).toContain('text-ak-red');
+    expect(screen.getByText('Выплачено').className).toContain('text-ak-green');
+  });
+
+  it('пустая история — показывает «Нет данных»', () => {
+    useWalletStore.setState({
+      wallet: WALLET_INFO, deposits: [], withdrawals: [], loaded: true, loading: false,
+      fetchWallet: async () => {}, fetchHistory: async () => {}, requestWithdrawal: async () => ({ ok: true }),
+    });
+
+    renderAkWallet();
+    expect(screen.getByText('Нет данных')).toBeInTheDocument();
+  });
+
+  it('баланс «Фишки платформы» — берётся из user.chips через formatMoney', () => {
+    useWalletStore.setState({
+      wallet: WALLET_INFO, deposits: [], withdrawals: [], loaded: true, loading: false,
+      fetchWallet: async () => {}, fetchHistory: async () => {}, requestWithdrawal: async () => ({ ok: true }),
+    });
+
+    renderAkWallet();
+    expect(screen.getByText('5')).toBeInTheDocument();
+  });
+});

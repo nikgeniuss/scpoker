@@ -15,7 +15,7 @@ import { isLegalRaise } from './bettingRules.js';
 import { isRoundComplete, computePhaseTransition } from './phaseRules.js';
 import type { Card, GamePhase, RoomStatus, GameFormat } from './types.js';
 import { isBot as isBotId } from './botIdentity.js';
-import { serializeGameState } from './gameStateSerializer.js';
+import { serializeGameState, computeWillWin } from './gameStateSerializer.js';
 import { handHintName, handRankValue } from './handHint.js';
 import { winProbabilityVsRandom, computeRealEquity } from './equity.js';
 import { computeRabbitHuntEligibility, canPayRabbitHunt } from './rabbitHuntService.js';
@@ -26,6 +26,8 @@ import { getHudStats, type HandHistoryRecord, type HandAction } from './handHist
 import { computeRake, normalizeRake, type RakeConfig } from './rake.js';
 import { getBadBeatState, addToPool, payoutFromPool } from './badBeatService.js';
 import { applyRakeback } from './rakebackService.js';
+import { getResolvedEquipped } from './inventoryService.js';
+import { credit as creditRewardsWallet } from './rewardsWalletService.js';
 import { selectTier } from './badBeatDrop.js';
 import { detectBadBeat, computeBadBeatPayout } from './badBeatDetect.js';
 import { resolveShowdown, type ShowdownResult } from './showdownService.js';
@@ -67,6 +69,8 @@ export interface Player {
   currentBet: number;
   position: number;
   avatar: string;
+  frame?: string; // ключ стиля рамки аватара (инвентарь косметики, ROADMAP §10.21.11) — опционален
+  title?: string; // текст титула под ником (инвентарь косметики, ROADMAP §10.21.11) — опционален
   disconnected: boolean;
   disconnectTimer: NodeJS.Timeout | null;
   timebank: number;        // оставшиеся секунды таймбанка (0 если отключён)
@@ -132,7 +136,6 @@ export interface CreateRoomOptions {
   rimtEnabled?: boolean;
   evCashoutEnabled?: boolean;
   noTurnNoShowEnabled?: boolean;
-  antiCollusionEnabled?: boolean;
 }
 
 type JoinDeniedReason =
@@ -377,9 +380,11 @@ export class GameManager implements GameManagerForBots {
   private io: Server;
   private rooms: Map<string, Room>;
   private settings: GameSettings;
-  // Admin-peek: набор socketId, у которых включён режим «глаз админа».
-  // Заполняется через setAdminPeek (с проверкой роли в index.ts) и чистится на disconnect.
-  private adminPeekSockets: Set<string>;
+  // Admin-peek: набор userId, у которых включён режим «глаз админа».
+  // Ключ — userId, не socketId: переживает переподключение сокета (иначе сворачивание ТГ
+  // с пересозданием сокета молча гасило peek — баг 2026-08-27). Заполняется через
+  // setAdminPeek (с проверкой роли в index.ts), на disconnect НЕ чистится осознанно.
+  private adminPeekUsers: Set<string>;
   // BotManager — оркестрация ботов (см. game/BotManager.ts). Создаётся в конструкторе.
   private botManager: BotManager;
   // Сервис банкролла — единственная точка записи chips юзеров (§0.4). Зависимости инжектятся.
@@ -410,7 +415,7 @@ export class GameManager implements GameManagerForBots {
   constructor(io: Server) {
     this.io = io;
     this.rooms = new Map();
-    this.adminPeekSockets = new Set();
+    this.adminPeekUsers = new Set();
     // botManager создаётся ниже; deps ленивые (читают this.botManager в runtime) — порядок ок.
     this.bankroll = new BankrollService({
       isBot: (id) => this.isBot(id),
@@ -448,20 +453,15 @@ export class GameManager implements GameManagerForBots {
     }
   }
 
-  // Включить/выключить peek для конкретного сокета. Проверку роли делает caller (index.ts).
-  setAdminPeek(socketId: string, enabled: boolean): void {
-    if (enabled) this.adminPeekSockets.add(socketId);
-    else this.adminPeekSockets.delete(socketId);
+  // Включить/выключить peek для юзера. Проверку роли делает caller (registerSocketHandlers).
+  setAdminPeek(userId: string, enabled: boolean): void {
+    if (enabled) this.adminPeekUsers.add(userId);
+    else this.adminPeekUsers.delete(userId);
   }
 
-  // Активен ли peek у сокета (для requestGameState и т.п.)
-  isAdminPeekSocket(socketId: string): boolean {
-    return this.adminPeekSockets.has(socketId);
-  }
-
-  // Очистить peek при дисконнекте — иначе Set растёт навсегда
-  clearAdminPeek(socketId: string): void {
-    this.adminPeekSockets.delete(socketId);
+  // Активен ли peek у юзера (для requestGameState и т.п.) — переживает переподключение сокета.
+  isAdminPeekUser(userId: string): boolean {
+    return this.adminPeekUsers.has(userId);
   }
 
   addObserver(roomId: string, socketId: string, userId: string, username: string): void {
@@ -538,7 +538,6 @@ export class GameManager implements GameManagerForBots {
           rimtEnabled: !!(s as { rimtEnabled?: boolean }).rimtEnabled,
           evCashoutEnabled: !!(s as { evCashoutEnabled?: boolean }).evCashoutEnabled,
           noTurnNoShowEnabled: !!(s as { noTurnNoShowEnabled?: boolean }).noTurnNoShowEnabled,
-          antiCollusionEnabled: !!(s as { antiCollusionEnabled?: boolean }).antiCollusionEnabled,
         }));
         const restored = this.rooms.get(s.id);
         if (restored && restored.sessionEndsAt) this.scheduleSessionClose(restored);
@@ -650,7 +649,8 @@ export class GameManager implements GameManagerForBots {
   // не сработал (исключение/баг где-то в цепочке). Восстановление — мягкое, той же логикой, что
   // и при рестарте сервера (restoreActiveHands): карты/банк/стеки НЕ трогаем, просто заново
   // запускаем механизм хода (emitCurrentTurn) либо досрочно завершаем застрявший показ шоудауна
-  // (cleanupHand). Бот-столы пропускаются (getFreezeInfo).
+  // (cleanupHand). Бот-столы ТОЖЕ проверяются (с 2026-08-23) — emitCurrentTurn пересоздаёт
+  // scheduleBotDecision, тот же путь, что и обычный ход бота.
   private checkFrozenTables(): void {
     const now = Date.now();
     this.rooms.forEach((room) => {
@@ -812,7 +812,6 @@ export class GameManager implements GameManagerForBots {
       rimtEnabled: !!options.rimtEnabled,
       evCashoutEnabled: !!options.evCashoutEnabled,
       noTurnNoShowEnabled: !!options.noTurnNoShowEnabled,
-      antiCollusionEnabled: !!options.antiCollusionEnabled,
     }));
 
     // Авто-закрытие по длительности сессии (если задана)
@@ -879,13 +878,17 @@ export class GameManager implements GameManagerForBots {
     if (room.players.size >= room.maxPlayers || room.players.has(userId)) return false;
 
     const sock = this.findUserSocket(userId);
+    // Ре-энтри/поздняя рег. на стол, где раздача уже идёт: сажаем как folded для ТЕКУЩЕЙ руки
+    // (карт нет — nextPlayer/isRoundComplete должны его пропускать), см. тот же паттерн в addPlayer.
+    // cleanupHand сбросит isFolded всем перед следующей раздачей.
+    const midHandEntry = room.status === 'playing';
     const player = createPlayer({
       id: userId,
       socketId: sock?.id ?? '',
       username,
       chips,
       position: room.players.size,
-      isFolded: false,
+      isFolded: midHandEntry,
       timebank: room.timebank.enabled ? room.timebank.startSec : 0,
     });
     try {
@@ -895,6 +898,13 @@ export class GameManager implements GameManagerForBots {
       if (u?.avatarSeed) player.avatar = u.avatarSeed;
     } catch {
       // users.json недоступен — садимся без displayName/avatar, не блокируем посадку
+    }
+    try {
+      const eq = getResolvedEquipped(userId);
+      if (eq.frame) player.frame = eq.frame;
+      if (eq.title) player.title = eq.title;
+    } catch {
+      // инвентарь косметики не критичен — посадка не должна падать из-за него
     }
     room.players.set(userId, player);
     if (sock) {
@@ -1187,6 +1197,13 @@ export class GameManager implements GameManagerForBots {
       if (u?.avatarSeed) player.avatar = u.avatarSeed;
     } catch {
       // users.json недоступен — садимся без displayName/avatar, не блокируем посадку
+    }
+    try {
+      const eq = getResolvedEquipped(userId);
+      if (eq.frame) player.frame = eq.frame;
+      if (eq.title) player.title = eq.title;
+    } catch {
+      // инвентарь косметики не критичен — посадка не должна падать из-за него
     }
 
     // HUD-lite: кэшируем VPIP/PFR при посадке (только для людей, не ботов).
@@ -1545,6 +1562,12 @@ export class GameManager implements GameManagerForBots {
     const room = this.rooms.get(roomId);
     if (!room) return;
     if (room.status !== 'playing') return;
+    // Раздача уже завершена (showdown/resolveEarlyDecided уже отыграли и выплатили банк) —
+    // отклоняем «призрачные» действия, догнавшие сервер после конца раздачи (race condition
+    // клиента, или раунд закрылся раньше, чем клиент успел отменить свои queued-действия).
+    // Без этой проверки повторный check/fold после конца раздачи мог заново открыть nextPlayer()
+    // → advancePhase() → resolveEarlyDecided() и задвоить выплату банка (найдено 2026-08-25).
+    if (room.phase === 'showdown') return;
 
     const playerIds = Array.from(room.players.keys());
     if (playerIds[room.currentPlayerIndex] !== userId) return;
@@ -1805,10 +1828,13 @@ export class GameManager implements GameManagerForBots {
     room.lockedCallers = new Set();
     clearTurnTimers(room);
 
-    // RIMT/EV Cashout (доделка §10.6): торги закрылись ДОСРОЧНО (все, кто мог бы ещё биться
-    // за банк, либо all-in, либо их ≤1) и борд ещё не полный — обычная доигровка по улицам
-    // не нужна, решаем раздачу досрочно (двойной прогон борда либо equity-сплит).
-    if (room.communityCards.length < 5 && (room.rimtEnabled || room.evCashoutEnabled) && this.isHandDecidedEarly(room)) {
+    // Торги закрылись ДОСРОЧНО (все, кто мог бы ещё биться за банк, либо all-in, либо их ≤1) и
+    // борд ещё не полный — обычная доигровка по улицам с открытием круга ставок не нужна и
+    // некорректна (отвечать всё равно некому). Раньше проверка была спрятана за RIMT/EV Cashout —
+    // без этих настроек стол вместо доигровки заново открывал ставки на каждой улице (баг, 2026-08-25).
+    // resolveEarlyDecided сама решает КАК доиграть: RIMT (2 прогона) / EV Cashout (equity-сплит) /
+    // обычный одиночный прогон борда до ривера + стандартный showdown, если ни то ни другое не включено.
+    if (room.communityCards.length < 5 && this.isHandDecidedEarly(room)) {
       this.resolveEarlyDecided(roomId);
       return;
     }
@@ -1930,31 +1956,54 @@ export class GameManager implements GameManagerForBots {
       return;
     }
 
-    const deckA = shuffleDeck(room.deck);
-    const deckB = shuffleDeck(room.deck);
-    const runA = this.dealRemainingBoard(room.phase, deckA);
-    const runB = this.dealRemainingBoard(room.phase, deckB);
-    const boardA = [...room.communityCards, ...runA.cards];
-    const boardB = [...room.communityCards, ...runB.cards];
-    room.communityCards = boardA;
-    room.communityCardsB = boardB;
-    room.deck = runA.remainingDeck;
-    room.deckB = runB.remainingDeck;
-    room.settlementMode = 'rimt';
+    if (room.rimtEnabled) {
+      const deckA = shuffleDeck(room.deck);
+      const deckB = shuffleDeck(room.deck);
+      const runA = this.dealRemainingBoard(room.phase, deckA);
+      const runB = this.dealRemainingBoard(room.phase, deckB);
+      const boardA = [...room.communityCards, ...runA.cards];
+      const boardB = [...room.communityCards, ...runB.cards];
+      room.communityCards = boardA;
+      room.communityCardsB = boardB;
+      room.deck = runA.remainingDeck;
+      room.deckB = runB.remainingDeck;
+      room.settlementMode = 'rimt';
 
-    console.log(`   🎲 [RIMT] ранний all-in — доигрываем борд 2× (pot=${room.pot})`);
+      console.log(`   🎲 [RIMT] ранний all-in — доигрываем борд 2× (pot=${room.pot})`);
 
-    const result = resolveMultiRunShowdown(
-      room.pot,
-      [boardA, boardB],
-      room.bigBlind,
-      room.rake,
-      room.format,
-      playersForShowdown,
-      activeForShowdown,
-    );
+      const result = resolveMultiRunShowdown(
+        room.pot,
+        [boardA, boardB],
+        room.bigBlind,
+        room.rake,
+        room.format,
+        playersForShowdown,
+        activeForShowdown,
+      );
 
-    this.applyShowdownResult(roomId, result);
+      this.applyShowdownResult(roomId, result);
+      return;
+    }
+
+    // Ни RIMT, ни EV Cashout не включены (дефолт большинства столов, включая турнирные) —
+    // но действовать больше НЕКОМУ (см. isHandDecidedEarly): доигрываем один обычный прогон
+    // борда до ривера без торгов и идём в стандартный showdown(). Раньше эта ветка отсутствовала
+    // и стол вместо доигровки заново открывал круг ставок на каждой улице (баг: единственный
+    // игрок с фишками бесконечно получал ход, хотя ответить ему было некому).
+    if (room.doubleBoardEnabled && room.phase === 'preflop' && !room.deckB) {
+      room.deckB = shuffleDeck(room.deck); // тот же форк, что и в обычном advancePhase()
+    }
+    const run = this.dealRemainingBoard(room.phase, room.deck);
+    room.communityCards = [...room.communityCards, ...run.cards];
+    room.deck = run.remainingDeck;
+    if (room.doubleBoardEnabled && room.deckB) {
+      const runB = this.dealRemainingBoard(room.phase, room.deckB);
+      room.communityCardsB = [...(room.communityCardsB ?? []), ...runB.cards];
+      room.deckB = runB.remainingDeck;
+    }
+    room.phase = 'river';
+    console.log(`   🏁 [run-out] действовать больше некому — доигрываем борд до ривера (pot=${room.pot})`);
+    this.showdown(roomId);
   }
 
   // Хвост showdown/resolveEarlyDecided: применить chip-дельты, очистить банк, записать рейк/
@@ -2296,9 +2345,11 @@ export class GameManager implements GameManagerForBots {
       if (playerRake > 0) {
         // Тихое начисление — без уведомления (на раскачанном столе рейк капает почти на каждой
         // раздаче, инбокс был бы залит спамом). Игрок смотрит накопленное на странице /rakeback.
+        // Начисляется в HUB-коины (rewardsWalletService, §10.21.8 ROADMAP) — НЕ в реальный стек:
+        // рейкбэк больше не выводится в USDT, tier/lifetime-рейк по-прежнему считает rakebackService.
         const rb = applyRakeback(p.id, room.id, playerRake);
         if (rb && rb.payout > 0) {
-          p.chips += rb.payout;
+          creditRewardsWallet(p.id, rb.payout, 'rakeback');
         }
       }
 
@@ -2587,8 +2638,8 @@ export class GameManager implements GameManagerForBots {
     roomSockets.forEach((sid) => {
       const sock = this.io.sockets.sockets.get(sid);
       if (!sock) return;
-      const viewer = sock.data?.user as { id: string } | undefined;
-      const withPeek = this.adminPeekSockets.has(sid);
+      const viewer = sock.data?.user as { id: string; role?: string } | undefined;
+      const withPeek = !!viewer && this.adminPeekUsers.has(viewer.id);
 
       if (withPeek || isShowdown) {
         // Peek (карты всех + futureBoard) ИЛИ showdown — полный пересбор per-socket: каждый видит
@@ -2614,12 +2665,15 @@ export class GameManager implements GameManagerForBots {
         ? handRankValue(myPlayer.cards, room.communityCards, room.format)
         : undefined;
       const myWin = myPlayer.wantsHint ? myPlayer.winChance : undefined;
+      // willWin — админский сигнал «выиграю ли я», НЕ завязан на admin-peek (§0.1: считается из
+      // уже известных серверу карт, наружу уходит только этому же сокету и только про него самого).
+      const myWillWin = viewer!.role === 'admin' ? computeWillWin(room, viewer!.id) : undefined;
       // Shallow clone + override карт/подсказок только для своего игрока.
       const personalized = {
         ...baseState,
         players: baseState.players.map((p) =>
           p.id === viewer!.id
-            ? { ...p, cards: myPlayer.cards, handHint: myHint, handRank: myRank, winChance: myWin }
+            ? { ...p, cards: myPlayer.cards, handHint: myHint, handRank: myRank, winChance: myWin, willWin: myWillWin }
             : p,
         ),
       };

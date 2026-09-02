@@ -70,6 +70,35 @@ describe('GameManager — movePlayerToTable / isTableSafeToRebalance', () => {
     expect(realGm.movePlayerToTable(tableA, tableB, 'A')).toBe(false);
   });
 
+  it('seatTournamentPlayer мид-хэнд (ре-энтри/поздняя рег.) → isFolded=true, без карт, ход не даётся (баг 2026-08-27)', async () => {
+    const { gm } = await createTestGameManager();
+    const realGm = gm as unknown as GameManager;
+
+    const tableA = realGm.createTournamentTable({ tournamentId: 't1', name: 'A', maxPlayers: 3, smallBlind: 10, bigBlind: 20, ante: 0, format: 'nlh' });
+    realGm.seatTournamentPlayer(tableA, 'A', 'Alice', 1000);
+    realGm.seatTournamentPlayer(tableA, 'B', 'Bob', 1000);
+    gm.startGame(tableA); // раздача стартовала — стол теперь mid-hand
+
+    // Ре-энтри C заходит на стол, где уже идёт раздача.
+    realGm.seatTournamentPlayer(tableA, 'C', 'Carol', 1000);
+
+    const state = gm.getGameState(tableA) as unknown as StateView & {
+      players: Array<{ id: string; isFolded?: boolean; cards?: unknown[] }>;
+      currentPlayerIndex: number;
+    };
+    const cInState = state.players.find((p) => p.id === 'C')!;
+    expect(cInState.isFolded).toBe(true);
+
+    const cOwnView = gm.getGameState(tableA, 'C') as unknown as {
+      players: Array<{ id: string; cards?: unknown[] }>;
+    };
+    expect(cOwnView.players.find((p) => p.id === 'C')!.cards).toEqual([]);
+
+    // Ход не должен доставаться C ни разу в текущей раздаче (пустая рука не может действовать).
+    const actorId = state.players[state.currentPlayerIndex]?.id;
+    expect(actorId).not.toBe('C');
+  });
+
   it('дисконнект на турнирном столе в waiting — сит-аут, НЕ форфейт (живой прогон нашёл баг 2026-06-23)', async () => {
     const { gm } = await createTestGameManager();
     const realGm = gm as unknown as GameManager;

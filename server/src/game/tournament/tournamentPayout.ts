@@ -1,4 +1,54 @@
-import type { PayoutTier, MttItmPercent, BountyType } from '@poker-room/shared';
+import type { PayoutTier, MttItmPercent, BountyType, TournamentEntryStatus } from '@poker-room/shared';
+
+// Минимум полей записи участника, нужный для расчёта окончательных мест (чистая функция не знает
+// про остальной TournamentEntry).
+export interface FinalPlaceInput {
+  userId: string;
+  status: TournamentEntryStatus;
+  eliminationOrder?: number;
+}
+
+// Следующий номер выхода из турнира. Монотонный счётчик, а НЕ Date.now(): несколько вылетов
+// запросто приходятся на одну миллисекунду (разные столы, быстрые раздачи, тесты), и тогда порядок
+// мест схлопывается. Считается от уже проставленных номеров, поэтому переживает рестарт сервера.
+export function nextEliminationOrder(entries: readonly FinalPlaceInput[]): number {
+  return entries.reduce((max, e) => Math.max(max, e.eliminationOrder ?? 0), 0) + 1;
+}
+
+// «Насколько долго запись продержалась в турнире»: ещё не выбывшая держится дольше любой выбывшей,
+// среди выбывших — чем позже вылет, тем выше место.
+function survivalRank(entry: FinalPlaceInput): number {
+  return entry.status === 'eliminated' ? entry.eliminationOrder ?? 0 : Number.MAX_SAFE_INTEGER;
+}
+
+// Окончательные места по порядку вылета — вызывается один раз при finish(), когда играющих
+// осталось не больше одного. Возвращает массив, параллельный входному: место для записи либо
+// undefined, если запись места не занимает.
+//
+// Решает две реальные проблемы прежнего «место = сколько ещё играют на момент баста» (ROADMAP §9.2):
+//   1. ре-энтри возвращают игроков в пул, поэтому счётчик не убывал строго — два РАЗНЫХ вылета
+//      могли получить одинаковое место, и на призовом месте finish() платил полный приз обоим;
+//   2. у игрока с ре-энтри несколько записей, и каждая могла получить свой приз.
+// Здесь место присуждается ИГРОКУ (не записи) ровно один раз, по его ПОСЛЕДНЕМУ выходу из турнира,
+// а места идут подряд 1..N без дыр и повторов.
+export function computeFinalPlaces(entries: readonly FinalPlaceInput[]): Array<number | undefined> {
+  // Последняя (самая «долгоживущая») запись каждого игрока — только она претендует на место.
+  const lastIdxByUser = new Map<string, number>();
+  entries.forEach((entry, idx) => {
+    const prevIdx = lastIdxByUser.get(entry.userId);
+    if (prevIdx === undefined || survivalRank(entry) >= survivalRank(entries[prevIdx])) {
+      lastIdxByUser.set(entry.userId, idx);
+    }
+  });
+
+  const finalists = [...lastIdxByUser.values()].sort(
+    (a, b) => survivalRank(entries[b]) - survivalRank(entries[a]),
+  );
+
+  const places: Array<number | undefined> = entries.map(() => undefined);
+  finalists.forEach((idx, i) => { places[idx] = i + 1; });
+  return places;
+}
 
 // Стандартные SNG-сплиты по числу участников (как в реальных румах): чем меньше стол, тем меньше
 // призовых мест. Точные % — общеотраслевой дефолт (50/30/20 для 6-9-max, top-2 для меньших).

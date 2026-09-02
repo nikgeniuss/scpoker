@@ -74,6 +74,18 @@ export function createPublicRouter(gameManager: GameManager): Router {
     res.json(readJSON('appTheme.json'));
   });
 
+  // AK-стол — публичное чтение тоггла визуального скина мобильного стола (GameRoom).
+  // Независим от app-theme выше. Источник правды — server/data/akTable.json.
+  router.get('/api/ak-table', (req, res) => {
+    res.json(readJSON('akTable.json'));
+  });
+
+  // Дебаг-оверлей (FPS/PING/NET) — публичное чтение тоггла видимости. По умолчанию скрыт,
+  // включается админом (SettingsTab.tsx). Источник правды — server/data/debugOverlay.json.
+  router.get('/api/debug-overlay', (req, res) => {
+    res.json(readJSON('debugOverlay.json'));
+  });
+
   // Bad Beat Jackpot — публичная вьюшка для игрок-view/баннера: пул + флаг + таблица выплат.
   router.get('/api/badbeat', (req, res) => {
     res.json(getBadBeatPublic());

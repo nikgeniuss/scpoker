@@ -204,6 +204,33 @@ describe('TournamentManager — SNG, полный цикл', () => {
     expect(aResult).toMatchObject({ place: 1, isWinner: true, prize: a.prize, totalEntries: 2 });
   });
 
+  it('завершённый турнир автоудаляется из списка через 30 минут (баг: было отключено TEMP DISABLED FOR DEBUG)', async () => {
+    const { gm } = await createTestGameManager();
+    const tm = new TournamentManager(gm as unknown as GameManager);
+    const created = tm.create(
+      { name: 'Auto Remove Test', type: 'sng', format: 'nlh', buyIn: 1000, startingStack: 1000, tableSize: 3, blindSpeed: 'turbo', levelUpMinutes: 10 },
+      'admin1',
+    );
+    if ('error' in created) throw new Error(created.error);
+    tm.register(created.id, 'A', 'Alice');
+    tm.register(created.id, 'B', 'Bob');
+    const started = tm.forceStart(created.id);
+    if ('error' in started) throw new Error(started.error);
+    const roomId = tm.get(created.id)!.tableIds[0];
+
+    // B выходит — единственный оставшийся (A) забирает победу, турнир завершается синхронно.
+    gm.removePlayer(roomId, 'B');
+    expect(tm.get(created.id)!.status).toBe('finished');
+
+    // Сразу после finish() — турнир ещё в списке (результат должен быть виден какое-то время).
+    vi.advanceTimersByTime(29 * 60_000 + 59_000);
+    expect(tm.get(created.id)).not.toBeNull();
+
+    // Ровно 30 минут после finish() — автоудаление сработало, турнира в списке больше нет.
+    vi.advanceTimersByTime(1000);
+    expect(tm.get(created.id)).toBeNull();
+  });
+
   it('рейк (rakePercent) уменьшает призовой фонд мимо игроков, но не трогает дебет/рефанд бай-ина', async () => {
     const { gm } = await createTestGameManager();
     const tm = new TournamentManager(gm as unknown as GameManager);

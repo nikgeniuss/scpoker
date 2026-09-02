@@ -237,7 +237,7 @@ export function computeRiskShift(
   const windowHands = Math.max(30, handsPlayed);
   let targetChips = 0;
   if (target === 'plus') targetChips = 0.2 * bigBlind * windowHands;
-  if (target === 'minus') targetChips = -0.3 * bigBlind * windowHands;
+  if (target === 'minus') targetChips = -0.345 * bigBlind * windowHands; // на 15% глубже плана слива (запрос 2026-08-31)
   const drift = realizedPnL - targetChips;
   // Нормализуем к 10*BB как «единица»
   const norm = drift / (10 * bigBlind);
@@ -270,7 +270,7 @@ export function computePnLZone(
   bigBlind: number,
 ): PnLZoneInfo {
   // Ожидаемый PnL при заданной цели
-  const targetPerHand = target === 'plus' ? 0.2 : target === 'minus' ? -0.2 : 0;
+  const targetPerHand = target === 'plus' ? 0.2 : target === 'minus' ? -0.23 : 0; // на 15% глубже плана слива (запрос 2026-08-31)
   const expected = handsPlayed * targetPerHand * bigBlind;
   const drift = realizedPnL - expected;
   const driftBB = drift / bigBlind;

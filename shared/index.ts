@@ -27,7 +27,9 @@ export interface Player {
   isFolded: boolean;
   currentBet: number;
   position: number;
-  avatar: string; // выбранный seed аватара (react-nice-avatar, из AVATAR_PRESETS); '' = фоллбэк на id
+  avatar: string;
+  frame?: string; // ключ стиля рамки аватара (инвентарь косметики, ROADMAP §10.21.11) — опционален
+  title?: string; // текст титула под ником (инвентарь косметики, ROADMAP §10.21.11) — опционален // выбранный seed аватара (react-nice-avatar, из AVATAR_PRESETS); '' = фоллбэк на id
   disconnected: boolean;
   timebank?: number; // оставшиеся секунды таймбанка (только если timebankEnabled в GameState)
   // Подсказки (по тумблеру «Подсказка комбинации» в настройках игры). Сервер отдаёт только тем,
@@ -35,6 +37,11 @@ export interface Player {
   handHint?: string;  // название текущей комбинации (у админа на своём месте — итоговая)
   winChance?: number; // 0..100, шанс выиграть раздачу (только своё место; считается против случайных)
   handRank?: number;  // 1..9, категория текущей комбинации (для HandStrengthMeter на клиенте)
+  // Детерминированный сигнал «выиграю ли я» — ТОЛЬКО админ на своём месте с включённым peek
+  // (§0.1 не нарушается: считается по картам, уже видимым этому сокету через adminPeek, никому
+  // больше не отдаётся). В отличие от winChance — не вероятность, а точный итог по известным
+  // будущим картам (админ и так их видит через futureBoard).
+  willWin?: boolean;
   // Добровольно показанные после раздачи карты (тап): длина 2, элемент = карта (видна всем) или null.
   shownCards?: (Card | null)[];
   revealedCards?: number[]; // индексы показанных карт (публично) — для UI владельца («показана»)
@@ -152,7 +159,7 @@ export interface TournamentResultPayload {
 export interface InboxNotification {
   id: string;
   userId: string;
-  type: 'chips' | 'ban' | 'unban' | 'broadcast' | 'deposit' | 'withdrawal' | 'rg-warning';
+  type: 'chips' | 'ban' | 'unban' | 'broadcast' | 'deposit' | 'withdrawal' | 'rg-warning' | 'reward';
   text: string;
   read: boolean;
   t: number; // epoch ms
@@ -360,7 +367,8 @@ export interface CreateRoomOptions {
   rimtEnabled?: boolean;       // ранний all-in до ривера — борд доигрывается дважды
   evCashoutEnabled?: boolean;  // ранний all-in до ривера — банк делится по equity (приоритет над rimtEnabled)
   noTurnNoShowEnabled?: boolean; // победитель без вскрытия автоматически показывает карты
-  antiCollusionEnabled?: boolean; // запрет второго места за столом с тем же IP/device
+  // antiCollusionEnabled — было per-table опцией, убрано 2026-08-24 (security review): защита
+  // от сговора всегда включена на сервере (roomFactory.ts), не настраивается создателем стола.
 }
 
 // Турниры (ROADMAP §10 «Турниры», SNG → MTT). 'mtt' зарезервирован под Фазу 2, сервер v1 принимает
@@ -403,11 +411,33 @@ export interface TournamentEntry {
   username: string;
   status: TournamentEntryStatus;
   tableId?: string;     // id текущего стола (MTT, только пока status==='playing')
-  finishPlace?: number; // присваивается при элиминации/завершении (1 = победитель)
+  finishPlace?: number; // при элиминации — предварительная оценка; окончательное место (уникальное,
+                        // одно на игрока) присваивается в finish() через computeFinalPlaces
+  eliminationOrder?: number; // монотонный номер выхода из турнира (1, 2, 3...) — задаёт порядок мест.
+                         // Именно счётчик, а не таймстемп: несколько вылетов легко попадают в одну
+                         // миллисекунду (разные столы, быстрые раздачи) и порядок бы потерялся.
+                         // При ре-энтри место даёт ПОСЛЕДНИЙ выход, прошлые записи мест не занимают
   prize?: number;       // выплаченные фишки по результату (есть только у призовых мест после finished)
   bounty?: number;      // текущая «цена за голову» этого игрока (только при tournament.bountyEnabled);
                          // 0 после того, как игрока выбили — баунти уже отдано убийце
   bountyWon?: number;   // суммарный кэш баунти, собранный ЭТИМ игроком за чужие головы (банкролл)
+  promoCode?: string;   // задан, если вход оплачен промокодом (redeemPromoCode) — банкролл НЕ списывался,
+                         // unregister() возвращает слот погашения коду вместо refund() в банкролл
+}
+
+// Промокод на бесплатный вход в турнир (§10.x): НЕ привязан к одному турниру — валиден для ЛЮБОГО
+// турнира с ТОЧНО таким же buyIn (как тикеты у топовых румов — 888poker/Borgata, без комбинирования
+// и без частичного покрытия разницы). Создаётся админом — либо автоматически при создании турнира
+// (CreateTournamentOptions.promoEnabled), либо отдельно во вкладке «Промокоды» (массовая раздача,
+// например в Telegram-группе, без привязки к конкретному турниру). Один код — один раз на игрока.
+export interface PromoCode {
+  code: string;
+  buyIn: number;
+  maxRedemptions: number;
+  redeemedBy: string[];
+  active: boolean;      // false — деактивирован админом, дальше не гасится
+  createdBy: string;
+  createdAt: number;
 }
 
 export interface TournamentInfo {
@@ -426,6 +456,13 @@ export interface TournamentInfo {
   entries: TournamentEntry[];
   tableIds: string[];      // id игровых столов после старта (SNG — всегда 1 элемент, MTT — несколько)
   lateRegMinutes: number; // MTT: окно поздней регистрации после старта, минут (0 = нет позднего рега)
+  // MTT: границы по числу УНИКАЛЬНЫХ зарегистрированных игроков (не считая ре-энтри — это тот же
+  // игрок). minPlayers — порог для forceStart и авто-старта/отмены по scheduledStartAt (замена
+  // захардкоженных "2"); undefined = старое поведение (порог 2). maxPlayers — потолок регистрации
+  // (register() отклоняет НОВЫХ игроков при entries.length>=maxPlayers, ре-энтри не блокирует);
+  // undefined = без ограничения (старое поведение). Для SNG не используется — там потолок = tableSize.
+  minPlayers?: number;
+  maxPlayers?: number;
   itmPercent: MttItmPercent; // MTT: доля призовых мест от числа участников (используется при payoutMode==='itm')
   payoutMode: MttPayoutMode; // MTT: 'itm' (по умолчанию) или 'fixed' (строго fixedPayoutPlaces мест)
   fixedPayoutPlaces?: number; // MTT: число призовых мест при payoutMode==='fixed' (capped числом участников)
@@ -436,11 +473,16 @@ export interface TournamentInfo {
   // Рейк — доля бай-ина, уходящая руму МИМО призового фонда (SNG+MTT), 0-50%. buyIn = prizePool-часть +
   // bounty-часть (если включено) + rake-часть. По умолчанию 0 (старое поведение, без рейка).
   rakePercent?: number;
+  // Промокод на бесплатный вход (см. PromoCode) — сгенерирован при создании ЭТОГО турнира, если
+  // promoEnabled. Отдаётся клиенту ТОЛЬКО создавшему турнир админу (см. tournaments.routes.ts) —
+  // обычным игрокам не рассылается, иначе код можно было бы утащить из devtools в обход раздачи.
+  promoCode?: string;
   // Ре-энтри (MTT, доделка §10.6): можно зайти заново после баста, в том же окне lateRegMinutes —
   // отдельная новая запись entries (прошлый бaст уже финализирован своим finishPlace), призовой
   // фонд растёт с каждым входом. maxReEntries — сколько раз можно зайти заново (доп. к первому входу).
   reEntryEnabled: boolean;
-  maxReEntries?: number; // задан только если reEntryEnabled
+  maxReEntries?: number; // задан только если reEntryEnabled и НЕ unlimitedReEntries
+  unlimitedReEntries?: boolean; // если true — maxReEntries игнорируется, ре-энтри не ограничены
   reEntryFee?: number;   // цена одного ре-энтри, если отличается от buyIn (напр. бесплатный вход + платное ре-энтри); задан только если reEntryEnabled
   // Гарантированный приз (MTT): если бай-ины на финише не дотягивают до этой суммы, рум доплачивает
   // разницу в prizePool (оверлей). overlayPaid — сколько фактически доплачено, задаётся при finish.
@@ -481,15 +523,20 @@ export interface CreateTournamentOptions {
   blindSpeed: BlindSpeed;
   levelUpMinutes: number; // 1..60
   lateRegMinutes?: number;  // MTT, по умолчанию 0
+  minPlayers?: number;      // MTT, целое >=2, по умолчанию 2 — порог для forceStart/авто-старта по scheduledStartAt
+  maxPlayers?: number;      // MTT, целое >=minPlayers (если задан) — потолок регистрации по уникальным игрокам, по умолчанию без ограничения
   itmPercent?: MttItmPercent; // MTT, целое 1..100, по умолчанию 15 (используется при payoutMode==='itm', тоже по умолчанию)
   payoutMode?: MttPayoutMode; // MTT, по умолчанию 'itm'
   fixedPayoutPlaces?: number; // MTT, при payoutMode==='fixed' — целое 1..1000
   payoutCurveExponent?: number; // MTT, по умолчанию 1 (гармонический ряд, старое поведение)
   reEntryEnabled?: boolean;   // MTT, по умолчанию false
-  maxReEntries?: number;      // MTT, при reEntryEnabled — целое 1..10, по умолчанию 1
+  maxReEntries?: number;      // MTT, при reEntryEnabled и НЕ unlimitedReEntries — целое 1..10, по умолчанию 1
+  unlimitedReEntries?: boolean; // MTT, при reEntryEnabled — снимает лимит на число ре-энтри, по умолчанию false
   reEntryFee?: number;        // MTT, при reEntryEnabled — целое >=0, по умолчанию = buyIn
   guaranteedPrizePool?: number; // MTT, целое >=0, по умолчанию нет гарантии
   rakePercent?: number;      // SNG+MTT, целое 0..50, по умолчанию 0 (нет рейка)
+  promoEnabled?: boolean;      // SNG+MTT, по умолчанию false — сгенерировать промокод на buyIn этого турнира
+  promoMaxRedemptions?: number; // при promoEnabled — целое 1..1000, лимит погашений кода
   bountyEnabled?: boolean;   // SNG+MTT, по умолчанию false
   bountyType?: BountyType;   // при bountyEnabled, по умолчанию 'flat'
   bountyPercent?: number;    // при bountyEnabled, целое 1..90, по умолчанию 50

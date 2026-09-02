@@ -2,14 +2,13 @@ import { useMemo, useState } from 'react';
 import type { RoomInfo } from '@poker-room/shared';
 
 export type FormatTab = 'all' | 'nlh' | 'shortdeck';
-export type BlindPreset = 'all' | 'micro' | 'low' | 'medium' | 'high';
+export type BlindPreset = 'all' | 'upTo1' | 'oneToFive' | 'fivePlus';
 
-// BB-диапазоны (центы): Микро ≤0.10, Низкие 0.25–1.00, Средние 1.25–10.00, Высокие >10.00
+// BB-диапазоны (центы, по большому блайнду): До $1 ≤1.00, $1-5 1.01–5.00, $5+ >5.00
 const BLIND_RANGES: Record<Exclude<BlindPreset, 'all'>, (bb: number) => boolean> = {
-  micro:  (bb) => bb <= 10,
-  low:    (bb) => bb > 10  && bb <= 100,
-  medium: (bb) => bb > 100 && bb <= 1000,
-  high:   (bb) => bb > 1000,
+  upTo1:     (bb) => bb <= 100,
+  oneToFive: (bb) => bb > 100 && bb <= 500,
+  fivePlus:  (bb) => bb > 500,
 };
 
 // Фильтры лобби (поиск/мои/ожидающие/скрыть недоступные/формат) + производные счётчики.

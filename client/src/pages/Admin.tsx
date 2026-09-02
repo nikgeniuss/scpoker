@@ -12,6 +12,8 @@ import { SettingsTab } from './admin/SettingsTab';
 import { PaidFeaturesTab } from './admin/PaidFeaturesTab';
 import { PaymentsTab } from './admin/PaymentsTab';
 import { RakebackTab } from './admin/RakebackTab';
+import { RewardsTab } from './admin/RewardsTab';
+import { PromoCodesTab } from './admin/PromoCodesTab';
 
 const tabs = [
   { id: 'data', label: '📊 Данные' },
@@ -24,6 +26,8 @@ const tabs = [
   { id: 'paidFeatures', label: '💎 Платные фичи' },
   { id: 'payments', label: '🏦 Платежи' },
   { id: 'rakeback', label: '💸 Рейкбэк' },
+  { id: 'rewards', label: '🎁 Награды' },
+  { id: 'promoCodes', label: '🎟️ Промокоды' },
 ];
 
 export const Admin = () => {
@@ -155,6 +159,8 @@ export const Admin = () => {
         {activeTab === 'paidFeatures' && <PaidFeaturesTab />}
         {activeTab === 'payments' && <PaymentsTab />}
         {activeTab === 'rakeback' && <RakebackTab />}
+        {activeTab === 'rewards' && <RewardsTab />}
+        {activeTab === 'promoCodes' && <PromoCodesTab />}
       </motion.div>
     </div>
   );

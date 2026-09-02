@@ -23,6 +23,10 @@ interface ActionPanelProps {
   displayMode: ChipDisplay;
   onAction: (action: 'fold' | 'check' | 'call' | 'raise' | 'all-in', amount?: number) => void;
   onRaiseOpenChange?: (open: boolean) => void; // раскрыт ли блок рейза — чтобы прятать кнопку меню под ним
+  // AK-стол (admin-тоггл) — тёмная карточка-контейнер под референс (только max-md, десктоп
+  // не меняется). Кнопки действий остаются цветными (fold/check/call/raise) — это полезный
+  // UX-сигнал, референс это состояние не описывает (там всегда статичный 3-кнопочный бар).
+  akSkin?: boolean;
 }
 
 // Компонент рендерится только когда мой ход (см. GameRoom.tsx).
@@ -39,6 +43,7 @@ export const ActionPanel = ({
   displayMode,
   onAction,
   onRaiseOpenChange,
+  akSkin,
 }: ActionPanelProps) => {
   const fmt = (n: number) => formatChips(n, bigBlind, displayMode);
   const actionStart = useDebugStore((s) => s.actionStart);
@@ -118,8 +123,10 @@ export const ActionPanel = ({
 
   // GGPoker-стиль: плоские «кнопки-клавиши» — мягкий градиент, тонкий верхний блик (before),
   // нижняя «ступенька»-тень + лёгкое нажатие (active:translate-y). Цвет задаётся per-button.
+  // Тень (включая AK-неоновое свечение под цвет кнопки) — тоже per-button, см. ниже.
   const buttonBase =
-    'relative flex-1 min-h-[44px] flex flex-col items-center justify-center px-1.5 sm:px-3 py-2 rounded-xl font-bold text-white leading-none transition-all disabled:opacity-30 disabled:cursor-not-allowed active:translate-y-px shadow-[0_3px_0_rgba(0,0,0,0.35),0_8px_18px_rgba(0,0,0,0.5)] ' +
+    'relative flex-1 flex flex-col items-center justify-center px-1.5 sm:px-3 rounded-xl font-bold text-white leading-none transition-all disabled:opacity-30 disabled:cursor-not-allowed active:translate-y-px ' +
+    (akSkin ? 'min-h-[40px] py-1.5 ' : 'min-h-[44px] py-2 ') +
     "before:content-[''] before:absolute before:inset-x-2 before:top-1 before:h-px before:bg-white/25 before:rounded-full before:pointer-events-none";
 
   const openCtx = isOpenContext(phase, currentBet, bigBlind);
@@ -230,7 +237,15 @@ export const ActionPanel = ({
         animate={{ y: 0, opacity: 1 }}
         className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-2xl px-3 sm:px-4 pb-[env(safe-area-inset-bottom)] z-30"
       >
-        <div className="bg-black/70 backdrop-blur-md rounded-2xl p-3 sm:p-4 border border-white/10 space-y-2 sm:space-y-3">
+        <div
+          className={
+            (akSkin
+              ? 'max-md:bg-[rgba(30,35,45,0.9)] max-md:border-[#4a5568] md:bg-black/70 md:backdrop-blur-md md:border-white/10 '
+              : 'bg-black/70 backdrop-blur-md border-white/10 ') +
+            'rounded-2xl border ' +
+            (akSkin ? 'p-2.5 sm:p-3.5 space-y-1.5 sm:space-y-2.5' : 'p-3 sm:p-4 space-y-2 sm:space-y-3')
+          }
+        >
           <AnimatePresence initial={false}>
             {showRaise && canRaise && (
               <motion.div
@@ -311,9 +326,17 @@ export const ActionPanel = ({
               onClick={() => { actionStart('FOLD'); onAction('fold'); }}
               className={
                 buttonBase +
-                ' bg-gradient-to-b from-slate-600 to-slate-700 ring-1 ring-black/30'
+                (akSkin
+                  ? ' shadow-[0_3px_0_rgba(0,0,0,0.35),0_8px_18px_rgba(0,0,0,0.5),0_0_18px_2px_rgba(59,130,246,0.55)]'
+                  : ' shadow-[0_3px_0_rgba(0,0,0,0.35),0_8px_18px_rgba(0,0,0,0.5)]') +
+                (akSkin
+                  ? ' backdrop-blur-md bg-gradient-to-b from-blue-500/25 to-blue-700/25 ring-1 ring-white/30'
+                  : ' bg-gradient-to-b from-slate-600 to-slate-700 ring-1 ring-black/30')
               }
             >
+              {akSkin && (
+                <span className="pointer-events-none absolute inset-x-1 top-1 h-1/2 rounded-t-xl bg-gradient-to-b from-white/40 to-transparent" />
+              )}
               <span className="relative z-10 flex flex-col items-center leading-none">
                 <span className="text-sm sm:text-base">Fold</span>
                 <span className="hidden md:block text-[9px] opacity-30 mt-0.5 font-normal tracking-widest">[F]</span>
@@ -327,9 +350,17 @@ export const ActionPanel = ({
                 onClick={() => { actionStart('CHECK'); onAction('check'); }}
                 className={
                   buttonBase +
-                  ' bg-gradient-to-b from-emerald-500 to-emerald-600 ring-1 ring-black/20'
+                  (akSkin
+                    ? ' shadow-[0_3px_0_rgba(0,0,0,0.35),0_8px_18px_rgba(0,0,0,0.5),0_0_18px_2px_rgba(16,185,129,0.6)]'
+                    : ' shadow-[0_3px_0_rgba(0,0,0,0.35),0_8px_18px_rgba(0,0,0,0.5)]') +
+                  (akSkin
+                    ? ' backdrop-blur-md bg-gradient-to-b from-green-500/25 to-green-700/25 ring-1 ring-white/30'
+                    : ' bg-gradient-to-b from-emerald-500 to-emerald-600 ring-1 ring-black/20')
                 }
               >
+                {akSkin && (
+                  <span className="pointer-events-none absolute inset-x-1 top-1 h-1/2 rounded-t-xl bg-gradient-to-b from-white/40 to-transparent" />
+                )}
                 <span className="relative z-10 flex flex-col items-center leading-none">
                   <span className="text-sm sm:text-base">Check</span>
                   <span className="hidden md:block text-[9px] opacity-30 mt-0.5 font-normal tracking-widest">[C]</span>
@@ -343,9 +374,17 @@ export const ActionPanel = ({
                 onClick={() => { actionStart('CALL'); onAction('call'); }}
                 className={
                   buttonBase +
-                  ' bg-gradient-to-b from-emerald-500 to-emerald-600 ring-1 ring-black/20'
+                  (akSkin
+                    ? ' shadow-[0_3px_0_rgba(0,0,0,0.35),0_8px_18px_rgba(0,0,0,0.5),0_0_18px_2px_rgba(16,185,129,0.6)]'
+                    : ' shadow-[0_3px_0_rgba(0,0,0,0.35),0_8px_18px_rgba(0,0,0,0.5)]') +
+                  (akSkin
+                    ? ' backdrop-blur-md bg-gradient-to-b from-green-500/25 to-green-700/25 ring-1 ring-white/30'
+                    : ' bg-gradient-to-b from-emerald-500 to-emerald-600 ring-1 ring-black/20')
                 }
               >
+                {akSkin && (
+                  <span className="pointer-events-none absolute inset-x-1 top-1 h-1/2 rounded-t-xl bg-gradient-to-b from-white/40 to-transparent" />
+                )}
                 <span className="relative z-10 flex flex-col items-center leading-none">
                   <span className="text-sm sm:text-base">Call</span>
                   <span className="text-[10px] sm:text-xs font-semibold opacity-85 mt-0.5">{fmt(callAmount)}</span>
@@ -361,10 +400,18 @@ export const ActionPanel = ({
               onClick={handleRaiseClick}
               className={
                 buttonBase +
-                ' bg-gradient-to-b from-rose-500 to-red-600 ring-1 ring-black/20 ' +
+                (akSkin
+                  ? ' shadow-[0_3px_0_rgba(0,0,0,0.35),0_8px_18px_rgba(0,0,0,0.5),0_0_18px_2px_rgba(244,63,94,0.6)]'
+                  : ' shadow-[0_3px_0_rgba(0,0,0,0.35),0_8px_18px_rgba(0,0,0,0.5)]') +
+                (akSkin
+                  ? ' backdrop-blur-md bg-gradient-to-b from-red-500/25 to-red-700/25 ring-1 ring-white/30 '
+                  : ' bg-gradient-to-b from-rose-500 to-red-600 ring-1 ring-black/20 ') +
                 (showRaise ? 'ring-2 ring-amber-300' : '')
               }
             >
+              {akSkin && (
+                <span className="pointer-events-none absolute inset-x-1 top-1 h-1/2 rounded-t-xl bg-gradient-to-b from-white/40 to-transparent" />
+              )}
               <span className="relative z-10 flex flex-col items-center leading-none">
                 <span className="text-sm sm:text-base">{showRaise ? '✓ Raise' : 'Raise'}</span>
                 {showRaise && (
@@ -381,9 +428,17 @@ export const ActionPanel = ({
               onClick={() => { actionStart('ALL-IN'); onAction('all-in'); }}
               className={
                 buttonBase +
-                ' bg-gradient-to-b from-amber-400 to-amber-600 ring-1 ring-black/20'
+                (akSkin
+                  ? ' shadow-[0_3px_0_rgba(0,0,0,0.35),0_8px_18px_rgba(0,0,0,0.5),0_0_18px_2px_rgba(234,179,8,0.6)]'
+                  : ' shadow-[0_3px_0_rgba(0,0,0,0.35),0_8px_18px_rgba(0,0,0,0.5)]') +
+                (akSkin
+                  ? ' backdrop-blur-md bg-gradient-to-b from-yellow-400/25 to-yellow-600/25 ring-1 ring-white/30'
+                  : ' bg-gradient-to-b from-amber-400 to-amber-600 ring-1 ring-black/20')
               }
             >
+              {akSkin && (
+                <span className="pointer-events-none absolute inset-x-1 top-1 h-1/2 rounded-t-xl bg-gradient-to-b from-white/40 to-transparent" />
+              )}
               <span className="relative z-10 flex flex-col items-center leading-none">
                 <span className="text-sm sm:text-base">All-In</span>
                 <span className="text-[10px] sm:text-xs font-semibold opacity-85 mt-0.5">{fmt(chips)}</span>

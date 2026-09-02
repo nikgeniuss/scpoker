@@ -18,7 +18,7 @@ export const Tournaments = () => {
   const token = useAuthStore((s) => s.token);
   const myId = useAuthStore((s) => s.user?.id ?? null);
   const isAdmin = useAuthStore((s) => s.isAdmin);
-  const { tournaments, fetchTournaments, register, unregister, createTournament, cancelTournament, forceStartTournament, addBots } = useTournamentStore();
+  const { tournaments, fetchTournaments, register, unregister, redeemPromo, createTournament, cancelTournament, forceStartTournament, addBots } = useTournamentStore();
   const [showCreate, setShowCreate] = useState(false);
 
   useEffect(() => {
@@ -50,6 +50,13 @@ export const Tournaments = () => {
     if (!token) return;
     const result = await addBots(token, id, count);
     if (!result.ok) toast.error(result.error);
+  };
+
+  const handleRedeemPromo = async (id: string, code: string) => {
+    if (!token) return { ok: false as const, error: 'no-token' };
+    const result = await redeemPromo(token, id, code);
+    if (!result.ok) toast.error(result.error);
+    return result;
   };
 
   return (
@@ -84,6 +91,7 @@ export const Tournaments = () => {
                 isAdmin={isAdmin}
                 onRegister={withToken(register, t.id)}
                 onUnregister={withToken(unregister, t.id)}
+                onRedeemPromo={(code) => handleRedeemPromo(t.id, code)}
                 onForceStart={withToken(forceStartTournament, t.id)}
                 onCancel={withToken(cancelTournament, t.id)}
                 onAddBots={(count) => handleAddBots(t.id, count)}

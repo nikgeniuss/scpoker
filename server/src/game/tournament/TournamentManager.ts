@@ -1,14 +1,15 @@
 import { nanoid } from 'nanoid';
 import type {
   TournamentInfo, TournamentEntry, CreateTournamentOptions, BlindLevel, MttItmPercent, MttPayoutMode, BountyType,
-  TournamentStandings,
+  TournamentStandings, PromoCode,
 } from '@poker-room/shared';
 import type { GameManager } from '../GameManager.js';
 import type { Card } from '../types.js';
 import { buildBlindSchedule, currentLevelForElapsed, msUntilNextLevel, nextLevelBigBlind } from './tournamentSchedule.js';
-import { computeSngPayout, computeMttPayout, computeGuaranteeOverlay, computeBountySplit } from './tournamentPayout.js';
+import { computeSngPayout, computeMttPayout, computeGuaranteeOverlay, computeBountySplit, computeFinalPlaces, nextEliminationOrder } from './tournamentPayout.js';
 import { planRebalanceMove, pickTableToClose, type TableSeats } from './tournamentBalancing.js';
 import { readTournaments, writeTournaments } from './tournamentStorage.js';
+import { readPromoCodes, writePromoCodes } from './promoCodeStorage.js';
 import { tournamentBankroll } from './tournamentBankroll.js';
 import { FILLER_BOT_ID_PREFIX } from '../botRepository.js';
 
@@ -19,6 +20,8 @@ interface TournamentRuntime {
   schedule: BlindLevel[];
   blindTimer: NodeJS.Timeout | null;
   startTimer: NodeJS.Timeout | null; // авто-старт по scheduledStartAt (см. scheduleStartTimer)
+  fillerBotTimers: NodeJS.Timeout[]; // отложенные попытки регистрации ботов-заполнителей (см. scheduleFillerBotAttempts) — гасятся в cancel()/finish()
+  autoRemoveTimer: NodeJS.Timeout | null; // см. scheduleAutoRemove — гасится, если remove() вызван раньше вручную
 }
 
 // Оркестрация турниров (ROADMAP §10 «Турниры», SNG+MTT v1). Не трогает игровое ядро — создаёт/сажает/
@@ -30,9 +33,13 @@ interface TournamentRuntime {
 // балансировка/консолидация между столами включаются только когда tableIds.length>1.
 export class TournamentManager {
   private tournaments = new Map<string, TournamentRuntime>();
+  // Промокоды — глобальный реестр, НЕ часть tournaments (валидны по совпадению buyIn для любого
+  // турнира, см. PromoCode в shared/index.ts), поэтому отдельное хранилище/persist.
+  private promoCodes = new Map<string, PromoCode>();
 
   constructor(private gameManager: GameManager) {
     gameManager.onTournamentBust = (roomId, userId, killerIds) => this.handleBust(roomId, userId, killerIds);
+    readPromoCodes().forEach(pc => this.promoCodes.set(pc.code, pc));
   }
 
   list(): TournamentInfo[] {
@@ -41,6 +48,35 @@ export class TournamentManager {
 
   get(id: string): TournamentInfo | null {
     return this.tournaments.get(id)?.info ?? null;
+  }
+
+  listPromoCodes(): PromoCode[] {
+    return Array.from(this.promoCodes.values()).sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  // Создание промокода в общем реестре (валиден для любого турнира с этим buyIn, см. PromoCode) —
+  // либо автоматически из create() (promoEnabled), либо отдельно из админ-вкладки «Промокоды»
+  // (массовая раздача не привязана к конкретному турниру, напр. подарки в Telegram-группе).
+  createPromoCode(buyIn: number, maxRedemptions: number, createdBy: string): PromoCode | ServiceError {
+    if (!Number.isInteger(buyIn) || buyIn < 0) return { error: 'invalid-buyin' };
+    if (!Number.isInteger(maxRedemptions) || maxRedemptions < 1 || maxRedemptions > 1000) {
+      return { error: 'invalid-max-redemptions' };
+    }
+    const code = this.generatePromoCodeString();
+    const promo: PromoCode = { code, buyIn, maxRedemptions, redeemedBy: [], active: true, createdBy, createdAt: Date.now() };
+    this.promoCodes.set(code, promo);
+    this.persistPromoCodes();
+    console.log(`🎟️ [promo-create] "${code}" buyIn=${buyIn} лимит=${maxRedemptions} (${createdBy})`);
+    return promo;
+  }
+
+  deactivatePromoCode(code: string): PromoCode | ServiceError {
+    const promo = this.promoCodes.get(code);
+    if (!promo) return { error: 'not-found' };
+    promo.active = false;
+    this.persistPromoCodes();
+    console.log(`🎟️ [promo-deactivate] "${code}"`);
+    return promo;
   }
 
   create(opts: CreateTournamentOptions, createdBy: string): TournamentInfo | ServiceError {
@@ -62,6 +98,21 @@ export class TournamentManager {
     const lateRegMinutes = opts.type === 'mtt' ? (opts.lateRegMinutes ?? 0) : 0;
     if (!Number.isInteger(lateRegMinutes) || lateRegMinutes < 0 || lateRegMinutes > 120) {
       return { error: 'invalid-late-reg' };
+    }
+
+    // Границы по числу уникальных игроков (MTT-only — SNG уже ограничен tableSize, см. TournamentInfo).
+    let minPlayers: number | undefined;
+    let maxPlayers: number | undefined;
+    if (opts.type === 'mtt') {
+      if (opts.minPlayers !== undefined) {
+        if (!Number.isInteger(opts.minPlayers) || opts.minPlayers < 2) return { error: 'invalid-min-players' };
+        minPlayers = opts.minPlayers;
+      }
+      if (opts.maxPlayers !== undefined) {
+        if (!Number.isInteger(opts.maxPlayers) || opts.maxPlayers < 2) return { error: 'invalid-max-players' };
+        if (minPlayers !== undefined && opts.maxPlayers < minPlayers) return { error: 'max-players-below-min' };
+        maxPlayers = opts.maxPlayers;
+      }
     }
     const itmPercent = opts.type === 'mtt' ? (opts.itmPercent ?? 15) : 100 as MttItmPercent;
     if (opts.type === 'mtt' && (!Number.isInteger(itmPercent) || itmPercent < 1 || itmPercent > 100)) {
@@ -98,13 +149,28 @@ export class TournamentManager {
       rakePercent = opts.rakePercent > 0 ? opts.rakePercent : undefined;
     }
 
+    // Промокод на бесплатный вход (SNG+MTT) — валидируем здесь, САМ код генерируем ниже (после всех
+    // остальных проверок), чтобы неудачное создание турнира по другой причине не оставляло сиротский
+    // промокод в общем реестре.
+    let promoMaxRedemptions: number | undefined;
+    if (opts.promoEnabled) {
+      promoMaxRedemptions = opts.promoMaxRedemptions ?? 0;
+      if (!Number.isInteger(promoMaxRedemptions) || promoMaxRedemptions < 1 || promoMaxRedemptions > 1000) {
+        return { error: 'invalid-promo-max-redemptions' };
+      }
+    }
+
     const reEntryEnabled = opts.type === 'mtt' ? !!opts.reEntryEnabled : false;
     let maxReEntries: number | undefined;
+    let unlimitedReEntries: boolean | undefined;
     let reEntryFee: number | undefined;
     if (reEntryEnabled) {
-      const mr = opts.maxReEntries ?? 1;
-      if (!Number.isInteger(mr) || mr < 1 || mr > 10) return { error: 'invalid-max-reentries' };
-      maxReEntries = mr;
+      unlimitedReEntries = !!opts.unlimitedReEntries;
+      if (!unlimitedReEntries) {
+        const mr = opts.maxReEntries ?? 1;
+        if (!Number.isInteger(mr) || mr < 1 || mr > 10) return { error: 'invalid-max-reentries' };
+        maxReEntries = mr;
+      }
       reEntryFee = opts.reEntryFee ?? opts.buyIn;
       if (!Number.isInteger(reEntryFee) || reEntryFee < 0) return { error: 'invalid-reentry-fee' };
     }
@@ -153,6 +219,15 @@ export class TournamentManager {
       botFillTarget = target;
     }
 
+    // Промокод создаём здесь — после всех остальных проверок, чтобы не оставить сиротский код в
+    // реестре, если create() дальше всё же откажет по другой причине (тут дальше отказов нет).
+    let promoCode: string | undefined;
+    if (opts.promoEnabled && promoMaxRedemptions !== undefined) {
+      const promo = this.createPromoCode(opts.buyIn, promoMaxRedemptions, createdBy);
+      if ('error' in promo) return promo;
+      promoCode = promo.code;
+    }
+
     const id = nanoid(10);
     const info: TournamentInfo = {
       id,
@@ -170,15 +245,19 @@ export class TournamentManager {
       entries: [],
       tableIds: [],
       lateRegMinutes,
+      minPlayers,
+      maxPlayers,
       itmPercent,
       payoutMode,
       fixedPayoutPlaces,
       payoutCurveExponent,
       reEntryEnabled,
       maxReEntries,
+      unlimitedReEntries,
       reEntryFee,
       guaranteedPrizePool,
       rakePercent,
+      promoCode,
       bountyEnabled,
       bountyType,
       bountyPercent,
@@ -189,9 +268,9 @@ export class TournamentManager {
       createdBy,
       createdAt: Date.now(),
     };
-    this.tournaments.set(id, { info, schedule: buildBlindSchedule(startingBigBlind, opts.levelUpMinutes), blindTimer: null, startTimer: null });
+    this.tournaments.set(id, { info, schedule: buildBlindSchedule(startingBigBlind, opts.levelUpMinutes), blindTimer: null, startTimer: null, fillerBotTimers: [], autoRemoveTimer: null });
     this.persist();
-    console.log(`🏅 [tournament-create] "${info.name}" (${info.type}, id=${id}) buyIn=${info.buyIn} startStack=${info.startingStack} startBB=${startingBigBlind} tableSize=${info.tableSize} speed=${info.blindSpeed} levelUp=${info.levelUpMinutes}м${bountyEnabled ? ` bounty=${bountyType}/${bountyPercent}%` : ''}${guaranteedPrizePool ? ` guarantee=${guaranteedPrizePool}` : ''}${reEntryEnabled ? ` reEntry(max=${maxReEntries}, fee=${reEntryFee})` : ''}${rakePercent ? ` rake=${rakePercent}%` : ''}${payoutCurveExponent !== undefined ? ` curve=${payoutCurveExponent}` : ''}${regOpensAt ? ` regOpensAt=${new Date(regOpensAt).toISOString()}` : ''}${scheduledStartAt ? ` scheduledStartAt=${new Date(scheduledStartAt).toISOString()}` : ''}${fillWithBots ? ` fillBots=${botFillTarget}` : ''}`);
+    console.log(`🏅 [tournament-create] "${info.name}" (${info.type}, id=${id}) buyIn=${info.buyIn} startStack=${info.startingStack} startBB=${startingBigBlind} tableSize=${info.tableSize} speed=${info.blindSpeed} levelUp=${info.levelUpMinutes}м${bountyEnabled ? ` bounty=${bountyType}/${bountyPercent}%` : ''}${guaranteedPrizePool ? ` guarantee=${guaranteedPrizePool}` : ''}${reEntryEnabled ? ` reEntry(max=${unlimitedReEntries ? '∞' : maxReEntries}, fee=${reEntryFee})` : ''}${rakePercent ? ` rake=${rakePercent}%` : ''}${promoCode ? ` promo=${promoCode}(x${promoMaxRedemptions})` : ''}${payoutCurveExponent !== undefined ? ` curve=${payoutCurveExponent}` : ''}${regOpensAt ? ` regOpensAt=${new Date(regOpensAt).toISOString()}` : ''}${scheduledStartAt ? ` scheduledStartAt=${new Date(scheduledStartAt).toISOString()}` : ''}${fillWithBots ? ` fillBots=${botFillTarget}` : ''}${minPlayers !== undefined ? ` minPlayers=${minPlayers}` : ''}${maxPlayers !== undefined ? ` maxPlayers=${maxPlayers}` : ''}`);
     if (scheduledStartAt) this.scheduleStartTimer(id);
     if (fillWithBots) this.scheduleEarlyFillerBots(id);
     return info;
@@ -205,7 +284,17 @@ export class TournamentManager {
     if (!t) return { error: 'not-found' };
     if (t.info.status !== 'registering' && t.info.status !== 'running') return { error: 'invalid-status' };
     const wasRunning = t.info.status === 'running';
-    t.info.entries.forEach(e => this.refund(e.userId, t.info.buyIn));
+    // Вход по промокоду не списывал банкролл — refund() дал бы такому игроку чипы, которые он не
+    // платил (см. redeemPromoCode/unregister). Вместо этого освобождаем его слот погашения у кода.
+    t.info.entries.forEach(e => {
+      if (e.promoCode) {
+        const promo = this.promoCodes.get(e.promoCode);
+        if (promo) promo.redeemedBy = promo.redeemedBy.filter(u => u !== e.userId);
+      } else {
+        this.refund(e.userId, t.info.buyIn);
+      }
+    });
+    this.persistPromoCodes();
     if (t.blindTimer) {
       clearTimeout(t.blindTimer);
       t.blindTimer = null;
@@ -214,11 +303,15 @@ export class TournamentManager {
       clearTimeout(t.startTimer);
       t.startTimer = null;
     }
+    t.fillerBotTimers.forEach(timer => clearTimeout(timer));
+    t.fillerBotTimers = [];
     t.info.tableIds.forEach(roomId => this.gameManager.closeTournamentTable(roomId));
     t.info.tableIds = [];
     console.log(`🏅 [tournament-cancel] "${t.info.name}" (id=${id}${wasRunning ? ', был running — столы закрыты принудительно' : ''}) — возврат бай-инов ${t.info.entries.length} игрокам`);
     t.info.status = 'cancelled';
+    t.info.finishedAt = Date.now();
     this.persist();
+    this.scheduleAutoRemove(id);
     return t.info;
   }
 
@@ -229,20 +322,35 @@ export class TournamentManager {
     const t = this.tournaments.get(id);
     if (!t) return { error: 'not-found' };
     if (t.info.status !== 'finished' && t.info.status !== 'cancelled') return { error: 'invalid-status' };
+    if (t.autoRemoveTimer) clearTimeout(t.autoRemoveTimer);
     this.tournaments.delete(id);
     console.log(`🏅 [tournament-remove] "${t.info.name}" (id=${id}, status=${t.info.status}) — убран из списка`);
     this.persist();
     return { ok: true };
   }
 
-  // Принудительный старт админом до заполнения стола (нужно ≥2 зарегистрированных). Для MTT — единственный
-  // способ старта (нет авто-старта по заполнению, в отличие от SNG).
+  // Автоудаление из списка (как у топ-румов — результат виден ограниченное время, потом лобби не
+  // засоряется): finish()/cancel() ставят таймер на remove() этого же турнира. remove() сам
+  // проверяет статус и no-op'ает, если админ уже удалил вручную раньше — двойного вызова не боимся.
+  private static readonly AUTO_REMOVE_DELAY_MS = 30 * 60_000; // 30 минут
+
+  private scheduleAutoRemove(id: string, delayMs: number = TournamentManager.AUTO_REMOVE_DELAY_MS): void {
+    const t = this.tournaments.get(id);
+    if (!t) return;
+    if (t.autoRemoveTimer) clearTimeout(t.autoRemoveTimer);
+    t.autoRemoveTimer = setTimeout(() => this.remove(id), Math.max(0, delayMs));
+  }
+
+  // Принудительный старт админом до заполнения стола (нужно ≥minPlayers зарегистрированных, MTT-only
+  // настройка, по умолчанию 2). Для MTT — единственный способ старта (нет авто-старта по заполнению,
+  // в отличие от SNG).
   // testDeck — опциональный параметр для тестов SNG (как GameManager.startGame), production-вызовы его не передают.
   forceStart(id: string, testDeck?: Card[]): TournamentInfo | ServiceError {
     const t = this.tournaments.get(id);
     if (!t) return { error: 'not-found' };
     if (t.info.status !== 'registering') return { error: 'invalid-status' };
-    if (t.info.entries.length < 2) return { error: 'not-enough-players' };
+    const minPlayers = t.info.type === 'mtt' ? (t.info.minPlayers ?? 2) : 2;
+    if (t.info.entries.length < minPlayers) return { error: 'not-enough-players' };
     console.log(`🏅 [tournament-force-start] admin принудительно стартовал "${t.info.name}" (${t.info.entries.length} игроков)`);
     if (t.info.type === 'mtt') {
       this.startMtt(id);
@@ -289,11 +397,20 @@ export class TournamentManager {
   // принцип, что guarantee-оверлей), никогда не заходят повторно после вылета.
 
   // Разослать count попыток регистрации бота-заполнителя со случайной задержкой в [minDelayMs, maxDelayMs].
+  // Хендлы сохраняются в t.fillerBotTimers — без этого cancel()/finish() не могли погасить ещё не
+  // сработавшие попытки: таймер держит живой this (и весь TournamentManager) через замыкание и в
+  // проде просто впустую тикает до срабатывания, а в тестах (реальные, не fake, таймеры — общий
+  // event loop на весь прогон) может выстрелить много позже, во время СОВСЕМ ДРУГОГО теста, и
+  // списать бай-ин с чужого userId, случайно совпавшего по имени ('A'/'B' переиспользуются почти
+  // везде) — нашли по флейки-провалам при полном `npm run check` (2026-08-27).
   private scheduleFillerBotAttempts(id: string, count: number, minDelayMs: number, maxDelayMs: number): void {
+    const t = this.tournaments.get(id);
+    if (!t) return;
     const span = Math.max(0, maxDelayMs - minDelayMs);
     for (let i = 0; i < count; i++) {
       const delayMs = minDelayMs + Math.random() * span;
-      setTimeout(() => this.tryRegisterFillerBot(id), delayMs);
+      const timer = setTimeout(() => this.tryRegisterFillerBot(id), delayMs);
+      t.fillerBotTimers.push(timer);
     }
   }
 
@@ -359,6 +476,7 @@ export class TournamentManager {
     if (t.info.status === 'registering') {
       if (t.info.regOpensAt && Date.now() < t.info.regOpensAt) return;
       if (t.info.type === 'sng' && t.info.entries.length >= t.info.tableSize) return;
+      if (t.info.type === 'mtt' && t.info.maxPlayers !== undefined && t.info.entries.length >= t.info.maxPlayers) return;
     } else if (t.info.status === 'running' && t.info.type === 'mtt' && t.info.startedAt) {
       const elapsed = Date.now() - t.info.startedAt;
       if (t.info.lateRegMinutes <= 0 || elapsed > t.info.lateRegMinutes * 60_000) return;
@@ -391,8 +509,7 @@ export class TournamentManager {
       return;
     }
 
-    const tableId = this.leastFullTable(t);
-    if (!tableId) return;
+    const tableId = this.seatOrOpenTable(t);
     this.gameManager.seatTournamentPlayer(tableId, bot.id, bot.username, t.info.startingStack);
     t.info.entries.push({ userId: bot.id, username: bot.username, status: 'playing', tableId, ...(bounty > 0 ? { bounty } : {}) });
     t.info.prizePool += t.info.buyIn - bounty - rake;
@@ -419,6 +536,10 @@ export class TournamentManager {
 
       if (t.info.type === 'sng' && t.info.entries.length >= t.info.tableSize) {
         console.log(`🏅 [tournament-register-rejected] ${username} → "${t.info.name}": full`);
+        return { error: 'full' };
+      }
+      if (t.info.type === 'mtt' && t.info.maxPlayers !== undefined && t.info.entries.length >= t.info.maxPlayers) {
+        console.log(`🏅 [tournament-register-rejected] ${username} → "${t.info.name}": full (maxPlayers=${t.info.maxPlayers})`);
         return { error: 'full' };
       }
 
@@ -460,7 +581,7 @@ export class TournamentManager {
           console.log(`🏅 [tournament-register-rejected] ${username} → "${t.info.name}": reentry-disabled`);
           return { error: 'reentry-disabled' };
         }
-        if (priorEntries.length > (t.info.maxReEntries ?? 0)) {
+        if (!t.info.unlimitedReEntries && priorEntries.length > (t.info.maxReEntries ?? 0)) {
           console.log(`🏅 [tournament-register-rejected] ${username} → "${t.info.name}": reentry-limit-reached (${priorEntries.length}/${t.info.maxReEntries})`);
           return { error: 'reentry-limit-reached' };
         }
@@ -474,11 +595,7 @@ export class TournamentManager {
         return { error: 'insufficient-bankroll' };
       }
 
-      const tableId = this.leastFullTable(t);
-      if (!tableId) {
-        console.log(`🏅 [tournament-register-rejected] ${username} → "${t.info.name}": no-seats-available`);
-        return { error: 'no-seats-available' };
-      }
+      const tableId = this.seatOrOpenTable(t);
 
       const bounty = this.bountyPerEntry(t.info);
       const rake = this.rakePerEntry(t.info);
@@ -499,6 +616,70 @@ export class TournamentManager {
     return { error: 'registration-closed' };
   }
 
+  // Погашение промокода (см. createPromoCode) — та же логика входа, что register(), но БЕЗ
+  // списания банкролла: рум платит бай-ин за игрока в prizePool (тот же принцип, что
+  // guarantee-оверлей/fillWithBots). Только на ПЕРВЫЙ вход — ре-энтри после вылета код повторно
+  // не покрывает (redeemedBy одноразовый на игрока, глобально по всем турнирам этого кода);
+  // для ре-энтри — обычный register() за фишки.
+  redeemPromoCode(id: string, userId: string, username: string, code: string): TournamentInfo | ServiceError {
+    const t = this.tournaments.get(id);
+    if (!t) return { error: 'not-found' };
+    if (t.info.entries.some(e => e.userId === userId && e.status !== 'eliminated')) {
+      return { error: 'already-registered' };
+    }
+
+    const promo = this.promoCodes.get(code);
+    if (!promo || !promo.active) return { error: 'invalid-promo-code' };
+    if (promo.buyIn !== t.info.buyIn) return { error: 'promo-buyin-mismatch' };
+    if (promo.redeemedBy.length >= promo.maxRedemptions) return { error: 'promo-limit-reached' };
+    if (promo.redeemedBy.includes(userId)) return { error: 'promo-already-used' };
+
+    if (t.info.status === 'registering') {
+      if (t.info.regOpensAt && Date.now() < t.info.regOpensAt) return { error: 'registration-not-open' };
+      if (t.info.type === 'sng' && t.info.entries.length >= t.info.tableSize) return { error: 'full' };
+      if (t.info.type === 'mtt' && t.info.maxPlayers !== undefined && t.info.entries.length >= t.info.maxPlayers) {
+        return { error: 'full' };
+      }
+
+      const bounty = this.bountyPerEntry(t.info);
+      const rake = this.rakePerEntry(t.info);
+      t.info.entries.push({ userId, username, status: 'registered', promoCode: code, ...(bounty > 0 ? { bounty } : {}) });
+      t.info.prizePool += t.info.buyIn - bounty - rake;
+      promo.redeemedBy.push(userId);
+      this.persistPromoCodes();
+      this.persist();
+      console.log(`🎟️ [promo-redeem] ${username} → "${t.info.name}" по коду ${code} (${t.info.entries.length}${t.info.type === 'sng' ? `/${t.info.tableSize}` : ''}) prizePool=${t.info.prizePool}`);
+
+      if (t.info.type === 'sng' && !t.info.scheduledStartAt && t.info.entries.length >= t.info.tableSize) {
+        this.start(id);
+      }
+      return t.info;
+    }
+
+    if (t.info.type === 'mtt' && t.info.status === 'running' && t.info.startedAt) {
+      const elapsed = Date.now() - t.info.startedAt;
+      if (t.info.lateRegMinutes <= 0 || elapsed > t.info.lateRegMinutes * 60_000) {
+        return { error: 'late-reg-closed' };
+      }
+
+      const bounty = this.bountyPerEntry(t.info);
+      const rake = this.rakePerEntry(t.info);
+      const tableId = this.seatOrOpenTable(t);
+      this.gameManager.seatTournamentPlayer(tableId, userId, username, t.info.startingStack);
+      t.info.entries.push({ userId, username, status: 'playing', tableId, promoCode: code, ...(bounty > 0 ? { bounty } : {}) });
+      t.info.prizePool += t.info.buyIn - bounty - rake;
+      promo.redeemedBy.push(userId);
+      this.persistPromoCodes();
+      this.persist();
+      console.log(`🎟️ [promo-redeem] ${username} → "${t.info.name}" по коду ${code} (поздняя рег.) стол=${tableId} prizePool=${t.info.prizePool}`);
+      this.gameManager.startGame(tableId);
+      this.rebalanceTables(id);
+      return t.info;
+    }
+
+    return { error: 'registration-closed' };
+  }
+
   unregister(id: string, userId: string): TournamentInfo | ServiceError {
     const t = this.tournaments.get(id);
     if (!t) return { error: 'not-found' };
@@ -508,9 +689,21 @@ export class TournamentManager {
     const bounty = t.info.entries[idx].bounty ?? 0;
     const rake = this.rakePerEntry(t.info);
     const username = t.info.entries[idx].username;
+    const promoCode = t.info.entries[idx].promoCode;
     t.info.entries.splice(idx, 1);
     t.info.prizePool -= t.info.buyIn - bounty - rake;
-    this.refund(userId, t.info.buyIn);
+    // Вход по промокоду не списывал банкролл (рум платил бай-ин сам, см. redeemPromoCode) — refund()
+    // тут дал бы игроку чипы, которые он не платил. Вместо этого освобождаем его слот погашения
+    // у самого кода, чтобы лимит активаций не сгорал впустую.
+    if (promoCode) {
+      const promo = this.promoCodes.get(promoCode);
+      if (promo) {
+        promo.redeemedBy = promo.redeemedBy.filter(u => u !== userId);
+        this.persistPromoCodes();
+      }
+    } else {
+      this.refund(userId, t.info.buyIn);
+    }
     this.persist();
     console.log(`🏅 [tournament-unregister] ${username} ← "${t.info.name}" (осталось ${t.info.entries.length})`);
     return t.info;
@@ -619,18 +812,20 @@ export class TournamentManager {
     t.startTimer = setTimeout(() => this.triggerScheduledStart(id), ms);
   }
 
-  // ≥2 зарегистрированных на момент назначенного старта — стартуем (как forceStart), иначе турнир
-  // авто-отменяется с возвратом бай-инов (решение пользователя 2026-07-07 — не зависать в ожидании
-  // недобора и не оставлять реальные деньги замороженными без явного действия админа).
+  // ≥minPlayers (MTT-only настройка, по умолчанию 2) зарегистрированных на момент назначенного старта —
+  // стартуем (как forceStart), иначе турнир авто-отменяется с возвратом бай-инов (решение пользователя
+  // 2026-07-07 — не зависать в ожидании недобора и не оставлять реальные деньги замороженными без
+  // явного действия админа).
   private triggerScheduledStart(id: string): void {
     const t = this.tournaments.get(id);
     if (!t || t.info.status !== 'registering') return;
     t.startTimer = null;
-    if (t.info.entries.length >= 2) {
+    const minPlayers = t.info.type === 'mtt' ? (t.info.minPlayers ?? 2) : 2;
+    if (t.info.entries.length >= minPlayers) {
       console.log(`🏅 [tournament-scheduled-start] "${t.info.name}" — наступило назначенное время старта, ${t.info.entries.length} игроков`);
       if (t.info.type === 'mtt') this.startMtt(id); else this.start(id);
     } else {
-      console.log(`🏅 [tournament-scheduled-start] "${t.info.name}" — наступило время старта, но игроков < 2 (${t.info.entries.length}) — авто-отмена`);
+      console.log(`🏅 [tournament-scheduled-start] "${t.info.name}" — наступило время старта, но игроков < ${minPlayers} (${t.info.entries.length}) — авто-отмена`);
       this.cancel(id);
     }
   }
@@ -678,10 +873,13 @@ export class TournamentManager {
     const entry = t.info.entries.find(e => e.userId === userId && e.status === 'playing');
     if (!entry) return;
 
-    // Считаем ДО того, как пометим текущего банкрота — finishPlace = число живших на момент баста.
+    // Считаем ДО того, как пометим текущего банкрота. Это ПРЕДВАРИТЕЛЬНАЯ оценка места (как и prize
+    // ниже): при открытых ре-энтри счётчик играющих не убывает строго, поэтому окончательные места
+    // раздаются один раз в finish() через computeFinalPlaces — по порядку вылета, без повторов.
     const stillPlaying = t.info.entries.filter(e => e.status === 'playing');
     entry.status = 'eliminated';
     entry.finishPlace = stillPlaying.length;
+    entry.eliminationOrder = nextEliminationOrder(t.info.entries); // порядок вылета — основа мест
     entry.tableId = undefined;
     console.log(`🏅 [tournament-bust] ${entry.username} выбыл из "${t.info.name}" — место ${entry.finishPlace}${killerIds.length ? ` (убийца: ${killerIds.join(', ')})` : ' (форфейт)'}`);
 
@@ -724,7 +922,7 @@ export class TournamentManager {
     const elapsed = Date.now() - info.startedAt;
     if (info.lateRegMinutes <= 0 || elapsed > info.lateRegMinutes * 60_000) return undefined;
     const priorEntries = info.entries.filter(e => e.userId === userId);
-    if (priorEntries.length > (info.maxReEntries ?? 0)) return undefined;
+    if (!info.unlimitedReEntries && priorEntries.length > (info.maxReEntries ?? 0)) return undefined;
     return info.reEntryFee ?? info.buyIn;
   }
 
@@ -890,14 +1088,43 @@ export class TournamentManager {
     return best;
   }
 
+  // Поздняя рег./боты-заполнители после старта: если во ВСЕХ уже открытых столах нет свободного
+  // места (например, никто ещё не вылетел) — открываем НОВЫЙ стол на текущем уровне блайндов вместо
+  // отказа. Иначе «поздняя регистрация» на деле закрывается, как только столы заполнятся, что
+  // противоречит смыслу самого окна поздней регистрации (найдено live-тестом 2026-08-27).
+  private seatOrOpenTable(t: TournamentRuntime): string {
+    const existing = this.leastFullTable(t);
+    if (existing) return existing;
+    const elapsed = t.info.startedAt ? Date.now() - t.info.startedAt : 0;
+    const lvl = currentLevelForElapsed(t.schedule, elapsed);
+    const tableId = this.gameManager.createTournamentTable({
+      tournamentId: t.info.id,
+      name: `${t.info.name} — стол ${t.info.tableIds.length + 1}`,
+      maxPlayers: t.info.tableSize,
+      smallBlind: lvl.smallBlind,
+      bigBlind: lvl.bigBlind,
+      ante: lvl.ante,
+      format: t.info.format,
+    });
+    t.info.tableIds.push(tableId);
+    console.log(`🏅 [tournament-new-table] "${t.info.name}": все столы полны — открыт новый стол ${tableId} (${t.info.tableIds.length} стол(ов) всего)`);
+    return tableId;
+  }
+
   private finish(id: string, winner?: TournamentEntry): void {
     const t = this.tournaments.get(id);
     if (!t) return;
     if (winner) {
       winner.status = 'eliminated';
-      winner.finishPlace = 1;
       winner.tableId = undefined;
+      winner.eliminationOrder = nextEliminationOrder(t.info.entries); // вышел последним → место 1
     }
+
+    // Окончательные места: одно на ИГРОКА, по порядку вылета, без повторов и дыр. До этого места
+    // раздавались в момент баста и при открытых ре-энтри могли совпасть у двух разных игроков —
+    // на призовом месте это означало полный приз обоим, сверх собранного prizePool (ROADMAP §9.2).
+    const finalPlaces = computeFinalPlaces(t.info.entries);
+    t.info.entries.forEach((e, i) => { e.finishPlace = finalPlaces[i]; });
 
     if (t.info.type === 'mtt') {
       const overlay = computeGuaranteeOverlay(t.info.prizePool, t.info.guaranteedPrizePool);
@@ -908,13 +1135,23 @@ export class TournamentManager {
     }
 
     const payout = this.previewPayout(t.info);
+    // Страховка поверх computeFinalPlaces: одно призовое место оплачивается один раз, и один игрок
+    // получает не больше одного приза. Уникальность мест уже гарантирована выше — сработавший
+    // guard означает баг в расчёте мест, поэтому громко логируем, а не молча пропускаем.
+    const paidPlaceNumbers = new Set<number>();
+    const paidUsers = new Set<string>();
     t.info.entries.forEach(e => {
       const prize = e.finishPlace ? payout[e.finishPlace] : undefined;
-      if (prize) {
-        e.prize = prize;
-        const bankroll = tournamentBankroll.getUserChips(e.userId) ?? 0;
-        tournamentBankroll.persistChips(e.userId, bankroll + prize);
+      if (!prize) return;
+      if (paidPlaceNumbers.has(e.finishPlace!) || paidUsers.has(e.userId)) {
+        console.error(`⚠️ [tournament-payout] "${t.info.name}": повторная выплата места ${e.finishPlace} игроку ${e.username} заблокирована`);
+        return;
       }
+      paidPlaceNumbers.add(e.finishPlace!);
+      paidUsers.add(e.userId);
+      e.prize = prize;
+      const bankroll = tournamentBankroll.getUserChips(e.userId) ?? 0;
+      tournamentBankroll.persistChips(e.userId, bankroll + prize);
     });
 
     // Победитель ещё физически за столом (в отличие от остальных, выбывших раньше через
@@ -934,6 +1171,8 @@ export class TournamentManager {
       clearTimeout(t.blindTimer);
       t.blindTimer = null;
     }
+    t.fillerBotTimers.forEach(timer => clearTimeout(timer));
+    t.fillerBotTimers = [];
     t.info.tableIds.forEach(roomId => this.gameManager.closeTournamentTable(roomId));
     t.info.tableIds = [];
     t.info.status = 'finished';
@@ -941,6 +1180,7 @@ export class TournamentManager {
     this.persist();
     const paidPlaces = Object.entries(payout).map(([place, amt]) => `#${place}=${amt}`).join(', ') || '—';
     console.log(`🏅 [tournament-finish] "${t.info.name}" (${t.info.type}) завершён: prizePool=${t.info.prizePool}${t.info.overlayPaid ? ` (оверлей +${t.info.overlayPaid})` : ''}, выплаты: ${paidPlaces}`);
+    this.scheduleAutoRemove(id);
   }
 
   private refund(userId: string, amount: number): void {
@@ -950,6 +1190,18 @@ export class TournamentManager {
 
   private persist(): void {
     writeTournaments(Array.from(this.tournaments.values()).map(t => t.info));
+  }
+
+  private persistPromoCodes(): void {
+    writePromoCodes(Array.from(this.promoCodes.values()));
+  }
+
+  private generatePromoCodeString(): string {
+    let code: string;
+    do {
+      code = 'PROMO-' + nanoid(8).toUpperCase();
+    } while (this.promoCodes.has(code));
+    return code;
   }
 
   // Восстановление после рестарта сервера: перечитать tournaments.json, для 'running' — пересчитать
@@ -963,7 +1215,7 @@ export class TournamentManager {
       // Турниры, сохранённые ДО появления startingBigBlind (2026-07-03) — тем же фолбэком, что в create().
       const startingBigBlind = info.startingBigBlind ?? Math.max(10, Math.round(info.startingStack / 75));
       const schedule = buildBlindSchedule(startingBigBlind, info.levelUpMinutes);
-      const t = { info, schedule, blindTimer: null, startTimer: null };
+      const t = { info, schedule, blindTimer: null, startTimer: null, fillerBotTimers: [], autoRemoveTimer: null };
       this.tournaments.set(info.id, t);
       if (info.status === 'running' && info.tableIds.length > 0 && info.startedAt) {
         runningCount++;

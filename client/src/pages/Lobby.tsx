@@ -117,12 +117,12 @@ export const Lobby = () => {
               disabled={!tab.enabled}
               title={!tab.enabled ? t('lobby.soon') : ''}
               className={
-                'px-3 py-1.5 rounded-lg text-sm font-bold transition-all whitespace-nowrap ' +
+                'px-3 py-1.5 rounded-lg text-sm font-bold transition-all whitespace-nowrap backdrop-blur-md ' +
                 (active
                   ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30'
                   : tab.enabled
-                  ? 'bg-white/5 text-gray-300 hover:bg-white/10 hover:text-white'
-                  : 'bg-white/5 text-gray-600 cursor-not-allowed')
+                  ? 'bg-gray-900/55 text-gray-300 hover:bg-white/10 hover:text-white'
+                  : 'bg-gray-900/55 text-gray-600 cursor-not-allowed')
               }
             >
               {tab.label}
@@ -133,14 +133,13 @@ export const Lobby = () => {
       </div>
 
 
-      {/* Пресеты фильтра блайндов: Микро / Низкие / Средние / Высокие */}
+      {/* Пресеты фильтра блайндов: До $1 / $1-5 / $5+ (референс «Modern Poker Club») */}
       <div className="flex flex-wrap items-center gap-1 mb-4">
         {([
-          { id: 'all',    label: t('lobby.stakeAll') },
-          { id: 'micro',  label: t('lobby.stakeMicro'),  hint: '≤0.10 BB' },
-          { id: 'low',    label: t('lobby.stakeLow'),    hint: '0.25–1.00 BB' },
-          { id: 'medium', label: t('lobby.stakeMedium'), hint: '1.25–10.00 BB' },
-          { id: 'high',   label: t('lobby.stakeHigh'),   hint: '>10 BB' },
+          { id: 'all',       label: t('lobby.stakeAll') },
+          { id: 'upTo1',     label: t('lobby.stakeUpTo1'),     hint: '≤$1 BB' },
+          { id: 'oneToFive', label: t('lobby.stakeOneToFive'), hint: '$1–5 BB' },
+          { id: 'fivePlus',  label: t('lobby.stakeFivePlus'),  hint: '>$5 BB' },
         ] as const).map((p) => {
           const active = blindPreset === p.id;
           return (
@@ -149,10 +148,10 @@ export const Lobby = () => {
               onClick={() => setBlindPreset(p.id)}
               title={'hint' in p ? p.hint : undefined}
               className={
-                'px-3 py-1 rounded-full text-xs font-bold transition-all whitespace-nowrap border ' +
+                'px-3 py-1 rounded-full text-xs font-bold transition-all whitespace-nowrap border backdrop-blur-md ' +
                 (active
                   ? 'bg-poker-gold/20 text-poker-gold border-poker-gold/50 shadow shadow-poker-gold/20'
-                  : 'bg-white/5 text-gray-400 border-white/10 hover:bg-white/10 hover:text-white')
+                  : 'bg-gray-900/55 text-gray-300 border-white/10 hover:bg-white/10 hover:text-white')
               }
             >
               {p.label}
@@ -180,7 +179,6 @@ export const Lobby = () => {
                 onJoin={() => join.handleJoin(room)}
                 onQueue={() => join.handleQueue(room)}
                 onLeaveQueue={() => join.handleLeaveQueue(room)}
-                onObserve={() => navigate('/game/' + room.id + '?observe=1')}
               />
             ))}
           </div>
@@ -216,7 +214,6 @@ export const Lobby = () => {
               onJoin={() => join.handleJoin(room)}
               onQueue={() => join.handleQueue(room)}
               onLeaveQueue={() => join.handleLeaveQueue(room)}
-              onObserve={() => navigate('/game/' + room.id + '?observe=1')}
             />
           ))}
         </div>

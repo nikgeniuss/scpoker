@@ -137,7 +137,7 @@ export function buildSeatLayout(N: number): SeatPos[] {
     const dx = left - 50;
     const dy = top - 50;
     const tChip = 0.48; // 48% пути от seat к центру (фишки ближе к центру)
-    const tDealer = 0.30; // 30% пути — маркер роли вынесен на фетр с воздухом от плашки (GG-style)
+    const tDealer = 0.22; // 22% пути — маркер роли ближе к плашке игрока
     return {
       left,
       top,

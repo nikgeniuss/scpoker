@@ -188,3 +188,50 @@ describe('<CreateTournamentModal /> — заполнение ботами (fillW
     expect(onSubmit.mock.calls[0][0].botFillTarget).toBe(12);
   });
 });
+
+// Промокод на бесплатный вход (2026-08-27): тумблер «Вход по промо» + лимит активаций, код
+// генерируется на сервере — клиент только шлёт promoEnabled/promoMaxRedemptions.
+describe('<CreateTournamentModal /> — вход по промо', () => {
+  it('по умолчанию выключено — promoEnabled=false, лимит не отправляется, поле скрыто', () => {
+    const onSubmit = vi.fn<(opts: CreateTournamentOptions) => void>();
+    render(<CreateTournamentModal onClose={() => {}} onSubmit={onSubmit} />);
+
+    expect(screen.queryByText('Лимит активаций')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Создать'));
+    const opts = onSubmit.mock.calls[0][0];
+    expect(opts.promoEnabled).toBe(false);
+    expect(opts.promoMaxRedemptions).toBeUndefined();
+  });
+
+  it('включение тоггла показывает лимит активаций (дефолт 10) и передаёт его в опции', () => {
+    const onSubmit = vi.fn<(opts: CreateTournamentOptions) => void>();
+    render(<CreateTournamentModal onClose={() => {}} onSubmit={onSubmit} />);
+
+    const promoRow = screen.getByText('Вход по промо').closest('div')!.parentElement!;
+    fireEvent.click(within(promoRow).getByRole('button', { pressed: false }));
+
+    expect(screen.getByText('Лимит активаций')).toBeInTheDocument();
+    expect(screen.getByText('10')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Создать'));
+    const opts = onSubmit.mock.calls[0][0];
+    expect(opts.promoEnabled).toBe(true);
+    expect(opts.promoMaxRedemptions).toBe(10);
+  });
+
+  it('степпер меняет лимит активаций', () => {
+    const onSubmit = vi.fn<(opts: CreateTournamentOptions) => void>();
+    render(<CreateTournamentModal onClose={() => {}} onSubmit={onSubmit} />);
+
+    const promoRow = screen.getByText('Вход по промо').closest('div')!.parentElement!;
+    fireEvent.click(within(promoRow).getByRole('button', { pressed: false }));
+
+    const limitRow = screen.getByText('Лимит активаций').closest('div')!.parentElement!;
+    fireEvent.click(within(limitRow).getByText('+'));
+    fireEvent.click(within(limitRow).getByText('+'));
+
+    fireEvent.click(screen.getByText('Создать'));
+    expect(onSubmit.mock.calls[0][0].promoMaxRedemptions).toBe(12);
+  });
+});

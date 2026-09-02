@@ -70,7 +70,19 @@ const INFO: Record<string, { title: string; lines: string[] }> = {
   },
   bountyPercent: { title: 'Доля бай-ина в баунти, %', lines: ['Какой процент бай-ина каждого входа уходит в баунти-пул вместо обычного призового фонда.'] },
   rake: { title: 'Рейк, %', lines: ['Комиссия рума — эта доля бай-ина каждого входа уходит мимо призового фонда (как в реальных румах: бай-ин = приз-часть + рейк).'] },
+  promo: {
+    title: 'Вход по промо',
+    lines: [
+      'Создаёт промокод на бай-ин этого турнира. Код НЕ привязан к одному турниру — сработает на любом турнире с точно такой же суммой бай-ина, включая будущие (как тикеты в топ-румах).',
+      'Игрок вводит код прямо в карточке турнира — рум платит его бай-ин сам, банкролл игрока не трогается. Код показывается только вам (создавшему турнир админу) — скопируйте и раздайте (например, в Telegram-группе).',
+      'Лимит активаций — сколько раз ВСЕГО код можно погасить (разными игроками). Один игрок может использовать код только один раз.',
+    ],
+  },
+  promoLimit: { title: 'Лимит активаций', lines: ['Сколько раз всего можно погасить этот код — разными игроками, по одному разу на игрока.'] },
   lateReg: { title: 'Поздняя рег., мин', lines: ['MTT: сколько минут после старта ещё можно зарегистрироваться (или сделать ре-энтри) — окно поздней регистрации.'] },
+  minPlayers: { title: 'Мин. игроков для старта', lines: ['MTT: минимум уникальных зарегистрированных игроков, при котором можно принудительно стартовать турнир, а также при котором сработает автостарт по расписанному времени (иначе — авто-отмена с возвратом бай-инов).'] },
+  maxPlayersEnabled: { title: 'Огранич. макс. участников', lines: ['MTT: включает потолок на число уникальных зарегистрированных игроков. Ре-энтри существующих игроков потолок не учитывает — только новые входы.'] },
+  maxPlayers: { title: 'Макс. участников', lines: ['MTT: как только число уникальных зарегистрированных игроков достигнет этого значения, новая регистрация закрывается («турнир полон»).'] },
   payoutMode: {
     title: 'Призовые места',
     lines: [
@@ -89,6 +101,7 @@ const INFO: Record<string, { title: string; lines: string[] }> = {
   },
   reentry: { title: 'Ре-энтри', lines: ['MTT: после вылета можно зайти в турнир заново (новый вход, полный стек), пока открыто окно поздней регистрации.'] },
   maxReentries: { title: 'Макс. ре-энтри на игрока', lines: ['Сколько раз один игрок может воспользоваться ре-энтри за турнир (не считая самого первого входа).'] },
+  unlimitedReentries: { title: 'Без ограничения', lines: ['Снимает лимит на число ре-энтри — игрок может заходить заново сколько угодно раз, пока открыто окно поздней регистрации.'] },
   reentryFee: { title: 'Цена ре-энтри', lines: ['Взнос за повторный вход — можно сделать отличным от обычного бай-ина (например, бесплатный вход + платное ре-энтри).'] },
   guarantee: { title: 'Гарантированный приз', lines: ['Минимальный призовой фонд. Если бай-инов участников не хватило до этой суммы — рум доплачивает разницу («оверлей»).'] },
   guaranteeSum: { title: 'Сумма гарантии', lines: ['Целевой размер призового фонда — рум доплатит недостающее на финише турнира, если реальные бай-ины оказались меньше.'] },
@@ -133,16 +146,22 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
   const [blindSpeed, setBlindSpeed] = useState<BlindSpeed>('regular');
   const [levelUpMinutes, setLevelUpMinutes] = useState(12);
   const [lateRegMinutes, setLateRegMinutes] = useState(10);
+  const [minPlayers, setMinPlayers] = useState(2);
+  const [maxPlayersEnabled, setMaxPlayersEnabled] = useState(false);
+  const [maxPlayers, setMaxPlayers] = useState(100);
   const [itmPercent, setItmPercent] = useState(15);
   const [payoutMode, setPayoutMode] = useState<MttPayoutMode>('itm');
   const [fixedPayoutPlaces, setFixedPayoutPlaces] = useState(9);
   const [payoutCurveExponent, setPayoutCurveExponent] = useState(1);
   const [reEntryEnabled, setReEntryEnabled] = useState(false);
   const [maxReEntries, setMaxReEntries] = useState(1);
+  const [unlimitedReEntries, setUnlimitedReEntries] = useState(false);
   const [reEntryFee, setReEntryFee] = useState(1000);
   const [guaranteeEnabled, setGuaranteeEnabled] = useState(false);
   const [guaranteedPrizePool, setGuaranteedPrizePool] = useState(10000);
   const [rakePercent, setRakePercent] = useState(0);
+  const [promoEnabled, setPromoEnabled] = useState(false);
+  const [promoMaxRedemptions, setPromoMaxRedemptions] = useState(10);
   const [bountyEnabled, setBountyEnabled] = useState(false);
   const [bountyType, setBountyType] = useState<BountyType>('flat');
   const [bountyPercent, setBountyPercent] = useState(50);
@@ -173,14 +192,20 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
     onSubmit({
       name: name.trim(), type, format, buyIn, startingStack, startingBigBlind, tableSize, blindSpeed, levelUpMinutes,
       ...(rakePercent > 0 ? { rakePercent } : {}),
+      promoEnabled,
+      ...(promoEnabled ? { promoMaxRedemptions } : {}),
       ...(type === 'mtt'
         ? {
             lateRegMinutes,
+            minPlayers,
+            ...(maxPlayersEnabled ? { maxPlayers } : {}),
             payoutMode,
             ...(payoutMode === 'fixed' ? { fixedPayoutPlaces } : { itmPercent }),
             payoutCurveExponent,
             reEntryEnabled,
-            ...(reEntryEnabled ? { maxReEntries, reEntryFee } : {}),
+            ...(reEntryEnabled
+              ? { reEntryFee, ...(unlimitedReEntries ? { unlimitedReEntries: true } : { maxReEntries }) }
+              : {}),
             ...(guaranteeEnabled ? { guaranteedPrizePool } : {}),
           }
         : {}),
@@ -222,7 +247,12 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
           </button>
         </div>
 
-        <form onSubmit={submit}>
+        <form
+          onSubmit={submit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') e.preventDefault();
+          }}
+        >
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -294,6 +324,20 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
             />
           </SettingRow>
 
+          <SettingRow label="Вход по промо" onInfo={openInfo('promo')}>
+            <Toggle checked={promoEnabled} onChange={setPromoEnabled} />
+          </SettingRow>
+
+          {promoEnabled && (
+            <SettingRow label="Лимит активаций" onInfo={openInfo('promoLimit')} wrap>
+              <Stepper
+                display={promoMaxRedemptions}
+                onDec={() => setPromoMaxRedemptions((v) => Math.max(1, v - 1))}
+                onInc={() => setPromoMaxRedemptions((v) => Math.min(1000, v + 1))}
+              />
+            </SettingRow>
+          )}
+
           <SettingRow label="Начальный блайнд" onInfo={openInfo('blind')} wrap>
             <Stepper
               display={formatMoney(startingSmallBlind) + ' / ' + formatMoney(startingBigBlind)}
@@ -347,6 +391,28 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
 
           {type === 'mtt' && (
             <>
+              <SettingRow label="Мин. игроков для старта" onInfo={openInfo('minPlayers')} wrap>
+                <Stepper
+                  display={minPlayers}
+                  onDec={() => setMinPlayers((v) => Math.max(2, v - 1))}
+                  onInc={() => setMinPlayers((v) => Math.min(1000, v + 1))}
+                />
+              </SettingRow>
+
+              <SettingRow label="Огранич. макс. участников" onInfo={openInfo('maxPlayersEnabled')}>
+                <Toggle checked={maxPlayersEnabled} onChange={setMaxPlayersEnabled} />
+              </SettingRow>
+
+              {maxPlayersEnabled && (
+                <SettingRow label="Макс. участников" onInfo={openInfo('maxPlayers')} wrap>
+                  <Stepper
+                    display={maxPlayers}
+                    onDec={() => setMaxPlayers((v) => Math.max(Math.max(2, minPlayers), v - 1))}
+                    onInc={() => setMaxPlayers((v) => Math.min(1000, v + 1))}
+                  />
+                </SettingRow>
+              )}
+
               <SettingRow label="Поздняя рег., мин" onInfo={openInfo('lateReg')} wrap>
                 <Stepper
                   display={lateRegMinutes}
@@ -391,9 +457,13 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
 
               {reEntryEnabled && (
                 <>
+                  <SettingRow label="Без ограничения" onInfo={openInfo('unlimitedReentries')}>
+                    <Toggle checked={unlimitedReEntries} onChange={setUnlimitedReEntries} />
+                  </SettingRow>
                   <SettingRow label="Макс. ре-энтри на игрока" onInfo={openInfo('maxReentries')} wrap>
                     <Stepper
                       display={maxReEntries}
+                      disabled={unlimitedReEntries}
                       onDec={() => setMaxReEntries((v) => Math.max(1, v - 1))}
                       onInc={() => setMaxReEntries((v) => Math.min(10, v + 1))}
                     />

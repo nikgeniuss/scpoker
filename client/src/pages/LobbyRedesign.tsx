@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Users, Plus, Search, Dices, Trophy, Eye, Lock } from 'lucide-react';
+import { Users, Plus, Search, Dices, Trophy, Lock } from 'lucide-react';
 import ReactNiceAvatar from 'react-nice-avatar';
 import type { RoomInfo } from '@poker-room/shared';
 import { useAuthStore } from '../store/authStore';
@@ -72,7 +72,6 @@ export const LobbyRedesign = () => {
     onJoin: () => join.handleJoin(room),
     onQueue: () => join.handleQueue(room),
     onLeaveQueue: () => join.handleLeaveQueue(room),
-    onObserve: () => navigate('/game/' + room.id + '?observe=1'),
   });
 
   return (
@@ -118,7 +117,7 @@ export const LobbyRedesign = () => {
 
         {/* Табы формата + пресеты блайндов + список/карточки */}
         <div className="flex flex-wrap items-center gap-3">
-          <div className="inline-flex p-1 rounded-xl bg-white/5 border border-white/10">
+          <div className="inline-flex p-1 rounded-xl bg-gray-900/55 backdrop-blur-md border border-white/10">
             {([
               { id: 'all', label: t('lobby.formatAll') },
               { id: 'nlh', label: 'NLH' },
@@ -140,19 +139,18 @@ export const LobbyRedesign = () => {
           <div className="flex gap-1 overflow-x-auto max-w-full">
             {([
               { id: 'all', label: t('lobby.stakeAll') },
-              { id: 'micro', label: t('lobby.stakeMicro') },
-              { id: 'low', label: t('lobby.stakeLow') },
-              { id: 'medium', label: t('lobby.stakeMedium') },
-              { id: 'high', label: t('lobby.stakeHigh') },
+              { id: 'upTo1', label: t('lobby.stakeUpTo1') },
+              { id: 'oneToFive', label: t('lobby.stakeOneToFive') },
+              { id: 'fivePlus', label: t('lobby.stakeFivePlus') },
             ] as const).map((p) => (
               <button
                 key={p.id}
                 onClick={() => setBlindPreset(p.id)}
                 className={
-                  'px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border transition-all ' +
+                  'px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border backdrop-blur-md transition-all ' +
                   (blindPreset === p.id
                     ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
-                    : 'bg-white/5 text-gray-400 border-white/10 hover:bg-white/10')
+                    : 'bg-gray-900/55 text-gray-300 border-white/10 hover:bg-white/10')
                 }
               >
                 {p.label}
@@ -223,7 +221,6 @@ interface RoomItemProps {
   onJoin: () => void;
   onQueue: () => void;
   onLeaveQueue: () => void;
-  onObserve: () => void;
 }
 
 function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
@@ -260,7 +257,7 @@ function RoomList({ view, rooms, itemProps }: { view: 'list' | 'grid'; rooms: Ro
 
 // Кнопка действия со столом: войти/вернуться/встать в очередь/выйти из очереди — те же
 // правила, что в RoomCard.tsx (имёт ли смысл реконнект, занят ли стол, моя позиция в очереди).
-function RoomActionButton({ room, imIn, myQueuePos, onJoin, onQueue, onLeaveQueue, fullWidth }: Omit<RoomItemProps, 'onObserve'> & { fullWidth?: boolean }) {
+function RoomActionButton({ room, imIn, myQueuePos, onJoin, onQueue, onLeaveQueue, fullWidth }: RoomItemProps & { fullWidth?: boolean }) {
   const { t } = useTranslation();
   const queueCount = room.waitlistIds.length;
   const isFull = room.currentPlayers >= room.maxPlayers || queueCount > 0;
@@ -299,7 +296,7 @@ function RoomActionButton({ room, imIn, myQueuePos, onJoin, onQueue, onLeaveQueu
   );
 }
 
-function RoomRow({ room, imIn, myQueuePos, onJoin, onQueue, onLeaveQueue, onObserve }: RoomItemProps) {
+function RoomRow({ room, imIn, myQueuePos, onJoin, onQueue, onLeaveQueue }: RoomItemProps) {
   const { t } = useTranslation();
   const isPlaying = room.status === 'playing';
 
@@ -344,18 +341,13 @@ function RoomRow({ room, imIn, myQueuePos, onJoin, onQueue, onLeaveQueue, onObse
             {room.currentPlayers}/{room.maxPlayers}
           </span>
           <RoomActionButton room={room} imIn={imIn} myQueuePos={myQueuePos} onJoin={onJoin} onQueue={onQueue} onLeaveQueue={onLeaveQueue} />
-          {!imIn && (
-            <button onClick={onObserve} title={t('lobby.observe')} className="shrink-0 hidden sm:flex px-3 py-2 rounded-xl text-xs font-bold text-gray-300 bg-white/5 hover:bg-white/10 border border-white/10 items-center gap-1.5">
-              <Eye size={13} />
-            </button>
-          )}
         </div>
       </div>
     </div>
   );
 }
 
-function RoomGridCard({ room, imIn, myQueuePos, onJoin, onQueue, onLeaveQueue, onObserve }: RoomItemProps) {
+function RoomGridCard({ room, imIn, myQueuePos, onJoin, onQueue, onLeaveQueue }: RoomItemProps) {
   const { t } = useTranslation();
   const isPlaying = room.status === 'playing';
 
@@ -392,17 +384,11 @@ function RoomGridCard({ room, imIn, myQueuePos, onJoin, onQueue, onLeaveQueue, o
       </div>
 
       <RoomActionButton room={room} imIn={imIn} myQueuePos={myQueuePos} onJoin={onJoin} onQueue={onQueue} onLeaveQueue={onLeaveQueue} fullWidth />
-
-      {!imIn && (
-        <button onClick={onObserve} className="w-full py-1.5 rounded-xl text-xs font-bold text-gray-300 bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center gap-1.5">
-          <Eye size={13} /> {t('lobby.observe')}
-        </button>
-      )}
     </div>
   );
 }
 
-function FeaturedRoom({ room, imIn, myQueuePos, onJoin, onQueue, onLeaveQueue, onObserve }: RoomItemProps) {
+function FeaturedRoom({ room, imIn, myQueuePos, onJoin, onQueue, onLeaveQueue }: RoomItemProps) {
   const { t } = useTranslation();
 
   return (
@@ -439,11 +425,6 @@ function FeaturedRoom({ room, imIn, myQueuePos, onJoin, onQueue, onLeaveQueue, o
 
       <div className="flex flex-row sm:flex-col gap-2 shrink-0 w-full sm:w-auto">
         <RoomActionButton room={room} imIn={imIn} myQueuePos={myQueuePos} onJoin={onJoin} onQueue={onQueue} onLeaveQueue={onLeaveQueue} fullWidth />
-        {!imIn && (
-          <button onClick={onObserve} className="px-5 py-1.5 rounded-xl text-xs font-bold text-gray-300 bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center gap-1.5">
-            <Eye size={12} /> {t('lobby.observe')}
-          </button>
-        )}
       </div>
     </div>
   );

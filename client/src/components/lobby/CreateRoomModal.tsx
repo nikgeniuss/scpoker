@@ -113,7 +113,6 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
   const [straddleEnabled, setStraddleEnabled] = useState(false);
   const [noTurnNoShowEnabled, setNoTurnNoShowEnabled] = useState(false);
   const [bombPotEnabled, setBombPotEnabled] = useState(false);
-  const [antiCollusionEnabled, setAntiCollusionEnabled] = useState(false);
   const [doubleBoardEnabled, setDoubleBoardEnabled] = useState(false);
   const [rimtEnabled, setRimtEnabled] = useState(false);
   const [evCashoutEnabled, setEvCashoutEnabled] = useState(false);
@@ -152,7 +151,6 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
     straddleEnabled: straddleEnabled || undefined,
     noTurnNoShowEnabled: noTurnNoShowEnabled || undefined,
     bombPotEnabled: bombPotEnabled || undefined,
-    antiCollusionEnabled: antiCollusionEnabled || undefined,
     doubleBoardEnabled: doubleBoardEnabled || undefined,
     rimtEnabled: rimtEnabled || undefined,
     evCashoutEnabled: evCashoutEnabled || undefined,
@@ -183,7 +181,6 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
     setStraddleEnabled(!!o.straddleEnabled);
     setNoTurnNoShowEnabled(!!o.noTurnNoShowEnabled);
     setBombPotEnabled(!!o.bombPotEnabled);
-    setAntiCollusionEnabled(!!o.antiCollusionEnabled);
     setDoubleBoardEnabled(!!o.doubleBoardEnabled);
     setRimtEnabled(!!o.rimtEnabled);
     setEvCashoutEnabled(!!o.evCashoutEnabled);
@@ -641,7 +638,7 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
 
             {/* Ограничение / организация */}
             <SettingRow label={t('createRoomModal.gameRestriction')} onInfo={openInfo('anticollusion')}>
-              <Toggle checked={antiCollusionEnabled} onChange={setAntiCollusionEnabled} />
+              <Toggle checked={true} onChange={noop} disabled />
             </SettingRow>
             <SettingRow label={t('createRoomModal.runItTwice')} onInfo={openInfo('runtable')}>
               <Toggle checked={rimtEnabled} onChange={setRimtEnabled} />

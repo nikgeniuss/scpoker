@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import bcrypt from 'bcrypt';
+import crypto from 'crypto';
 
 vi.mock('../storage.js', () => import('../../game/__tests__/helpers/storage.js'));
 
@@ -66,6 +67,23 @@ describe('setupTwoFactor / confirmTwoFactor', () => {
     expect(stored.twoFactorSecret).toBe(pendingSecret);
     expect(stored.twoFactorPendingSecret).toBeUndefined();
     expect(stored.twoFactorBackupCodeHashes).toHaveLength(8);
+  });
+
+  it('backup-коды генерируются crypto.randomInt, не Math.random (security review 2026-08-23: backup-код обходит 2FA, должен быть непредсказуем)', () => {
+    seedUser();
+    setupTwoFactor('u1');
+    const pendingSecret = (readJSON('users.json') as StoredUser[])[0].twoFactorPendingSecret!;
+    const code = generateTotp(pendingSecret);
+    const randomIntSpy = vi.spyOn(crypto, 'randomInt');
+    const mathRandomSpy = vi.spyOn(Math, 'random');
+    try {
+      confirmTwoFactor('u1', code);
+      expect(randomIntSpy).toHaveBeenCalled();
+      expect(mathRandomSpy).not.toHaveBeenCalled();
+    } finally {
+      randomIntSpy.mockRestore();
+      mathRandomSpy.mockRestore();
+    }
   });
 
   it('confirm с неверным кодом не активирует 2FA', () => {

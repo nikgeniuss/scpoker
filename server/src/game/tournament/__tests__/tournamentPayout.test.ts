@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   getSngPayoutTiers, computeSngPayout, getMttPayoutTiers, computeMttPayout, computeGuaranteeOverlay,
-  computeBountySplit,
+  computeBountySplit, computeFinalPlaces, nextEliminationOrder, type FinalPlaceInput,
 } from '../tournamentPayout.js';
 
 describe('tournamentPayout — SNG-выплаты', () => {
@@ -164,5 +164,87 @@ describe('tournamentPayout — баунти/PKO (computeBountySplit)', () => {
     expect(cash + addToOwnBounty).toBe(501);
     expect(addToOwnBounty).toBe(250);
     expect(cash).toBe(251);
+  });
+});
+
+// Окончательные места (ROADMAP §9.2): раньше место = «сколько ещё играют на момент баста», и при
+// открытых ре-энтри счётчик не убывал строго — два разных вылета могли получить одно место, а
+// finish() платил полный приз обоим (переплата сверх prizePool).
+describe('tournamentPayout — окончательные места (computeFinalPlaces)', () => {
+  const eliminated = (userId: string, order: number): FinalPlaceInput => ({ userId, status: 'eliminated', eliminationOrder: order });
+
+  it('без ре-энтри: места по обратному порядку вылета, победитель первый', () => {
+    const places = computeFinalPlaces([
+      eliminated('A', 1),
+      eliminated('B', 2),
+      eliminated('C', 3),
+      { userId: 'D', status: 'playing' }, // ещё за столом — победитель
+    ]);
+
+    expect(places).toEqual([4, 3, 2, 1]);
+  });
+
+  it('ре-энтри: место даёт ПОСЛЕДНИЙ выход, прошлая запись игрока места не занимает', () => {
+    const places = computeFinalPlaces([
+      eliminated('A', 1), // первый вылет A — аннулирован ре-энтри
+      eliminated('B', 2),
+      eliminated('A', 3), // повторный вылет A уже после ре-энтри
+      eliminated('C', 4),
+    ]);
+
+    // Игроков трое (A, B, C) → и мест три: C вышел последним (1), затем A (2), затем B (3).
+    expect(places[0]).toBeUndefined(); // старая запись A — без места
+    expect(places).toEqual([undefined, 3, 2, 1]);
+  });
+
+  it('сценарий бага: два разных игрока не могут получить одно и то же место', () => {
+    // A вылетел при 4 живых → ре-энтри вернул его в пул → B вылетел тоже «при 4 живых».
+    // По старому правилу оба получали место 4 и оба — полный приз за него.
+    const entries = [
+      eliminated('A', 1),
+      eliminated('B', 2),
+      eliminated('A', 3),
+      eliminated('C', 4),
+      { userId: 'D', status: 'playing' as const },
+    ];
+    const places = computeFinalPlaces(entries);
+
+    const assigned = places.filter((p): p is number => p !== undefined);
+    expect(new Set(assigned).size).toBe(assigned.length); // все места уникальны
+    expect([...assigned].sort((a, b) => a - b)).toEqual([1, 2, 3, 4]); // подряд, без дыр
+  });
+
+  it('каждый игрок получает ровно одно место, сколько бы входов ни сделал', () => {
+    const entries = [
+      eliminated('A', 1),
+      eliminated('A', 2),
+      eliminated('A', 3),
+      eliminated('B', 4),
+      { userId: 'C', status: 'playing' as const },
+    ];
+    const places = computeFinalPlaces(entries);
+
+    const withPlace = entries.filter((_, i) => places[i] !== undefined).map((e) => e.userId);
+    expect(withPlace.sort()).toEqual(['A', 'B', 'C']);
+  });
+
+  it('старые записи без eliminationOrder (сохранённые до фикса) не ломают расчёт', () => {
+    const places = computeFinalPlaces([
+      { userId: 'A', status: 'eliminated' },
+      { userId: 'B', status: 'eliminated' },
+      { userId: 'C', status: 'playing' },
+    ]);
+
+    const assigned = places.filter((p): p is number => p !== undefined);
+    expect(assigned).toHaveLength(3);
+    expect(new Set(assigned).size).toBe(3);
+    expect(places[2]).toBe(1); // ещё играющий всё равно выше любого выбывшего
+  });
+
+  it('nextEliminationOrder монотонно растёт и переживает пропуски', () => {
+    expect(nextEliminationOrder([])).toBe(1);
+    expect(nextEliminationOrder([eliminated('A', 1)])).toBe(2);
+    expect(nextEliminationOrder([eliminated('A', 5), eliminated('B', 2)])).toBe(6);
+    expect(nextEliminationOrder([{ userId: 'A', status: 'playing' }])).toBe(1);
   });
 });

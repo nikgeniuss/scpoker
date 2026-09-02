@@ -29,7 +29,17 @@ import { TournamentManager } from './game/tournament/TournamentManager.js';
 import { setTournamentBankrollNotifier } from './game/tournament/tournamentBankroll.js';
 import { createTournamentsRouter } from './routes/tournaments.routes.js';
 import { createTournamentsAdminRouter } from './routes/tournamentsAdmin.routes.js';
+import { createPromoCodesAdminRouter } from './routes/promoCodesAdmin.routes.js';
 import { createRakebackRouter } from './routes/rakeback.routes.js';
+import { createStreakRouter } from './routes/streak.routes.js';
+import { createAchievementsRouter } from './routes/achievements.routes.js';
+import { createRaceRouter } from './routes/race.routes.js';
+import { start as startRaceScheduler } from './game/raceService.js';
+import { createReferralRouter } from './routes/referral.routes.js';
+import { start as startReferralScheduler } from './game/referralService.js';
+import { createShopRouter } from './routes/shop.routes.js';
+import { createInventoryRouter } from './routes/inventory.routes.js';
+import { createRewardsWalletRouter } from './routes/rewardsWallet.routes.js';
 import { createResponsibleGamblingRouter } from './routes/responsibleGambling.routes.js';
 import { startBot } from './bot/bot.js';
 
@@ -110,7 +120,17 @@ app.use('/api/payments', createPaymentsRouter(gameManager));
 app.use('/api/admin/payments', createPaymentsAdminRouter());
 app.use('/api/tournaments', createTournamentsRouter(tournamentManager));
 app.use('/api/admin/tournaments', createTournamentsAdminRouter(tournamentManager));
+app.use('/api/admin/promo-codes', createPromoCodesAdminRouter(tournamentManager));
 app.use('/api/rakeback', createRakebackRouter());
+app.use('/api/streak', createStreakRouter());
+app.use('/api/achievements', createAchievementsRouter(tournamentManager));
+app.use('/api/race', createRaceRouter());
+startRaceScheduler(15 * 60_000); // проверка закрытия периода раз в 15 мин — период измеряется днями, точность не критична
+app.use('/api/referral', createReferralRouter());
+startReferralScheduler(15 * 60_000); // батч-проверка порога раздач по всем непогашенным связям
+app.use('/api/shop', createShopRouter(tournamentManager));
+app.use('/api/inventory', createInventoryRouter());
+app.use('/api/rewards-wallet', createRewardsWalletRouter());
 app.use('/api/responsible-gambling', createResponsibleGamblingRouter(gameManager));
 
 // Весь socket-слой (handshake JWT + single-session + обработчики событий).

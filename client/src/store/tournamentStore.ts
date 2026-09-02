@@ -9,6 +9,7 @@ interface TournamentState {
   loaded: boolean;
   fetchTournaments: (token: string) => Promise<void>;
   register: (token: string, id: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  redeemPromo: (token: string, id: string, code: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   unregister: (token: string, id: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   createTournament: (token: string, opts: CreateTournamentOptions) => Promise<{ ok: true } | { ok: false; error: string }>;
   cancelTournament: (token: string, id: string) => Promise<{ ok: true } | { ok: false; error: string }>;
@@ -45,6 +46,13 @@ export const useTournamentStore = create<TournamentState>((set, get) => ({
 
   register: async (token, id) => {
     const result = await postJson<TournamentInfo>(`${API_URL}/tournaments/${id}/register`, token);
+    if ('error' in result) return { ok: false, error: result.error };
+    set({ tournaments: get().tournaments.map((t) => (t.id === id ? result : t)) });
+    return { ok: true };
+  },
+
+  redeemPromo: async (token, id, code) => {
+    const result = await postJson<TournamentInfo>(`${API_URL}/tournaments/${id}/redeem-promo`, token, { code });
     if ('error' in result) return { ok: false, error: result.error };
     set({ tournaments: get().tournaments.map((t) => (t.id === id ? result : t)) });
     return { ok: true };

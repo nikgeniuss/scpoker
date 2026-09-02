@@ -11,9 +11,13 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onPick: (emoji: string) => void;
+  // Эксклюзивные эмодзи из магазина косметики (ROADMAP §10.21.12) — купленные игроком, добавляются
+  // отдельным рядом снизу. Владение всё равно перепроверяется сервером при отправке (SEND_EMOJI) —
+  // этот список только для UI-палитры, не источник авторизации.
+  extraEmoji?: string[];
 }
 
-export const EmojiPalette = ({ open, onClose, onPick }: Props) => (
+export const EmojiPalette = ({ open, onClose, onPick, extraEmoji }: Props) => (
   <AnimatePresence>
     {open && (
       <>
@@ -46,6 +50,22 @@ export const EmojiPalette = ({ open, onClose, onPick }: Props) => (
               </button>
             ))}
           </div>
+          {extraEmoji && extraEmoji.length > 0 && (
+            <div className="grid grid-cols-4 gap-1 mt-1 pt-1 border-t border-white/10">
+              {extraEmoji.map((e, i) => (
+                <button
+                  key={e + i}
+                  onClick={() => {
+                    onPick(e);
+                    onClose();
+                  }}
+                  className="w-10 h-10 flex items-center justify-center text-2xl rounded-lg hover:bg-white/10 active:bg-white/20 transition-colors"
+                >
+                  {e}
+                </button>
+              ))}
+            </div>
+          )}
         </motion.div>
       </>
     )}

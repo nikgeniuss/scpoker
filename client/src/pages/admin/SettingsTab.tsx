@@ -6,6 +6,8 @@ import { useAdminApi } from '../../hooks/useAdminApi';
 import { parseMoney } from '../../config/chipFormat';
 import { useLobbyDesignStore } from '../../store/lobbyDesignStore';
 import { useAppThemeStore } from '../../store/appThemeStore';
+import { useAkTableStore } from '../../store/akTableStore';
+import { useDebugOverlayStore } from '../../store/debugOverlayStore';
 import type { GameSettings, TimebankSettings, BotModeSettings, ResponsibleGamblingSettings } from './types';
 
 export const SettingsTab = () => {
@@ -173,6 +175,10 @@ export const SettingsTab = () => {
 
       <AppThemeSection />
 
+      <AkTableSection />
+
+      <DebugOverlaySection />
+
       <motion.button
         whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.98 }}
@@ -271,6 +277,95 @@ const AppThemeSection = () => {
           }
         >
           AK
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// Тоггл «показывать AK-скин мобильного стола» — отдельный и независимый от AppThemeSection
+// выше (тот про chrome/лобби/кошелёк/профиль, этот — только про GameRoom на мобиле).
+// Своя персистентность (server/data/akTable.json), сохраняется сразу по клику.
+const AkTableSection = () => {
+  const { token } = useAuthStore();
+  const enabled = useAkTableStore((s) => s.enabled);
+  const loadAdmin = useAkTableStore((s) => s.loadAdmin);
+  const setEnabled = useAkTableStore((s) => s.setEnabled);
+
+  useEffect(() => {
+    loadAdmin(token);
+  }, [loadAdmin, token]);
+
+  return (
+    <div className="bg-gray-800 rounded-2xl p-4 border border-white/10 space-y-3">
+      <div>
+        <h3 className="text-white font-bold text-lg mb-1">AK-стол (мобайл)</h3>
+        <p className="text-sm text-gray-500">
+          Визуальный скин игрового стола на мобиле/TWA — по референсу AK Poker. Десктоп не затрагивает.
+        </p>
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={() => setEnabled(token, false)}
+          className={
+            'px-4 py-2 rounded-lg font-bold text-sm transition-all ' +
+            (!enabled ? 'bg-poker-gold text-black' : 'bg-gray-900 text-gray-300 border border-white/10 hover:bg-gray-700')
+          }
+        >
+          Выключено
+        </button>
+        <button
+          onClick={() => setEnabled(token, true)}
+          className={
+            'px-4 py-2 rounded-lg font-bold text-sm transition-all ' +
+            (enabled ? 'bg-poker-gold text-black' : 'bg-gray-900 text-gray-300 border border-white/10 hover:bg-gray-700')
+          }
+        >
+          Включено
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// Тоггл «показывать дебаг-оверлей (FPS/PING/NET)» всем игрокам — по умолчанию выключен.
+// Своя персистентность (server/data/debugOverlay.json), сохраняется сразу по клику.
+const DebugOverlaySection = () => {
+  const { token } = useAuthStore();
+  const enabled = useDebugOverlayStore((s) => s.enabled);
+  const loadAdmin = useDebugOverlayStore((s) => s.loadAdmin);
+  const setEnabled = useDebugOverlayStore((s) => s.setEnabled);
+
+  useEffect(() => {
+    loadAdmin(token);
+  }, [loadAdmin, token]);
+
+  return (
+    <div className="bg-gray-800 rounded-2xl p-4 border border-white/10 space-y-3">
+      <div>
+        <h3 className="text-white font-bold text-lg mb-1">Дебаг-оверлей (FPS/PING/NET)</h3>
+        <p className="text-sm text-gray-500">
+          Панель в верхнем левом углу экрана (FPS, пинг, скорость сети). По умолчанию скрыта у всех игроков.
+        </p>
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={() => setEnabled(token, false)}
+          className={
+            'px-4 py-2 rounded-lg font-bold text-sm transition-all ' +
+            (!enabled ? 'bg-poker-gold text-black' : 'bg-gray-900 text-gray-300 border border-white/10 hover:bg-gray-700')
+          }
+        >
+          Выключено
+        </button>
+        <button
+          onClick={() => setEnabled(token, true)}
+          className={
+            'px-4 py-2 rounded-lg font-bold text-sm transition-all ' +
+            (enabled ? 'bg-poker-gold text-black' : 'bg-gray-900 text-gray-300 border border-white/10 hover:bg-gray-700')
+          }
+        >
+          Включено
         </button>
       </div>
     </div>

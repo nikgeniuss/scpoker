@@ -44,7 +44,7 @@ describe('useAppThemeStore', () => {
   });
 
   it('setTheme: посылает Authorization и тело с новой темой', async () => {
-    const fetchMock = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ theme: 'ak' }) } as Response));
+    const fetchMock = vi.fn((_url: string, _opts?: RequestInit) => Promise.resolve({ ok: true, json: () => Promise.resolve({ theme: 'ak' }) } as Response));
     vi.stubGlobal('fetch', fetchMock);
 
     await useAppThemeStore.getState().setTheme('tok123', 'ak');

@@ -2,8 +2,11 @@ import { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { LogOut, Settings, Smile, Info, Coins, History, Eye, Zap, Trophy } from 'lucide-react';
+import { LogOut, Settings, Smile, Info, Coins, History, Eye, Zap, Trophy, Check, X } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
+import { useAkTableStore } from '../store/akTableStore';
+import { useInventoryStore } from '../store/inventoryStore';
+import { tableGlowColor } from '../config/cosmetics';
 import { API_URL } from '../config/api';
 import type { GamePhase } from '@poker-room/shared';
 import { Card } from '../components/game/Card';
@@ -18,6 +21,7 @@ import { ActionBubble } from '../components/game/ActionBubble';
 import { EmojiBubble } from '../components/game/EmojiBubble';
 import { EmojiPalette } from '../components/game/EmojiPalette';
 import { MobileTableMenu } from '../components/game/MobileTableMenu';
+import { AkTableTopBar } from '../components/game/AkTableTopBar';
 import { TablePills } from '../components/game/TablePills';
 import { DealAnimation } from '../components/game/DealAnimation';
 import { ChipFlyAnimation } from '../components/game/ChipFlyAnimation';
@@ -27,6 +31,7 @@ import { HandHistoryModal } from '../components/game/HandHistoryModal';
 import { PlayerInfoPopup } from '../components/game/PlayerInfoPopup';
 import { MobilePlayerSeat } from '../components/game/MobilePlayerSeat';
 import { HandStrengthMeter } from '../components/game/HandStrengthMeter';
+import { SEGMENTS } from '../components/game/handStrengthColors';
 import { avatarColor } from '../components/game/seatColors';
 import ReactNiceAvatar from 'react-nice-avatar';
 import { avatarConfig } from '../utils/avatar';
@@ -52,6 +57,7 @@ import { useBlindLevelCountdown } from '../hooks/useBlindLevelCountdown';
 import { useTableGeometry } from '../hooks/useTableGeometry';
 import { useBetSweepAnimation } from '../hooks/useBetSweepAnimation';
 import { computeBlindSeats } from '../utils/blinds';
+import { loadAdminPeek, saveAdminPeek } from '../config/adminPeek';
 
 // Админ-кнопки за столом — lazy-чанк, грузится только для админа (код не в бандле игрока).
 const AdminTableControls = lazy(() => import('../components/admin/AdminTableControls'));
@@ -74,6 +80,24 @@ export const GameRoom = () => {
   const userChips = useAuthStore((s) => s.user?.chips);
   const isAdmin = useAuthStore((s) => s.isAdmin);
   const token = useAuthStore((s) => s.token);
+  // Косметика (ROADMAP §10.21.11-12): эксклюзивные эмодзи для EmojiPalette + личная подсветка
+  // стола (видна ТОЛЬКО этому клиенту — не транспортируется через GameState).
+  const cosmeticsCatalog = useInventoryStore((s) => s.catalog);
+  const cosmeticsOwned = useInventoryStore((s) => s.owned);
+  const cosmeticsEquipped = useInventoryStore((s) => s.equipped);
+  const loadCosmeticsMine = useInventoryStore((s) => s.loadMine);
+  useEffect(() => {
+    loadCosmeticsMine(token);
+  }, [loadCosmeticsMine, token]);
+  const extraEmoji = cosmeticsCatalog
+    .filter((i) => i.type === 'emoji' && cosmeticsOwned.includes(i.id))
+    .map((i) => i.value);
+  const equippedGlowItem = cosmeticsEquipped.tableGlow
+    ? cosmeticsCatalog.find((i) => i.id === cosmeticsEquipped.tableGlow)
+    : undefined;
+  const tableGlow = tableGlowColor(equippedGlowItem?.value);
+  // AK-стол — отдельный admin-тоггл (SettingsTab), скин только для mobile-блока ниже.
+  const akTableEnabled = useAkTableStore((s) => s.enabled);
   const opponentNotes = useOpponentNotesStore((s) => s.notes);
   const fetchOpponentNotes = useOpponentNotesStore((s) => s.fetchNotes);
   const setOpponentNote = useOpponentNotesStore((s) => s.setNote);
@@ -83,7 +107,13 @@ export const GameRoom = () => {
     useGameRoom(roomId, observe);
   // Admin-peek toggle: при on сервер шлёт нам карты всех игроков + futureBoard.
   // По умолчанию off — админ играет «честно», peek включается осознанно.
-  const [peekOn, setPeekOn] = useState(false);
+  // Восстанавливаем из localStorage — иначе сворачивание ТГ (пересоздание WebView, стейт
+  // компонента теряется) заставляет админа включать заново. Сервер тоже помнит peek per-user
+  // (не per-socket) — см. GameManager.setAdminPeek — так что после реконнекта карты придут сами.
+  const [peekOn, setPeekOn] = useState(() => loadAdminPeek());
+  useEffect(() => {
+    saveAdminPeek(peekOn);
+  }, [peekOn]);
 
   const [design, setDesign] = useState<DesignConfig>(DEFAULT_DESIGN);
   const [betPresets, setBetPresets] = useState<BetPresets>(() => loadBetPresets());
@@ -211,9 +241,12 @@ export const GameRoom = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me?.id, gameSettings.handHintEnabled]);
 
-  // Вид стола зашит: десктоп — theme-classic + зелёный фетр; мобила — theme-clubgg (см. JSX ниже).
+  // Вид стола зашит: десктоп — theme-classic + зелёный фетр всегда (референс AK — только мобилка,
+  // десктоп не трогаем). Мобила — theme-clubgg или theme-ak (см. JSX ниже) по akTableEnabled.
   const feltCls = TABLE_FELT_CLASS;
   const themeCls = 'theme-classic';
+  const mobileThemeCls = akTableEnabled ? 'theme-ak' : 'theme-clubgg';
+  const mobileRootCls = akTableEnabled ? 'gameroom-root-mobile-ak' : 'gameroom-root-mobile-clubgg';
   const isWinningCard = (c: CardData) =>
     winningCards.some((w) => w.suit === c.suit && w.rank === c.rank);
   const showHighlight = state?.phase === 'showdown' && winningCards.length > 0;
@@ -269,10 +302,19 @@ export const GameRoom = () => {
 
   return (
     <div
-      className={'gameroom-root-mobile-clubgg relative w-full h-[100dvh] md:h-[calc(100dvh-4rem)] overflow-hidden ' + feltCls + ' ' + themeCls}
+      className={mobileRootCls + ' relative w-full h-[100dvh] md:h-[calc(100dvh-4rem)] overflow-hidden ' + feltCls + ' ' + themeCls}
       onTouchStart={swipe.onTouchStart}
       onTouchEnd={swipe.onTouchEnd}
     >
+      {/* Личная подсветка стола (косметика, ROADMAP §10.21.12) — аддитивный радиальный акцент,
+          видна ТОЛЬКО этому игроку, поверх уже существующего фетра/AK-темы, не заменяет их. */}
+      {tableGlow && (
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{ background: `radial-gradient(ellipse at center, transparent 40%, ${tableGlow} 100%)` }}
+        />
+      )}
+
       {/* Баннер переподключения — показывается при потере сокет-соединения */}
       <AnimatePresence>
         {!isConnected && (
@@ -302,14 +344,18 @@ export const GameRoom = () => {
         </div>
       )}
 
-      {/* История раздач — иконка top-right (на mobile; на desktop она в верхнем баре). */}
-      <button
-        onClick={() => setHistoryModalOpen(true)}
-        title={t('game.handHistory')}
-        className="md:hidden absolute top-3 right-3 z-30 flex items-center justify-center w-9 h-9 rounded-xl bg-black/40 text-white/80 border border-white/10"
-      >
-        <History size={18} />
-      </button>
+      {/* История раздач — иконка top-right (на mobile; на desktop она в верхнем баре).
+          На AK-скине не рендерим — там своя иконка истории в AkTableTopBar (fixed top-4 right-4),
+          дублировались и накладывались друг на друга (один визуально перекрывал клики другого). */}
+      {!akTableEnabled && (
+        <button
+          onClick={() => setHistoryModalOpen(true)}
+          title={t('game.handHistory')}
+          className="md:hidden absolute top-3 right-3 z-30 flex items-center justify-center w-9 h-9 rounded-xl bg-black/40 text-white/80 border border-white/10"
+        >
+          <History size={18} />
+        </button>
+      )}
 
       {/* Верхний бар — только desktop. На mobile/TWA кнопки уехали в нижнее меню (MobileTableMenu). */}
       <div className="absolute top-4 left-4 right-4 hidden md:flex justify-between items-center z-20">
@@ -380,6 +426,7 @@ export const GameRoom = () => {
         open={emojiPaletteOpen}
         onClose={() => setEmojiPaletteOpen(false)}
         onPick={sendEmoji}
+        extraEmoji={extraEmoji}
       />
 
       {/* Mobile/TWA: нижнее выезжающее меню стола (свайп снизу-вверх / ручка). */}
@@ -395,7 +442,17 @@ export const GameRoom = () => {
         onOpenSettings={() => setSettingsModalOpen(true)}
         onLeave={leave}
         hideTrigger={raiseOpen}
+        akTrigger={akTableEnabled}
       />
+
+      {/* AK-стол: верхняя панель иконок (инфо/история/настройки/трастовый бейдж) — референс AK Poker. */}
+      {akTableEnabled && (
+        <AkTableTopBar
+          onOpenInfo={() => setInfoModalOpen(true)}
+          onOpenHistory={() => setHistoryModalOpen(true)}
+          onOpenSettings={() => setSettingsModalOpen(true)}
+        />
+      )}
 
       {/* Desktop: овальный стол. Обёртка ограничена снизу (bottom-56), чтобы seat-позиции
           в % считались относительно зоны над ActionPanel'ом — иначе «я»-seat на top=84%
@@ -693,10 +750,11 @@ export const GameRoom = () => {
           theme-clubgg на mobile-блоке принудительно (вид стола зашит; тема/сукно из админки убраны).
           Геометрия под эталон ClubGG (бок 7% / верх 18% / низ 12%) — те же пропорции, под которые
           подобран border-radius стадиона 50%/29% в .theme-clubgg .poker-oval-rail (index.css). */}
-      <div className="md:hidden theme-clubgg mobile-table-felt absolute inset-x-[4%] top-[6%] bottom-[2%] pointer-events-none" style={{ perspective: '750px' }}>
+      <div className={'md:hidden ' + mobileThemeCls + ' mobile-table-felt absolute pointer-events-none ' + (akTableEnabled ? 'inset-x-[10%] top-[10.6%] bottom-[6.6%]' : 'inset-x-[4%] top-[6%] bottom-[2%]')} style={akTableEnabled ? undefined : { perspective: '750px' }}>
         {/* Фетр/рейл — наклонённый фоновый слой (perspective+rotateX), как у ClubGG: верх уже / низ шире.
+            AK-стол (референс Stitch) — плоский симметричный pill без 3D-наклона, transform не применяем.
             Контент (банк, борд, плашки) сюда НЕ кладём — иначе перекосит; он плоским слоем ниже. */}
-        <div className="poker-oval-rail pointer-events-none" style={{ position: 'absolute', inset: 0, transform: 'translateY(-4%) rotateX(24deg) scaleY(1.15)' }}>
+        <div className="poker-oval-rail pointer-events-none" style={{ position: 'absolute', inset: 0, transform: akTableEnabled ? undefined : 'translateY(-4%) rotateX(24deg) scaleY(1.15)' }}>
           {/* spotlight на поверхности стола — наклоняется вместе с фетром */}
           <div className="poker-spotlight absolute inset-0 pointer-events-none rounded-[50%]" />
         </div>
@@ -707,33 +765,43 @@ export const GameRoom = () => {
           {/* Layer 1: центр — watermark + NLH-pill + roomName сверху, pot-plate ПОД данными стола
               (иерархия "данные → банк → борд"), community-cards внизу. */}
           <div className="absolute inset-0 flex flex-col items-center justify-start pt-[54%] gap-2 pointer-events-none z-10 px-4">
-            <div className="poker-watermark poker-watermark--center select-none mt-2">POKER HUB</div>
-            <div className="text-emerald-300 text-[13px] font-bold uppercase tracking-widest [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]">
+            {akTableEnabled ? (
+              <div className="relative -top-[76px] flex flex-col items-center gap-0.5 mt-2 select-none">
+                <div className="w-10 h-10 border-2 border-white/50 rounded-full flex items-center justify-center mb-0.5 [box-shadow:0_1px_3px_rgba(0,0,0,0.6)]">
+                  <span className="text-lg font-bold italic tracking-tighter text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]">PH</span>
+                </div>
+                <div className="text-white/70 text-[9px] font-bold tracking-widest uppercase [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]">POKER HUB</div>
+              </div>
+            ) : (
+              <div className="poker-watermark poker-watermark--center select-none mt-2">POKER HUB</div>
+            )}
+            <div className={(akTableEnabled ? 'relative -top-[83px] ' : '') + 'text-emerald-700 text-[13px] font-bold uppercase tracking-widest [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]'}>
               {state.format === 'shortdeck' ? t('lobby.formatShortdeck') : 'NLH'} {formatMoney(state.smallBlind)}/{formatMoney(state.bigBlind)}
             </div>
+            {/* -top-[85px] на AK: без сдвига этот бейдж оставался в обычном потоке, пока NLH-строка
+                выше и pot-блок ниже уводятся вверх на -83/-88px — бейдж наезжал на ChipStack банка.
+                85 — между соседями по потоку, чтобы не перекрываться ни с тем, ни с другим. */}
             {state.tournamentId && (
-              <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 text-[9px] font-bold uppercase tracking-widest">
-                <Trophy size={8} />
+              <div className={(akTableEnabled ? 'relative -top-[85px] ' : '') + 'text-blue-700 text-[9px] font-bold uppercase tracking-widest'}>
                 {t('game.tournamentTable')}
               </div>
             )}
-            {state.badBeatEligible && (
-              <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-500/15 border border-yellow-500/30 text-yellow-400 text-[9px] font-bold uppercase tracking-widest">
-                <Zap size={8} className="fill-yellow-400" />
-                Bad Beat Jackpot
+            {state.tournamentId && blindsRiseIn && state.tournamentNextBigBlind !== undefined && (
+              <div className={(akTableEnabled ? 'relative -top-[96px] ' : '') + 'text-blue-700 text-[10px] font-bold mt-1 text-center'}>
+                {t('game.blindsRiseIn', { time: blindsRiseIn, bb: formatMoney(state.tournamentNextBigBlind) })}
               </div>
             )}
             {state.pot > 0 && state.phase !== 'showdown' && (
-              <>
+              <div className={'flex flex-col items-center gap-2 ' + (akTableEnabled ? 'relative -top-[88px]' : '')}>
                 <div className="pot-plate-mobile">
                   <div className="pot-label">{t('game.potMobile')}</div>
                   <div className="pot-value">{formatChips(state.pot, state.bigBlind, chipDisplay)}</div>
                 </div>
                 <ChipStack amount={state.pot} bigBlind={state.bigBlind} displayMode={chipDisplay} hideLabel />
-              </>
+              </div>
             )}
             {state.communityCards.length > 0 || (peekOn && state.futureBoard && state.futureBoard.length > 0) ? (
-              <div className="flex gap-1 flex-wrap justify-center max-w-full mt-1">
+              <div className={'flex gap-1 flex-wrap justify-center max-w-full mt-1 ' + (akTableEnabled ? 'relative -top-[58px]' : '')}>
                 {state.communityCards.map((c, i) => (
                   <Card
                     key={i}
@@ -762,16 +830,11 @@ export const GameRoom = () => {
                     </div>
                   ))}
               </div>
-            ) : state.phase !== 'waiting' ? (
+            ) : state.phase !== 'waiting' && !akTableEnabled ? (
               <div className="text-white/30 text-[10px] italic mt-1">{t('game.cardsNotRevealed')}</div>
             ) : null}
-            {state.tournamentId && blindsRiseIn && state.tournamentNextBigBlind !== undefined && (
-              <div className="text-amber-400/80 text-[10px] font-bold mt-1 text-center">
-                {t('game.blindsRiseIn', { time: blindsRiseIn, bb: formatMoney(state.tournamentNextBigBlind) })}
-              </div>
-            )}
             {state.communityCardsB && state.communityCardsB.length > 0 && (
-              <div className="flex gap-1 flex-wrap justify-center max-w-full mt-1">
+              <div className={'flex gap-1 flex-wrap justify-center max-w-full mt-1 ' + (akTableEnabled ? 'relative -top-[58px]' : '')}>
                 {state.communityCardsB.map((c, i) => (
                   <Card key={'b-' + i} card={c} faceStyle="classic" backStyle={design.cardBackStyle} deck={cardDeck} size="sm" delay={i * 0.1} />
                 ))}
@@ -806,7 +869,11 @@ export const GameRoom = () => {
                 key={player.id}
                 className="absolute z-20 pointer-events-auto transition-[transform,opacity] duration-300"
                 style={{
-                  left: left + '%',
+                  // AK-скин: боковые места (left/right от центра) раздвинуты к краям экрана на 5px
+                  // (top/bottom-center места, left===50, не трогаем).
+                  left: akTableEnabled && left !== 50
+                    ? 'calc(' + left + '% + ' + (left < 50 ? '-5px' : '5px') + ')'
+                    : left + '%',
                   top: top + '%',
                   transform:
                     'translate(-50%, -50%)' + (smartFocus && isCurr ? ' scale(1.1)' : ' scale(1)'),
@@ -825,6 +892,7 @@ export const GameRoom = () => {
                   }
                   isBigBlind={player.id === bbPlayerId && state.phase !== 'waiting'}
                   hideRoleBadge
+                  akSkin={akTableEnabled}
                   hasCardsInHand={state.phase !== 'waiting' && !player.isFolded}
                   showHand={
                     state.phase === 'showdown' ||
@@ -855,8 +923,10 @@ export const GameRoom = () => {
 
           {/* Layer 3: bet chips между seat и центром (z-10 < z-20 seats). По завершении улицы
               (и на showdown) анимированно стягиваются к банку в центре и растворяются —
-              sweepingBets, см. useBetSweepAnimation/desktop-слой выше. */}
-          {mobileSeatPositions.map(({ player, chipLeft, chipTop }) => {
+              sweepingBets, см. useBetSweepAnimation/desktop-слой выше.
+              AK-скин: не рендерим — банк в центре уже live-сумма (room.pot копится по каждой
+              ставке на сервере), отдельные фишки у игроков дублируют её (по просьбе пользователя). */}
+          {!akTableEnabled && mobileSeatPositions.map(({ player, chipLeft, chipTop }) => {
             const sweepAmount = sweepingBets[player.id];
             const amount = player.currentBet > 0 ? player.currentBet : sweepAmount;
             if (!amount) return null;
@@ -881,6 +951,34 @@ export const GameRoom = () => {
             );
           })}
 
+          {/* Layer 3b: AK-скин, только админ — сигнал «выиграю ли я» этой раздачей. Детерминированный
+              (не вероятность): сервер сравнивает мою итоговую руку по known future-борду (admin-peek)
+              против всех активных соперников — §0.1 не нарушается, это булев вывод из уже видимых
+              этому сокету карт, не новая утечка. Угол слева от своего ряда (не chipLeft — у «меня»
+              chipLeft всегда 50%, т.к. seat дед-центр, что сажало иконку в середину стола). */}
+          {akTableEnabled && isAdmin && me && typeof me.willWin === 'boolean' && (
+            <div
+              className="absolute -translate-x-1/2 -translate-y-1/2 z-10 pointer-events-none"
+              style={{
+                left: 'calc(18% - 68px)',
+                top: 'calc(' + (mobileSeatPositions[0]?.top ?? 85) + '% + 15px)',
+              }}
+            >
+              <div
+                className={
+                  'w-8 h-8 rounded-full backdrop-blur-md ring-1 ring-white/40 flex items-center justify-center shadow-lg ' +
+                  (me.willWin
+                    ? 'bg-emerald-500/70 shadow-[0_0_10px_2px_rgba(16,185,129,0.6)]'
+                    : 'bg-red-500/70 shadow-[0_0_10px_2px_rgba(239,68,68,0.6)]')
+                }
+              >
+                {me.willWin
+                  ? <Check size={16} className="text-white" strokeWidth={3} />
+                  : <X size={16} className="text-white" strokeWidth={3} />}
+              </div>
+            </div>
+          )}
+
           {/* Layer 4: D/SB/BB-бейдж прижат к плашке со стороны центра стола (10% пути от seat) */}
           {/* Мой бейдж — не здесь, а в fixed-блоке моих карт (см. ниже). */}
           {state.phase !== 'waiting' && mobileSeatPositions.map(({ player, dealerLeft, dealerTop }) => {
@@ -889,12 +987,12 @@ export const GameRoom = () => {
             const isBB = player.id === bbPlayerId;
             const role = isDealer ? 'D' : isSB ? 'SB' : isBB ? 'BB' : null;
             if (!role || player.id === myId) return null;
-            // Дилер — белая «шайба» (крупнее, заметна на фетре). SB/BB — компактные цветные жетоны.
+            // Дилер/SB/BB — одинаковый размер жетона, отличается только цвет.
             const cls = isDealer
-              ? 'min-w-[22px] h-[22px] text-[11px] bg-white text-gray-900 ring-2 ring-gray-300/80'
+              ? 'min-w-[17px] h-[17px] text-[8px] bg-white text-gray-900 ring-2 ring-gray-300/80'
               : isSB
-              ? 'min-w-[19px] h-[19px] text-[9px] bg-sky-500 text-white ring-1 ring-black/30'
-              : 'min-w-[19px] h-[19px] text-[9px] bg-purple-500 text-white ring-1 ring-black/30';
+              ? 'min-w-[17px] h-[17px] text-[8px] bg-sky-500 text-white ring-1 ring-black/30'
+              : 'min-w-[17px] h-[17px] text-[8px] bg-purple-500 text-white ring-1 ring-black/30';
             return (
               <div
                 key={'role-' + player.id}
@@ -943,7 +1041,7 @@ export const GameRoom = () => {
           Кладём cards bottom-[108px] чтобы низ карт сидел чуть выше top-edge action-box.
           На showdown — не рендерим (showdown-карты уже в MobilePlayerSeat overlay'е). */}
       {me && state.phase !== 'showdown' && (
-        <div className="md:hidden fixed bottom-[82px] left-1/2 -translate-x-1/2 z-30 flex items-end gap-2.5 pointer-events-none scale-[0.69] origin-bottom">
+        <div className={'md:hidden fixed left-1/2 -translate-x-1/2 z-30 flex items-end gap-2.5 pointer-events-none scale-[0.69] origin-bottom ' + (akTableEnabled ? 'bottom-[71px]' : 'bottom-[82px]')}>
           {/* Слева: аватар + тег последнего действия (единый зелёный, референс AK Poker) + ник/стек. */}
           <div className="relative flex flex-col items-center shrink-0">
             <div
@@ -985,7 +1083,7 @@ export const GameRoom = () => {
           {/* Справа: карты + подсказка + шкала. */}
           <div className="flex flex-col items-center">
             {me.cards.length > 0 && (
-              <div className="relative flex gap-1.5">
+              <div className="relative flex gap-1.5 scale-[0.81] origin-bottom">
                 {me.cards.map((c, i) => (
                   <Card
                     key={i}
@@ -1017,10 +1115,10 @@ export const GameRoom = () => {
                   if (!role) return null;
                   const cls =
                     role === 'D'
-                      ? 'bg-white text-gray-900 ring-2 ring-gray-300/80 min-w-[33px] h-[33px] text-[17px]'
+                      ? 'bg-white text-gray-900 ring-2 ring-gray-300/80 min-w-[24px] h-[24px] text-[12px]'
                       : role === 'SB'
-                      ? 'bg-sky-500 text-white ring-1 ring-black/30 min-w-[29px] h-[29px] text-[14px]'
-                      : 'bg-purple-500 text-white ring-1 ring-black/30 min-w-[29px] h-[29px] text-[14px]';
+                      ? 'bg-sky-500 text-white ring-1 ring-black/30 min-w-[24px] h-[24px] text-[12px]'
+                      : 'bg-purple-500 text-white ring-1 ring-black/30 min-w-[24px] h-[24px] text-[12px]';
                   return (
                     <div
                       className={'absolute -top-3 -right-3 z-10 px-1 rounded-full font-black flex items-center justify-center shadow-lg pointer-events-none ' + cls}
@@ -1031,19 +1129,31 @@ export const GameRoom = () => {
                 })()}
               </div>
             )}
-            {/* Подсказка под моими картами: текущая комбинация + шанс на выигрыш (по тумблеру). */}
-            {gameSettings.handHintEnabled && me.handHint && (
+            {/* Подсказка под моими картами: текущая комбинация + шанс на выигрыш (по тумблеру).
+                Под AK-скином текст не показываем — там только шкала (по просьбе пользователя). */}
+            {!akTableEnabled && gameSettings.handHintEnabled && me.handHint && (
               <span className="mt-1.5 px-3 py-0.5 rounded-full bg-black/75 backdrop-blur border border-emerald-400/30 text-emerald-300 text-[15px] font-bold whitespace-nowrap">
                 {me.handHint}
                 {typeof me.winChance === 'number' ? ' · ' + me.winChance + '%' : ''}
               </span>
             )}
-            {/* Шкала силы руки — сегментированный индикатор (референс AK Poker), под подсказкой. */}
-            {gameSettings.handHintEnabled && me.handHint && typeof me.handRank === 'number' && (
-              <div className="mt-1.5">
-                <HandStrengthMeter rank={me.handRank} />
-              </div>
-            )}
+            {/* Шкала силы руки — сегментированный индикатор (референс AK Poker), под подсказкой/картами.
+                Режим переключается в Настройках Игры: 'category' — по типу комбинации (handRank,
+                не зависит от борда/соперников); 'equity' — по шансу на выигрыш (winChance). На
+                showdown/между раздачами winChance не считается (undefined) — шкала в equity-режиме
+                на это время прячется, а не показывает устаревшее число. */}
+            {gameSettings.handHintEnabled && (() => {
+              const value =
+                gameSettings.handStrengthMode === 'equity'
+                  ? typeof me.winChance === 'number' ? (me.winChance / 100) * SEGMENTS : undefined
+                  : me.handRank;
+              if (typeof value !== 'number') return null;
+              return (
+                <div className={'mt-1.5 ' + (akTableEnabled ? 'relative top-[3px]' : '')}>
+                  <HandStrengthMeter rank={value} />
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -1065,7 +1175,7 @@ export const GameRoom = () => {
                   disabled={shown}
                   onClick={() => showCard(i)}
                   className={
-                    'relative rounded-lg transition-transform ' +
+                    'relative rounded-lg transition-transform scale-[0.81] ' +
                     (shown ? 'ring-2 ring-emerald-400' : 'hover:-translate-y-1 active:translate-y-0')
                   }
                 >
@@ -1125,11 +1235,12 @@ export const GameRoom = () => {
           displayMode={chipDisplay}
           onAction={sendAction}
           onRaiseOpenChange={setRaiseOpen}
+          akSkin={akTableEnabled}
         />
       )}
 
       {me && !me.isFolded && !isMyTurn && state && state.phase !== 'waiting' && state.phase !== 'showdown' && (
-        <PreSelectPanel value={preselect} onChange={setPreselect} />
+        <PreSelectPanel value={preselect} onChange={setPreselect} akSkin={akTableEnabled} />
       )}
 
       <HandHistoryModal

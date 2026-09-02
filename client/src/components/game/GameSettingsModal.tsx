@@ -12,7 +12,7 @@ import {
 import type { BetPresets, OpenPreset, PostflopPreset } from '../../config/betPresets';
 import type { ChipDisplay } from '../../config/chipFormat';
 import type { CardDeck } from '../../config/cardDeck';
-import type { AutoTopUpSettings, GameSettings } from '../../config/gameSettings';
+import type { AutoTopUpSettings, GameSettings, HandStrengthMode } from '../../config/gameSettings';
 import { Card } from './Card';
 import type { CardData } from './Card';
 
@@ -38,7 +38,8 @@ function postflopIndex(p: PostflopPreset): number {
   return i >= 0 ? i : 2; // дефолт = 33%
 }
 
-const DECK_ORDER: CardDeck[] = ['classic', 'colored'];
+// 'Классическая' убрана из выбора (по просьбе пользователя, 2026-08-22) — остаётся только 'colored'.
+const DECK_ORDER: CardDeck[] = ['colored'];
 // Превью колоды — 4 туза (по тузу на масть). Рендерим реальным <Card>, чтобы превью точь-в-точь
 // совпадало с тем, что игрок увидит за столом.
 const PREVIEW_ACES: CardData[] = [
@@ -177,6 +178,19 @@ export const GameSettingsModal = ({
                     on={settings.handHintEnabled}
                     onChange={(v) => setSettings({ ...settings, handHintEnabled: v })}
                   />
+                  {settings.handHintEnabled && (
+                    <div className="py-3 flex items-center justify-between gap-3">
+                      <span className="text-white/70 text-sm">{t('gameSettingsModal.handStrengthModeLabel')}</span>
+                      <SegmentedControl
+                        options={[
+                          { value: 'category', label: t('gameSettingsModal.handStrengthModeCategory') },
+                          { value: 'equity', label: t('gameSettingsModal.handStrengthModeEquity') },
+                        ]}
+                        value={settings.handStrengthMode}
+                        onChange={(v) => setSettings({ ...settings, handStrengthMode: v as HandStrengthMode })}
+                      />
+                    </div>
+                  )}
                   <NavRow label={t('gameSettingsModal.autoTopUpNav')} onClick={() => setView('autotopup')} />
                   <NavRow label={t('gameSettingsModal.configureBetButtons')} onClick={() => setView('presets')} />
 
@@ -296,6 +310,32 @@ const ToggleRow = ({
   </button>
 );
 
+const SegmentedControl = ({
+  options,
+  value,
+  onChange,
+}: {
+  options: Array<{ value: string; label: string }>;
+  value: string;
+  onChange: (v: string) => void;
+}) => (
+  <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-xl p-1">
+    {options.map((o) => (
+      <button
+        key={o.value}
+        type="button"
+        onClick={() => onChange(o.value)}
+        className={
+          'px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors ' +
+          (value === o.value ? 'bg-emerald-500 text-white' : 'text-white/60 hover:text-white')
+        }
+      >
+        {o.label}
+      </button>
+    ))}
+  </div>
+);
+
 const NavRow = ({ label, onClick }: { label: string; onClick: () => void }) => (
   <button
     type="button"
@@ -328,11 +368,14 @@ const DeckCarousel = ({ deck, onChange }: { deck: CardDeck; onChange: (d: CardDe
   };
   const cur = DECK_LABELS[deck] ?? DECK_LABELS.classic;
   const go = (dir: -1 | 1) => onChange(DECK_ORDER[(idx + dir + DECK_ORDER.length) % DECK_ORDER.length]);
+  const hasChoice = DECK_ORDER.length > 1;
   return (
     <div className="flex items-center justify-center gap-3">
-      <CircleBtn onClick={() => go(-1)}>
-        <ChevronLeft size={18} />
-      </CircleBtn>
+      {hasChoice && (
+        <CircleBtn onClick={() => go(-1)}>
+          <ChevronLeft size={18} />
+        </CircleBtn>
+      )}
       <div className="flex flex-col items-center gap-2 rounded-2xl border border-white/15 bg-white/5 px-5 py-4">
         <div className="flex gap-1.5">
           {PREVIEW_ACES.map((c) => (
@@ -343,9 +386,11 @@ const DeckCarousel = ({ deck, onChange }: { deck: CardDeck; onChange: (d: CardDe
           {cur.label} · {cur.hint}
         </span>
       </div>
-      <CircleBtn onClick={() => go(1)}>
-        <ChevronRight size={18} />
-      </CircleBtn>
+      {hasChoice && (
+        <CircleBtn onClick={() => go(1)}>
+          <ChevronRight size={18} />
+        </CircleBtn>
+      )}
     </div>
   );
 };

@@ -12,11 +12,11 @@ interface HandStrengthMeterProps {
 export const HandStrengthMeter = ({ rank }: HandStrengthMeterProps) => {
   const filled = filledSegments(rank);
   return (
-    <div className="flex items-center gap-[3px]">
+    <div className="flex items-center gap-[4px]">
       {Array.from({ length: SEGMENTS }).map((_, i) => (
         <span
           key={i}
-          className="w-[4px] h-[12px] rounded-[1px]"
+          className="w-[5px] h-[15px] rounded-[1px]"
           style={{ background: i < filled ? segmentColor(i, filled) : 'rgba(255,255,255,0.15)' }}
         />
       ))}

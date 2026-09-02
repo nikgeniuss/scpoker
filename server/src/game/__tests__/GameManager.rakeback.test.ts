@@ -5,14 +5,16 @@ vi.mock('../../auth/storage.js', () => import('./helpers/storage.js'));
 import { resetStorage, createTestGameManager, seatPlayer, type GameManagerLike } from './helpers/gameManager.js';
 import { setStorage } from './helpers/storage.js';
 import { getUserRakebackInfo } from '../rakebackService.js';
+import { getBalance as getWalletBalance } from '../rewardsWalletService.js';
 import { getNotifications } from '../inboxService.js';
 import { card, buildDeck } from './helpers/cards.js';
 
 // Интеграционные тесты рейкбэка — врезка в GameManager.cleanupHand (после showdown-рейка).
 // Чистая логика тиров/начисления уже покрыта rakebackService.test.ts; здесь проверяем всю
-// цепочку на реальной раздаче: реальный рейк с банка → applyRakeback → тихое начисление на
-// стек игрока за столом. БЕЗ уведомления во «Входящие» — на раскачанном столе рейк капает
-// почти на каждой раздаче, инбокс был бы залит спамом (решение пользователя 2026-06-23).
+// цепочку на реальной раздаче: реальный рейк с банка → applyRakeback → тихое начисление HUB-
+// коинов в rewardsWalletService (НЕ в стек — рейкбэк больше не выводится в USDT, решение
+// пользователя 2026-08-30, ROADMAP §10.21.8). БЕЗ уведомления во «Входящие» — на раскачанном
+// столе рейк капает почти на каждой раздаче, инбокс был бы залит спамом (2026-06-23).
 
 const SB = 5;
 const BB = 10;
@@ -96,7 +98,7 @@ describe('GameManager — рейкбэк (showdown-врезка)', () => {
     expect(getUserRakebackInfo('B').lifetimeRake).toBe(1);
   });
 
-  it('payout>0 реально добавляется к стеку, БЕЗ уведомления (анти-спам)', async () => {
+  it('payout>0 начисляется в HUB-коины кошелька, НЕ в стек, БЕЗ уведомления (анти-спам)', async () => {
     seedRakeback(true);
     const { gm, roomId } = await setupRakedTable();
     gm.startGame(roomId, aaVsKkDeck());
@@ -118,12 +120,15 @@ describe('GameManager — рейкбэк (showdown-врезка)', () => {
     expect(payout).toBe(2);
 
     const base = 1000 - 200;
-    // A выиграл банк (400-40=360), B проиграл вложенные 200. Плюс к стеку каждого — payout рейкбэка.
-    expect(chipsOf(gm, roomId, 'A')).toBe(base + 360 + payout);
-    expect(chipsOf(gm, roomId, 'B')).toBe(base + payout);
+    // A выиграл банк (400-40=360), B проиграл вложенные 200. Стек НЕ содержит рейкбэк-payout —
+    // тот идёт в отдельный HUB-коин кошелёк, не в реальные (выводимые) чипсы.
+    expect(chipsOf(gm, roomId, 'A')).toBe(base + 360);
+    expect(chipsOf(gm, roomId, 'B')).toBe(base);
 
     expect(getUserRakebackInfo('A').totalPaid).toBe(payout);
     expect(getUserRakebackInfo('B').totalPaid).toBe(payout);
+    expect(getWalletBalance('A')).toBe(payout);
+    expect(getWalletBalance('B')).toBe(payout);
 
     // Анти-спам: начисление тихое, никакого уведомления во «Входящие» не создаётся.
     expect(getNotifications('A', 5)).toHaveLength(0);
@@ -147,6 +152,7 @@ describe('GameManager — рейкбэк (showdown-врезка)', () => {
     expect(chipsOf(gm, roomId, 'A')).toBe(1008); // как в GameManager.rake.test.ts (без рейкбэка)
     expect(chipsOf(gm, roomId, 'B')).toBe(990);
     expect(getUserRakebackInfo('A').lifetimeRake).toBe(0);
+    expect(getWalletBalance('A')).toBe(0);
     expect(getNotifications('A', 5).some((n) => n.type === 'rakeback')).toBe(false);
   });
 });

@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { ChevronLeft, Search } from 'lucide-react';
 import { API_URL } from '../config/api';
 import { formatMoney } from '../config/chipFormat';
+import { RaceBanner } from '../components/lobby/RaceBanner';
 
 // Публичная таблица лидеров (ROADMAP §10.5) — вход из лобби (иконка-трофей), доступна любому
 // игроку. Данные из GET /api/leaderboard (только username/pnl/hands, без банкролла/роли/бана —
@@ -73,6 +74,8 @@ export const Leaderboard = () => {
           </button>
           <h1 className="text-xl font-bold">{t('leaderboard.title')}</h1>
         </div>
+
+        <RaceBanner />
 
         <div className="relative mb-3">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />

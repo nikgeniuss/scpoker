@@ -9,22 +9,18 @@ import type { Suit } from '@poker-room/shared';
 
 export type CardDeck = 'classic' | 'colored';
 
-export const DEFAULT_CARD_DECK: CardDeck = 'classic';
+export const DEFAULT_CARD_DECK: CardDeck = 'colored';
 
 const STORAGE_KEY = 'sk:cardDeck:v1';
 
 export const CARD_DECKS: { id: CardDeck; label: string; hint: string }[] = [
-  { id: 'classic', label: 'Классическая', hint: 'стандартная колода' },
   { id: 'colored', label: 'Цветные', hint: 'масть = цвет карты' },
 ];
 
+// 'Классическая' убрана из выбора (по просьбе пользователя, 2026-08-22) — теперь всегда 'colored',
+// даже если в localStorage ещё лежит старое 'classic' у вернувшегося игрока.
 export function loadCardDeck(): CardDeck {
-  try {
-    const v = localStorage.getItem(STORAGE_KEY);
-    return v === 'colored' ? 'colored' : 'classic';
-  } catch {
-    return DEFAULT_CARD_DECK;
-  }
+  return DEFAULT_CARD_DECK;
 }
 
 export function saveCardDeck(v: CardDeck): void {

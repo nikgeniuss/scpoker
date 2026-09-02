@@ -320,6 +320,43 @@ describe('GameManager — pot distribution (§6, §8.3, §9)', () => {
     expect(chipsOf(gm, roomId, 'B')).toBe(0);
   });
 
+  it('регресс: без RIMT/EV Cashout фолд-аут до all-in-оппонента сразу идёт в showdown, без лишних ходов (баг 2026-08-25)', async () => {
+    // 3-max: dealerIndex=1(B) → SB=C, BB=A, UTG=B (действует первым).
+    // B фолдит. C (SB) идёт all-in коротким стеком (60). A (BB) рейзит поверх до 200.
+    // Остаются A (с фишками) и C (all-in, chips=0) — отвечать A больше некому. Раньше (без RIMT/
+    // EV Cashout) isHandDecidedEarly() не срабатывал вовсе, и стол заново открывал торги на flop/
+    // turn/river, бесконечно спрашивая A "твой ход". Раздача должна закрыться СРАЗУ после
+    // рейза A — без дополнительных gm.handlePlayerAction() для A.
+    const { gm, roomId } = await setup(3, { buyIns: [1000, 1000, 60] });
+    const deck = buildDeck(
+      card('A', 's'), card('A', 'h'), // A: aces (winner)
+      card('2', 'c'), card('7', 'd'), // B: фолдит, неважно
+      card('K', 's'), card('K', 'h'), // C: kings
+      card('3', 'c'),
+      card('4', 'd'), card('5', 'h'), card('9', 's'),
+      card('6', 'c'), card('Q', 'd'),
+      card('8', 'c'), card('J', 'h'),
+    );
+    gm.startGame(roomId, deck);
+    gm.handlePlayerAction(roomId, 'B', 'fold');
+    gm.handlePlayerAction(roomId, 'C', 'all-in'); // SB 5 уже внесён, +55 → total 60 (полный raise поверх BB=10)
+    gm.handlePlayerAction(roomId, 'A', 'raise', 200); // A: BB 10 уже внесён, рейзит до 200
+
+    // Раздача должна закрыться сама — без единого доп. действия A.
+    expect(getState(gm, roomId).phase).toBe('showdown');
+
+    // «Призрачное» действие после конца раздачи (race condition клиента) должно быть
+    // отклонено, а не задвоить выплату банка.
+    gm.handlePlayerAction(roomId, 'A', 'check');
+
+    // Layer(level=60): min(200,60)+min(60,60)=60+60=120, eligible={A,C} → A выигрывает (AA>KK).
+    // Layer(level=200): min(200,200)-min(200,60)=140, eligible={A} (C дальше не докладывал) → A.
+    // Итог: A = 1000 - 200 + 120 + 140 = 1060. C = 0. B фолднул без вложений = 1000.
+    expect(chipsOf(gm, roomId, 'A')).toBe(1060);
+    expect(chipsOf(gm, roomId, 'C')).toBe(0);
+    expect(chipsOf(gm, roomId, 'B')).toBe(1000);
+  });
+
   it('2-layer side pot (§6.4 пример): A all-in 100, B и C продолжают до 500', async () => {
     // 3-max: A buyIn=100 (короткий стек). B=500, C=500.
     // A=B=BB? Let's see: dealerIndex=1 (B). SB=C, BB=A.

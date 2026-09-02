@@ -6,6 +6,7 @@ import { useAuthStore } from '../store/authStore';
 import { useTelegram } from '../hooks/useTelegram';
 import { tgAppDeepLink } from '../lib/telegram';
 import { TelegramButton } from '../components/auth/TelegramButton';
+import { getDeviceId } from '../lib/deviceId';
 
 import { API_URL } from '../config/api';
 
@@ -26,7 +27,7 @@ export const Login = () => {
 
     const res = await fetch(API_URL + '/auth/login', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Device-Id': getDeviceId() },
       body: JSON.stringify({ username, password }),
     });
 
@@ -49,7 +50,7 @@ export const Login = () => {
 
     const res = await fetch(API_URL + '/auth/login/2fa', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Device-Id': getDeviceId() },
       body: JSON.stringify({ pendingToken, code: twoFactorCode.trim() }),
     });
 

@@ -2,7 +2,26 @@ import type { Room } from './GameManager.js';
 import type { GameState } from '@poker-room/shared';
 import { getFutureBoardCards } from './deck.js';
 import { handHintName, handRankValue } from './handHint.js';
+import { evaluateHand, compareHands } from './hands.js';
 import { getBadBeatState } from './badBeatService.js';
+
+// Детерминированный сигнал «выиграю ли я» — для АДМИНА на своём месте (caller обязан проверить
+// роль, эта функция сама роль не проверяет — как и withPeek у serializeGameState). Использует
+// ИЗВЕСТНЫЙ итоговый борд (открытые + ещё не сданные карты деки) и реальные карты соперников —
+// сервер их и так знает внутри процесса, вызов не зависит от того, отправлены ли они клиенту
+// (тумблер admin-peek). Тай (сплит банка) считаем как «не проигрыш» (win=true).
+export function computeWillWin(room: Room, playerId: string): boolean | undefined {
+  const p = room.players.get(playerId);
+  if (!p || p.isFolded || p.cards.length < 2) return undefined;
+  const futureBoard = getFutureBoardCards(room.deck, room.communityCards.length);
+  const finalBoard = room.communityCards.concat(futureBoard).slice(0, 5);
+  const others = Array.from(room.players.values()).filter(
+    (o) => o.id !== playerId && !o.isFolded && o.cards.length >= 2,
+  );
+  if (others.length === 0) return true;
+  const myRes = evaluateHand(p.cards, finalBoard, room.format);
+  return others.every((o) => compareHands(myRes, evaluateHand(o.cards, finalBoard, room.format)) >= 0);
+}
 
 // §0.1 — ЕДИНСТВЕННОЕ место, где решается, кому какие карты уходят (была реальная утечка, фикс 2026-05-17).
 // Сериализует состояние стола для КОНКРЕТНОГО зрителя:
@@ -23,6 +42,9 @@ export function serializeGameState(room: Room, viewerId?: string, withPeek = fal
   const viewer = viewerId !== undefined ? room.players.get(viewerId) : undefined;
   const wantsHint = !!viewer?.wantsHint;
   const futureBoard = withPeek ? getFutureBoardCards(room.deck, room.communityCards.length) : [];
+  // Итоговый борд (открытые + ещё не сданные карты) — известен только через admin-peek.
+  // Общий и для итоговой комбинации админа (handHint ниже), и для сигнала willWin.
+  const finalBoard = withPeek ? room.communityCards.concat(futureBoard).slice(0, 5) : [];
   const players = Array.from(room.players.values()).map(p => {
     // §0.1: при реальном вскрытии карты видны ТОЛЬКО дошедшим до showdown (не сфолдившим — они
     // боролись за банк). Сфолдившие мак'ают: их карты не видны соперникам (но виден own — p.id===viewerId).
@@ -33,7 +55,6 @@ export function serializeGameState(room: Room, viewerId?: string, withPeek = fal
     if (wantsHint && canSeeCards && !p.isFolded && p.cards.length >= 2) {
       if (withPeek && p.id === viewerId) {
         // Админ на СВОЁМ месте — ИТОГОВАЯ комбинация (борд + будущие карты до 5).
-        const finalBoard = room.communityCards.concat(futureBoard).slice(0, 5);
         handHint = handHintName(p.cards, finalBoard, room.format);
         handRank = handRankValue(p.cards, finalBoard, room.format);
       } else {
@@ -44,6 +65,10 @@ export function serializeGameState(room: Room, viewerId?: string, withPeek = fal
     }
     // Шанс на выигрыш — только своё место (считается сервером против случайных, без утечки).
     const winChance = wantsHint && viewerId !== undefined && p.id === viewerId ? p.winChance : undefined;
+    // Сигнал «выиграю ли я» — НЕЗАВИСИМО от тумблера подсказки (админский диагностический
+    // инструмент, не игровая фича). Тут — путь withPeek; без peek его отдельно считает
+    // GameManager.broadcastGameState для админов (computeWillWin не завязан на withPeek).
+    const willWin = withPeek && p.id === viewerId ? computeWillWin(room, p.id) : undefined;
     // Добровольно показанные карты — публичны (видны всем): отдаём только выбранные индексы,
     // непоказанные остаются null (не утекают). У уже полностью раскрытых (own/peek/contest) — не дублируем.
     const shownCards = !canSeeCards && p.revealedCards && p.revealedCards.length > 0 && p.cards.length >= 2
@@ -60,12 +85,15 @@ export function serializeGameState(room: Room, viewerId?: string, withPeek = fal
       currentBet: p.currentBet,
       position: p.position,
       avatar: p.avatar,
+      frame: p.frame,
+      title: p.title,
       disconnected: p.disconnected,
       // timebank пробрасываем только если он включён на столе — UI решит что рисовать
       timebank: tbOn ? p.timebank : undefined,
       handHint,
       handRank,
       winChance,
+      willWin,
       shownCards,
       revealedCards: p.revealedCards,
       hudStats: p.hudStats,

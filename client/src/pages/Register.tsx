@@ -1,5 +1,5 @@
 ﻿import { useState, type Dispatch, type SetStateAction, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '../store/authStore';
 import { Eye, EyeOff, Lock, Mail, User, Check, Calendar } from 'lucide-react';
@@ -8,6 +8,7 @@ import toast, { Toaster } from 'react-hot-toast';
 import { useTelegram } from '../hooks/useTelegram';
 import { tgAppDeepLink } from '../lib/telegram';
 import { TelegramButton } from '../components/auth/TelegramButton';
+import { getDeviceId } from '../lib/deviceId';
 
 import { API_URL } from '../config/api';
 
@@ -263,6 +264,8 @@ const RegisterPage = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const loginFn = useAuthStore((s) => s.login);
+  const [searchParams] = useSearchParams();
+  const refCode = searchParams.get('ref') ?? undefined; // реферальный код из share-ссылки (§10.21.5)
 
   const [form, setForm] = useState({
     username: '',
@@ -313,13 +316,14 @@ const RegisterPage = () => {
     try {
       const res = await fetch(API_URL + '/auth/register', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Device-Id': getDeviceId() },
         body: JSON.stringify({
           username: form.username,
           email: form.email,
           password: form.password,
           dateOfBirth: form.dateOfBirth,
           tosAccepted: agree,
+          refCode,
         }),
       });
 

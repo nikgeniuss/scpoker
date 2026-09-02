@@ -38,7 +38,6 @@ export function makeRoom(params: {
   rimtEnabled?: boolean;
   evCashoutEnabled?: boolean;
   noTurnNoShowEnabled?: boolean;
-  antiCollusionEnabled?: boolean;
 }): Room {
   return {
     id: params.id,
@@ -105,7 +104,10 @@ export function makeRoom(params: {
     rimtEnabled: params.rimtEnabled ?? false,
     evCashoutEnabled: params.evCashoutEnabled ?? false,
     noTurnNoShowEnabled: params.noTurnNoShowEnabled ?? false,
-    antiCollusionEnabled: params.antiCollusionEnabled ?? false,
+    // Всегда включена, не настраивается — решение пользователя 2026-08-24 (security review):
+    // тумблер, доступный создателю стола, отдавал контроль над защитой от сговора тем, от кого
+    // она должна защищать (двое сговорившихся создают свой стол с дефолтным OFF).
+    antiCollusionEnabled: true,
     communityCardsB: null,
     deckB: null,
   };

@@ -204,6 +204,38 @@ describe('TournamentManager — MTT, мультистол', () => {
     expect(gm.getGameState(lonelyTableId)).toMatchObject({ phase: 'preflop' });
   });
 
+  it('поздняя регистрация при полностью заполненных столах открывает НОВЫЙ стол, а не отклоняет (2026-08-27)', async () => {
+    const { gm } = await createTestGameManager();
+    const tm = new TournamentManager(gm as unknown as GameManager);
+    const created = tm.create(
+      {
+        name: 'Full Tables MTT', type: 'mtt', format: 'nlh', buyIn: 1000, startingStack: 1000,
+        tableSize: 2, blindSpeed: 'turbo', levelUpMinutes: 10, lateRegMinutes: 10,
+      },
+      'admin1',
+    );
+    if ('error' in created) throw new Error(created.error);
+    const id = created.id;
+
+    // 2 регистранта → 1 стол, полностью занят (2/2) — никто ещё не вылетел.
+    ['A', 'B'].forEach((u) => {
+      const r = tm.register(id, u, u);
+      if ('error' in r) throw new Error(r.error);
+    });
+    const started = tm.forceStart(id);
+    if ('error' in started) throw new Error(started.error);
+    expect(started.tableIds).toHaveLength(1);
+
+    // Поздняя регистрация C: единственный стол уже полон — до фикса это давало 'no-seats-available'.
+    const lateReg = tm.register(id, 'C', 'C');
+    if ('error' in lateReg) throw new Error(lateReg.error);
+    expect(lateReg.tableIds).toHaveLength(2); // открылся новый стол
+    const cEntry = lateReg.entries.find((e) => e.userId === 'C')!;
+    expect(cEntry.status).toBe('playing');
+    expect(cEntry.tableId).not.toBe(started.tableIds[0]);
+    expect(gm.getGameState(cEntry.tableId!)).not.toBeNull();
+  });
+
   it('payoutMode=fixed: строго N призовых мест независимо от числа участников (ITM% игнорируется)', async () => {
     const { gm } = await createTestGameManager();
     const tm = new TournamentManager(gm as unknown as GameManager);
@@ -500,6 +532,98 @@ describe('TournamentManager — MTT, мультистол', () => {
     expect(finished.entries.filter((e) => e.prize)).toHaveLength(1);
   });
 
+  it('create() валидирует minPlayers/maxPlayers (MTT-only настройка)', async () => {
+    const { gm } = await createTestGameManager();
+    const tm = new TournamentManager(gm as unknown as GameManager);
+    expect(tm.create(
+      { name: 'Bad1', type: 'mtt', format: 'nlh', buyIn: 1000, startingStack: 1000, tableSize: 6, blindSpeed: 'turbo', levelUpMinutes: 10, minPlayers: 1 },
+      'admin1',
+    )).toEqual({ error: 'invalid-min-players' });
+    expect(tm.create(
+      { name: 'Bad2', type: 'mtt', format: 'nlh', buyIn: 1000, startingStack: 1000, tableSize: 6, blindSpeed: 'turbo', levelUpMinutes: 10, maxPlayers: 1 },
+      'admin1',
+    )).toEqual({ error: 'invalid-max-players' });
+    expect(tm.create(
+      { name: 'Bad3', type: 'mtt', format: 'nlh', buyIn: 1000, startingStack: 1000, tableSize: 6, blindSpeed: 'turbo', levelUpMinutes: 10, minPlayers: 5, maxPlayers: 3 },
+      'admin1',
+    )).toEqual({ error: 'max-players-below-min' });
+  });
+
+  it('maxPlayers ограничивает регистрацию новых уникальных игроков (MTT)', async () => {
+    const { gm } = await createTestGameManager();
+    const tm = new TournamentManager(gm as unknown as GameManager);
+    const created = tm.create(
+      {
+        name: 'Capped MTT', type: 'mtt', format: 'nlh', buyIn: 1000, startingStack: 1000,
+        tableSize: 6, blindSpeed: 'turbo', levelUpMinutes: 10, maxPlayers: 3,
+      },
+      'admin1',
+    );
+    if ('error' in created) throw new Error(created.error);
+    const id = created.id;
+    expect(tm.get(id)!.maxPlayers).toBe(3);
+
+    expect('error' in tm.register(id, 'A', 'A')).toBe(false);
+    expect('error' in tm.register(id, 'B', 'B')).toBe(false);
+    expect('error' in tm.register(id, 'C', 'C')).toBe(false);
+    expect(tm.register(id, 'D', 'D')).toEqual({ error: 'full' });
+  });
+
+  it('minPlayers поднимает порог для forceStart (MTT)', async () => {
+    const { gm } = await createTestGameManager();
+    const tm = new TournamentManager(gm as unknown as GameManager);
+    const created = tm.create(
+      {
+        name: 'MinPlayers MTT', type: 'mtt', format: 'nlh', buyIn: 1000, startingStack: 1000,
+        tableSize: 6, blindSpeed: 'turbo', levelUpMinutes: 10, minPlayers: 4,
+      },
+      'admin1',
+    );
+    if ('error' in created) throw new Error(created.error);
+    const id = created.id;
+
+    ['A', 'B', 'C'].forEach((u) => tm.register(id, u, u));
+    expect(tm.forceStart(id)).toEqual({ error: 'not-enough-players' });
+
+    tm.register(id, 'D', 'D');
+    const started = tm.forceStart(id);
+    if ('error' in started) throw new Error(started.error);
+    expect(started.status).toBe('running');
+  });
+
+  it('unlimitedReEntries снимает лимит на число ре-энтри даже если задан maxReEntries', async () => {
+    const { gm } = await createTestGameManager();
+    const tm = new TournamentManager(gm as unknown as GameManager);
+    const created = tm.create(
+      {
+        name: 'Unlimited Reentry MTT', type: 'mtt', format: 'nlh', buyIn: 1000, startingStack: 1000,
+        tableSize: 3, blindSpeed: 'turbo', levelUpMinutes: 10, lateRegMinutes: 10,
+        reEntryEnabled: true, maxReEntries: 1, unlimitedReEntries: true, payoutMode: 'fixed', fixedPayoutPlaces: 1,
+      },
+      'admin1',
+    );
+    if ('error' in created) throw new Error(created.error);
+    const id = created.id;
+    expect(tm.get(id)!.unlimitedReEntries).toBe(true);
+    expect(tm.get(id)!.maxReEntries).toBeUndefined();
+
+    ['A', 'B', 'C'].forEach((u) => tm.register(id, u, u));
+    const started = tm.forceStart(id);
+    if ('error' in started) throw new Error(started.error);
+    const tableId = started.tableIds[0];
+
+    // 3 баста подряд и ре-энтри каждый раз — с maxReEntries=1 без unlimitedReEntries 2-й ре-энтри
+    // был бы заблокирован ('reentry-limit-reached').
+    for (let i = 0; i < 3; i++) {
+      gm.removePlayer(tableId, 'A');
+      const reentered = tm.register(id, 'A', 'A');
+      if ('error' in reentered) throw new Error(reentered.error);
+    }
+
+    const aEntries = tm.get(id)!.entries.filter((e) => e.userId === 'A');
+    expect(aEntries).toHaveLength(4); // изначальный вход + 3 ре-энтри
+  });
+
   it('бесплатный вход (buyIn=0) + платное ре-энтри по отдельной цене reEntryFee', async () => {
     const { gm } = await createTestGameManager();
     const tm = new TournamentManager(gm as unknown as GameManager);
@@ -604,5 +728,60 @@ describe('TournamentManager — MTT, мультистол', () => {
     }
     expect(tm.get(id)!.status).toBe('finished');
     expect(tm.getStandings(id)).toBeNull();
+  });
+
+  // ROADMAP §9.2: ре-энтри возвращали игрока в пул, поэтому «место = сколько ещё играют на момент
+  // баста» не убывало строго — два РАЗНЫХ вылета могли получить одинаковое место, и на призовом
+  // месте finish() платил полный приз обоим, сверх собранного prizePool.
+  it('ре-энтри не приводит к двойной выплате приза: места уникальны, из фонда не уходит лишнего', async () => {
+    const { gm } = await createTestGameManager();
+    const tm = new TournamentManager(gm as unknown as GameManager);
+    const created = tm.create(
+      {
+        name: 'Reentry Payout MTT', type: 'mtt', format: 'nlh', buyIn: 1000, startingStack: 1000,
+        tableSize: 4, blindSpeed: 'turbo', levelUpMinutes: 10, lateRegMinutes: 10,
+        reEntryEnabled: true, unlimitedReEntries: true, payoutMode: 'fixed', fixedPayoutPlaces: 4,
+      },
+      'admin1',
+    );
+    if ('error' in created) throw new Error(created.error);
+    const id = created.id;
+
+    const bankrollBefore = Object.values(usersChips()).reduce((s, c) => s + c, 0);
+
+    ['A', 'B', 'C', 'D'].forEach((u) => tm.register(id, u, u));
+    const started = tm.forceStart(id);
+    if ('error' in started) throw new Error(started.error);
+    const tableId = started.tableIds[0];
+
+    gm.removePlayer(tableId, 'A'); // A вылетает при 4 живых
+    const reentered = tm.register(id, 'A', 'A'); // ...и возвращается — живых снова 4
+    if ('error' in reentered) throw new Error(reentered.error);
+
+    gm.removePlayer(tableId, 'B'); // B вылетает тоже «при 4 живых» — источник одинакового места
+    gm.removePlayer(tableId, 'A'); // второй вылет A
+    gm.removePlayer(tableId, 'C'); // остаётся D → финиш
+
+    const finished = tm.get(id)!;
+    expect(finished.status).toBe('finished');
+
+    const places = finished.entries.map((e) => e.finishPlace).filter((p): p is number => p !== undefined);
+    expect(new Set(places).size).toBe(places.length); // ни одного повторяющегося места
+    expect([...places].sort((a, b) => a - b)).toEqual([1, 2, 3, 4]);
+
+    // У игрока с ре-энтри две записи, но место и приз — ровно одни.
+    const aEntries = finished.entries.filter((e) => e.userId === 'A');
+    expect(aEntries).toHaveLength(2);
+    expect(aEntries.filter((e) => e.finishPlace !== undefined)).toHaveLength(1);
+    expect(aEntries.filter((e) => e.prize)).toHaveLength(1);
+
+    // Главное: из призового фонда не ушло больше, чем в нём было (5 входов × 1000).
+    expect(finished.prizePool).toBe(5000);
+    const totalPaid = finished.entries.reduce((sum, e) => sum + (e.prize ?? 0), 0);
+    expect(totalPaid).toBe(5000);
+
+    // И сквозная проверка: деньги не появились из воздуха — сумма банкроллов вернулась к исходной
+    // (все бай-ины ушли в фонд, весь фонд роздан обратно).
+    expect(Object.values(usersChips()).reduce((s, c) => s + c, 0)).toBe(bankrollBefore);
   });
 });

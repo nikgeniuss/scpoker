@@ -38,18 +38,17 @@ function makeRoom(over: Partial<RoomInfo> = {}): RoomInfo {
 const noop = () => {};
 
 describe('<RoomCard />', () => {
-  it('показывает название, автора и блайнды', () => {
+  it('показывает блайнды в заголовке и название стола', () => {
     render(
-      <RoomCard room={makeRoom()} imIn={false} myQueuePos={0} onJoin={noop} onQueue={noop} onLeaveQueue={noop} onObserve={noop} />,
+      <RoomCard room={makeRoom()} imIn={false} myQueuePos={0} onJoin={noop} onQueue={noop} onLeaveQueue={noop} />,
     );
+    expect(screen.getByText('$1/$2')).toBeInTheDocument();
     expect(screen.getByText('High Stakes')).toBeInTheDocument();
-    expect(screen.getByText('от alice')).toBeInTheDocument();
-    expect(screen.getByText('1/2')).toBeInTheDocument();
   });
 
   it('рейк выключен (percent=0) — бейдж «Рейк» не показывается', () => {
     render(
-      <RoomCard room={makeRoom()} imIn={false} myQueuePos={0} onJoin={noop} onQueue={noop} onLeaveQueue={noop} onObserve={noop} />,
+      <RoomCard room={makeRoom()} imIn={false} myQueuePos={0} onJoin={noop} onQueue={noop} onLeaveQueue={noop} />,
     );
     expect(screen.queryByText('Рейк')).not.toBeInTheDocument();
   });
@@ -63,25 +62,24 @@ describe('<RoomCard />', () => {
         onJoin={noop}
         onQueue={noop}
         onLeaveQueue={noop}
-        onObserve={noop}
       />,
     );
     expect(screen.getByText('Рейк')).toBeInTheDocument();
     expect(screen.getByText('5%')).toBeInTheDocument();
   });
 
-  it('свободный стол: кнопка «Войти» вызывает onJoin', () => {
+  it('свободный стол: кнопка «Присоединиться» вызывает onJoin', () => {
     const onJoin = vi.fn();
     render(
-      <RoomCard room={makeRoom()} imIn={false} myQueuePos={0} onJoin={onJoin} onQueue={noop} onLeaveQueue={noop} onObserve={noop} />,
+      <RoomCard room={makeRoom()} imIn={false} myQueuePos={0} onJoin={onJoin} onQueue={noop} onLeaveQueue={noop} />,
     );
-    fireEvent.click(screen.getByText('Войти'));
+    fireEvent.click(screen.getByText('Присоединиться'));
     expect(onJoin).toHaveBeenCalledOnce();
   });
 
   it('я в комнате: бейдж «Вы здесь» и кнопка «Вернуться»', () => {
     render(
-      <RoomCard room={makeRoom()} imIn={true} myQueuePos={0} onJoin={noop} onQueue={noop} onLeaveQueue={noop} onObserve={noop} />,
+      <RoomCard room={makeRoom()} imIn={true} myQueuePos={0} onJoin={noop} onQueue={noop} onLeaveQueue={noop} />,
     );
     expect(screen.getByText('Вы здесь')).toBeInTheDocument();
     expect(screen.getByText('Вернуться')).toBeInTheDocument();
@@ -97,7 +95,6 @@ describe('<RoomCard />', () => {
         onJoin={noop}
         onQueue={onQueue}
         onLeaveQueue={noop}
-        onObserve={noop}
       />,
     );
     fireEvent.click(screen.getByText(/Занять очередь/));
@@ -114,27 +111,10 @@ describe('<RoomCard />', () => {
         onJoin={noop}
         onQueue={noop}
         onLeaveQueue={onLeaveQueue}
-        onObserve={noop}
       />,
     );
     expect(screen.getByText(/В очереди: 2-й/)).toBeInTheDocument();
     fireEvent.click(screen.getByText('Выйти'));
     expect(onLeaveQueue).toHaveBeenCalledOnce();
-  });
-
-  it('кнопка «Наблюдать» вызывает onObserve, когда я не за столом', () => {
-    const onObserve = vi.fn();
-    render(
-      <RoomCard room={makeRoom()} imIn={false} myQueuePos={0} onJoin={noop} onQueue={noop} onLeaveQueue={noop} onObserve={onObserve} />,
-    );
-    fireEvent.click(screen.getByText('Наблюдать'));
-    expect(onObserve).toHaveBeenCalledOnce();
-  });
-
-  it('кнопки «Наблюдать» нет для того, кто уже за столом', () => {
-    render(
-      <RoomCard room={makeRoom()} imIn={true} myQueuePos={0} onJoin={noop} onQueue={noop} onLeaveQueue={noop} onObserve={noop} />,
-    );
-    expect(screen.queryByText('Наблюдать')).not.toBeInTheDocument();
   });
 });

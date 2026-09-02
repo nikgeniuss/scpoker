@@ -9,6 +9,11 @@ export interface AutoTopUpSettings {
   targetBB: number;
 }
 
+// Режим шкалы силы руки (HandStrengthMeter): 'category' — по типу комбинации (handRank 1..9,
+// не зависит от борда/числа соперников); 'equity' — по шансу на выигрыш (winChance, Монте-Карло
+// против случайных рук, учитывает борд и число соперников). См. handHint выше.
+export type HandStrengthMode = 'category' | 'equity';
+
 export interface GameSettings {
   soundEnabled: boolean;
   vibrationEnabled: boolean;
@@ -16,6 +21,7 @@ export interface GameSettings {
   // Подсказка: моя текущая комбинация + шанс на выигрыш; у админа — итоговая своя комбинация
   // и текущая комбинация каждого игрока. Шанс считает сервер (против случайных рук, без утечки).
   handHintEnabled: boolean;
+  handStrengthMode: HandStrengthMode;
   autoTopUp: AutoTopUpSettings;
 }
 
@@ -24,6 +30,7 @@ export const DEFAULT_GAME_SETTINGS: GameSettings = {
   vibrationEnabled: true,
   smartFocusEnabled: true,
   handHintEnabled: true,
+  handStrengthMode: 'category',
   autoTopUp: { enabled: false, thresholdBB: 50, targetBB: 100 },
 };
 
@@ -43,6 +50,10 @@ export function loadGameSettings(): GameSettings {
         typeof p.smartFocusEnabled === 'boolean' ? p.smartFocusEnabled : DEFAULT_GAME_SETTINGS.smartFocusEnabled,
       handHintEnabled:
         typeof p.handHintEnabled === 'boolean' ? p.handHintEnabled : DEFAULT_GAME_SETTINGS.handHintEnabled,
+      handStrengthMode:
+        p.handStrengthMode === 'equity' || p.handStrengthMode === 'category'
+          ? p.handStrengthMode
+          : DEFAULT_GAME_SETTINGS.handStrengthMode,
       autoTopUp: {
         enabled:
           typeof p.autoTopUp?.enabled === 'boolean'

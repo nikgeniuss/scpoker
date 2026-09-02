@@ -28,7 +28,9 @@ export const useLobbyDesignStore = create<LobbyDesignState>((set) => ({
       const d = await r.json();
       set({ design: d.design, loaded: true });
     } catch {
-      /* сеть — оставляем дефолт */
+      // Сеть — оставляем дефолт, но помечаем loaded, иначе LobbyGate так и останется
+      // пустым: он не рендерит ничего, пока design не подгружен (см. LobbyGate.tsx).
+      set({ loaded: true });
     }
   },
 

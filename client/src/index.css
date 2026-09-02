@@ -1,4 +1,6 @@
 ﻿@import 'tailwindcss';
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;1,600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 
 @theme {
   --color-poker-green: #1a472a;
@@ -32,11 +34,29 @@
   font-family: 'Helvetica Neue', Helvetica, Arial, system-ui, sans-serif;
 }
 
+/* Скрывает нативный скроллбар у горизонтальных каруселей/табов — скролл (свайп/драг/колесо)
+   остаётся рабочим, просто без видимого «бегунка» (карусель кэш-столов на главной и т.п.). */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 @layer base {
   * {
     @apply border-gray-700;
   }
-  
+
+  /* Без этого Chromium-вебвью (замечено в Telegram Desktop) на горизонтальный свайп/
+     тачпад-жест интерпретирует его как «навигация вперёд/назад по истории» и уводит
+     со страницы мимо всех наших обработчиков — карусель кэш-столов на главной ловила
+     это как самопроизвольный переход в /lobby при свайпе вправо. */
+  html, body {
+    overscroll-behavior-x: none;
+  }
+
   body {
     @apply bg-gray-950 text-white antialiased;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
@@ -75,7 +95,7 @@
    ────────────────────────────────────────────────────────── */
 
 /* Universal numeric formatting — tabular nums so digits don't jump on change */
-.theme-classic, .theme-clubgg {
+.theme-classic, .theme-clubgg, .theme-ak {
   font-variant-numeric: tabular-nums lining-nums;
   font-feature-settings: 'tnum' 1, 'kern' 1;
 }
@@ -86,6 +106,9 @@
 /* Мобильный блок стола: гасим зелёный фон от .theme-clubgg — в углах вокруг овала
    должен проглядывать тёмный пол (#1c1d17), а не зелёный. Фетр рисует сам poker-oval-rail. */
 .theme-clubgg.mobile-table-felt { background: transparent !important; }
+/* AK-стол (admin-тоггл, независим от theme-clubgg выше) — та же логика: гасим фон
+   у .theme-ak, вокруг овала должен проглядывать diamond-паттерн пола (см. .gameroom-root-mobile-ak). */
+.theme-ak.mobile-table-felt { background: transparent !important; }
 
 /* Subtle wool/grain noise on felt for material realism */
 .theme-classic::before,
@@ -217,6 +240,49 @@
   }
 }
 
+/* ─── AK-стол (admin-тоггл SettingsTab «AK-стол», akTableStore) — референс AK Poker:
+   диамант-паттерн пол + яркий зелёный овал-пилл (не «стадион» ClubGG). Независим от
+   .theme-clubgg выше — включается отдельным тоглом, не через appThemeStore. ─── */
+.theme-ak .poker-spotlight {
+  background: radial-gradient(ellipse 50% 32% at 50% 38%, rgba(255,255,255,0.06) 0%, transparent 60%);
+}
+
+/* Полный пилл (border-radius: 999px у референса), не стадион. Ободок-рейл — градиент сверху вниз
+   (референс .poker-table-outer: #2a3528 → #181d17), не плоский цвет. Раньше рисовали рейл через
+   ::before с z-index:-1 — оказалось, что внутри isolation:isolate это красится ПОВЕРХ собственного
+   фона родителя (порядок отрисовки stacking context: сперва фон элемента, потом его отрицательные
+   z-index потомки — уже НАД этим фоном), поэтому рейл перекрывал весь фетр. Правильный приём —
+   градиентный бордер одним элементом: прозрачная граница шириной с рейл + два фоновых слоя
+   с разным background-clip (фетр — по padding-box изнутри границы, рейл-градиент — по border-box). */
+.theme-ak .poker-oval-rail {
+  border: 12px solid transparent !important;
+  border-radius: 999px !important;
+  background-image:
+    radial-gradient(ellipse at center, #a8d900 0%, #4e6800 100%),
+    linear-gradient(to bottom, #171d13, #0a0c09) !important;
+  background-clip: padding-box, border-box !important;
+  box-shadow:
+    inset 0 0 40px rgba(0, 0, 0, 0.6),
+    0 10px 30px rgba(0, 0, 0, 0.5),
+    /* Неоновая подсветка борта — мягкое рассеивание в цвет фетра (лайм). */
+    0 0 24px 2px rgba(198, 255, 0, 0.45),
+    0 0 48px 10px rgba(198, 255, 0, 0.2) !important;
+}
+.theme-ak .poker-oval-rail::before,
+.theme-ak .poker-oval-rail::after { display: none !important; }
+
+/* Mobile: корневой div под mobile-блоком — тот же фон-картинка, что на главной/лобби
+   (PageBackground, /images/main-bg.jpg), вместо диамант-паттерна/pub floor у ClubGG.
+   Перекрывает фон root-темы вокруг овала. */
+@media (max-width: 767px) {
+  .gameroom-root-mobile-ak {
+    background-image: url('/images/main-bg.jpg') !important;
+    background-size: cover !important;
+    background-position: center !important;
+    background-repeat: no-repeat !important;
+  }
+}
+
 /* ─── Watermark — themed monogram on felt center ─── */
 .poker-watermark {
   font-size: clamp(72px, 9vw, 144px);
@@ -281,6 +347,18 @@
   font-weight: 900;
   color: #fbbf24;
   font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+/* AK-скин: надпись «БАНК» выразительнее (ярче + жирнее) и изящнее — курсивный serif вместо
+   безликого sans, как у watermark theme-classic. */
+.theme-ak .pot-plate-mobile .pot-label {
+  color: rgba(255, 255, 255, 0.95);
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-style: italic;
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.06em;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
 }
 

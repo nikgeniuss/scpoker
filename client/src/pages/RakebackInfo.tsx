@@ -97,7 +97,7 @@ export const RakebackInfo = () => {
           </div>
           <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
             <div className="text-xs text-gray-400 mb-1">{t('rakebackInfo.totalCashbackReceived')}</div>
-            <div className="text-lg font-bold tabular-nums text-emerald-400">{formatMoney(totalPaid)}</div>
+            <div className="text-lg font-bold tabular-nums text-emerald-400">{totalPaid.toLocaleString()} HUB</div>
           </div>
         </div>
 
@@ -133,7 +133,7 @@ export const RakebackInfo = () => {
             {history.map((h, i) => (
               <div key={i} className="flex items-center justify-between px-3 py-2.5 text-sm">
                 <div>
-                  <div className="text-white">+{formatMoney(h.payout)}</div>
+                  <div className="text-white">+{h.payout.toLocaleString()} HUB</div>
                   <div className="text-xs text-gray-500">{h.tierName} · {timeAgo(h.t, i18n.language, t)}</div>
                 </div>
                 <div className="text-xs text-gray-500">{t('rakebackInfo.rakeLabel')} {formatMoney(h.rakeAmount)}</div>

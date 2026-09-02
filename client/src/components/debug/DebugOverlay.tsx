@@ -55,7 +55,9 @@ export const DebugOverlay = () => {
   }, []);
 
   return (
-    <div className="fixed top-0 left-1 z-[9999] text-[9px] font-mono text-emerald-400/70 pointer-events-none space-y-px text-left leading-tight select-none">
+    // top-14 — ниже пилюль мультитейблинга (TablePills: top-3 + h-9 ≈ до 48px), иначе FPS/PING
+    // визуально накладывались на мои карты в пилюле (найдено на AK-скине, баг общий для обоих скинов).
+    <div className="fixed top-14 left-1 z-[9999] text-[9px] font-mono text-emerald-400/70 pointer-events-none space-y-px text-left leading-tight select-none">
       <div>FPS {fps}</div>
       <div>PING {ping === null ? '…' : ping === -1 ? 'ERR' : ping + 'ms'}</div>
       {downlink !== null && <div>NET {downlink}Mbps</div>}

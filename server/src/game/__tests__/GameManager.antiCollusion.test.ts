@@ -57,11 +57,11 @@ describe('GameManager — anti-collusion (доделка §10.6)', () => {
     expect(gm.canJoinRoom(roomId, 'B', undefined, undefined, netB)).toBeNull();
   });
 
-  it('выключен → одинаковый IP/device не мешает посадке', async () => {
-    const { gm, io, roomId } = await setupRoom(false);
+  it('нельзя выключить — createRoom игнорирует antiCollusionEnabled:false, защита остаётся включена (security review 2026-08-24)', async () => {
+    const { gm, io, roomId } = await setupRoom(false); // попытка передать false
     const sameNet = { ip: '1.1.1.1', deviceId: 'dev-a' };
     seatPlayer(gm, io, { roomId, userId: 'A', username: 'A-name', bankroll: 10_000, buyIn: 1000, networkInfo: sameNet });
     registerBankroll('B', 10_000);
-    expect(gm.canJoinRoom(roomId, 'B', undefined, undefined, sameNet)).toBeNull();
+    expect(gm.canJoinRoom(roomId, 'B', undefined, undefined, sameNet)).toBe('anti-collusion');
   });
 });
