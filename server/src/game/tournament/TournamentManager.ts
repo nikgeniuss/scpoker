@@ -1229,6 +1229,14 @@ export class TournamentManager {
         this.scheduleStartTimer(info.id);
         console.log(`🏅 [tournament-restore] "${info.name}" (registering, id=${info.id}) — таймер авто-старта восстановлен (${new Date(info.scheduledStartAt).toISOString()})`);
       }
+      // Автоудаление завершённого из списка — обычный setTimeout, он не переживает рестарт: турнир,
+      // доигранный до перезапуска, раньше оставался в лобби НАВСЕГДА (тестовые так провисели ~10
+      // дней, ROADMAP §10.19). Планируем заново с учётом уже прошедшего времени; если 30 минут
+      // истекли или отметки времени нет вовсе — уйдёт на ближайшем тике.
+      if (info.status === 'finished' || info.status === 'cancelled') {
+        const elapsed = info.finishedAt ? Date.now() - info.finishedAt : Infinity;
+        this.scheduleAutoRemove(info.id, TournamentManager.AUTO_REMOVE_DELAY_MS - elapsed);
+      }
       // Незаметное заполнение ботами (roadmap 2026-07-09) — исходные setTimeout'ы не переживают
       // рестарт, довосстанавливаем недостающих ботов с свежими случайными задержками (не пытаемся
       // точно воспроизвести исходное расписание — best-effort, как и остальной bot-fill механизм).

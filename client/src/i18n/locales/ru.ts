@@ -875,6 +875,7 @@ export const ru = {
     reenter: 'Зайти заново',
     startNow: 'Начать сейчас',
     cancelTournament: 'Отменить турнир',
+    removeFromList: 'Убрать из списка',
     guarantee: 'Гарантия',
     overlay: 'Оверлей',
     bounty: 'Баунти',

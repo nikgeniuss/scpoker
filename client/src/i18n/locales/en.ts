@@ -877,6 +877,7 @@ export const en: typeof ru = {
     reenter: 'Re-enter',
     startNow: 'Start now',
     cancelTournament: 'Cancel tournament',
+    removeFromList: 'Remove from list',
     guarantee: 'Guarantee',
     overlay: 'Overlay',
     bounty: 'Bounty',

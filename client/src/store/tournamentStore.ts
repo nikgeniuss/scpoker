@@ -15,6 +15,7 @@ interface TournamentState {
   cancelTournament: (token: string, id: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   forceStartTournament: (token: string, id: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   addBots: (token: string, id: string, count: number) => Promise<{ ok: true } | { ok: false; error: string }>;
+  removeTournament: (token: string, id: string) => Promise<{ ok: true } | { ok: false; error: string }>;
 }
 
 async function postJson<T>(url: string, token: string, body?: unknown): Promise<ApiResult<T>> {
@@ -90,6 +91,19 @@ export const useTournamentStore = create<TournamentState>((set, get) => ({
     const result = await postJson<TournamentInfo>(`${API_URL}/admin/tournaments/${id}/add-bots`, token, { count });
     if ('error' in result) return { ok: false, error: result.error };
     set({ tournaments: get().tournaments.map((t) => (t.id === id ? result : t)) });
+    return { ok: true };
+  },
+
+  // Убрать завершённый/отменённый турнир из списка вручную, не дожидаясь авто-удаления. Сервер
+  // (DELETE /admin/tournaments/:id) режет registering/running — там реальные бай-ины и живая игра.
+  removeTournament: async (token, id) => {
+    const r = await fetch(`${API_URL}/admin/tournaments/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) return { ok: false, error: (data as { error?: string }).error || 'Ошибка' };
+    set({ tournaments: get().tournaments.filter((t) => t.id !== id) });
     return { ok: true };
   },
 }));

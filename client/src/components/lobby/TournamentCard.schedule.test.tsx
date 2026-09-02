@@ -41,6 +41,7 @@ function renderCard(tournament: TournamentInfo) {
       onUnregister={vi.fn()}
       onForceStart={vi.fn()}
       onCancel={vi.fn()}
+      onRemove={vi.fn()}
       onGoToTable={vi.fn()}
       onAddBots={vi.fn()}
       onRedeemPromo={vi.fn().mockResolvedValue({ ok: true })}

@@ -44,6 +44,7 @@ function renderCard(tournament: TournamentInfo, overrides: Partial<Parameters<ty
       onUnregister={vi.fn()}
       onForceStart={vi.fn()}
       onCancel={vi.fn()}
+      onRemove={vi.fn()}
       onGoToTable={vi.fn()}
       onAddBots={vi.fn()}
       onRedeemPromo={onRedeemPromo}

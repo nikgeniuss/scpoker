@@ -18,7 +18,7 @@ export const Tournaments = () => {
   const token = useAuthStore((s) => s.token);
   const myId = useAuthStore((s) => s.user?.id ?? null);
   const isAdmin = useAuthStore((s) => s.isAdmin);
-  const { tournaments, fetchTournaments, register, unregister, redeemPromo, createTournament, cancelTournament, forceStartTournament, addBots } = useTournamentStore();
+  const { tournaments, fetchTournaments, register, unregister, redeemPromo, createTournament, cancelTournament, forceStartTournament, addBots, removeTournament } = useTournamentStore();
   const [showCreate, setShowCreate] = useState(false);
 
   useEffect(() => {
@@ -94,6 +94,7 @@ export const Tournaments = () => {
                 onRedeemPromo={(code) => handleRedeemPromo(t.id, code)}
                 onForceStart={withToken(forceStartTournament, t.id)}
                 onCancel={withToken(cancelTournament, t.id)}
+                onRemove={withToken(removeTournament, t.id)}
                 onAddBots={(count) => handleAddBots(t.id, count)}
                 onGoToTable={() => {
                   const myTableId = t.entries.find((e) => e.userId === myId)?.tableId ?? t.tableIds[0];

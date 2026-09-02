@@ -127,7 +127,6 @@ export const ClubAdmin = () => {
             <Stat label="Страховка" value="—" />
             <Stat label="EV Cashout" value="—" />
             <Stat label="Рейк" value={overview ? formatMoney(overview.rake) : '…'} />
-            <Stat label="Доход" value={overview ? formatMoney(overview.rake) : '…'} />
           </div>
           <p className="text-[10px] text-gray-600 mt-4">
             Статистика суммарная по клубу. Разбивка по форматам и метрики «Игры / Страховка / EV Cashout»

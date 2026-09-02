@@ -30,13 +30,14 @@ interface TournamentCardProps {
   onUnregister: () => void;
   onForceStart: () => void;
   onCancel: () => void;
+  onRemove: () => void;
   onGoToTable: () => void;
   onAddBots: (count: number) => void;
   onRedeemPromo: (code: string) => Promise<{ ok: boolean; error?: string }>;
 }
 
 export const TournamentCard = ({
-  tournament: trn, myId, isAdmin, onRegister, onUnregister, onForceStart, onCancel, onGoToTable, onAddBots, onRedeemPromo,
+  tournament: trn, myId, isAdmin, onRegister, onUnregister, onForceStart, onCancel, onRemove, onGoToTable, onAddBots, onRedeemPromo,
 }: TournamentCardProps) => {
   const { t, i18n } = useTranslation();
   const [botCount, setBotCount] = useState(3);
@@ -309,6 +310,15 @@ export const TournamentCard = ({
             <Ticket size={12} /> {t('tournamentCard.havePromo')}
           </button>
         )
+      )}
+
+      {isAdmin && isArchived && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          className="w-full mt-2 py-1.5 rounded-lg text-xs font-bold text-gray-300 bg-white/5 hover:bg-white/10 border border-white/10"
+        >
+          {t('tournamentCard.removeFromList')}
+        </button>
       )}
 
       {isAdmin && trn.status === 'registering' && (
