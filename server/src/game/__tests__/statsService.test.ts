@@ -22,27 +22,27 @@ const recs: HandStatRecord[] = [
 
 describe('statsService — чистые агрегаторы', () => {
   it('aggregateRecords: всё время по юзеру (сумма дельт + счётчик рук)', () => {
-    expect(aggregateRecords(recs, 'u1', null, null)).toEqual({ hands: 3, pnl: 90, rake: 0 });
+    expect(aggregateRecords(recs, 'u1', null, null)).toEqual({ hands: 3, pnl: 90, rake: 0, wins: 2 });
   });
 
   it('aggregateRecords: окно [since, until] включительно', () => {
     // t=2000 попадает, t=5000 за верхней границей
-    expect(aggregateRecords(recs, 'u1', 2000, 4000)).toEqual({ hands: 1, pnl: -30, rake: 0 });
+    expect(aggregateRecords(recs, 'u1', 2000, 4000)).toEqual({ hands: 1, pnl: -30, rake: 0, wins: 0 });
   });
 
   it('aggregateRecords: only-since и only-until границы', () => {
-    expect(aggregateRecords(recs, 'u1', 2000, null)).toEqual({ hands: 2, pnl: -10, rake: 0 });
-    expect(aggregateRecords(recs, 'u1', null, 1500)).toEqual({ hands: 1, pnl: 100, rake: 0 });
+    expect(aggregateRecords(recs, 'u1', 2000, null)).toEqual({ hands: 2, pnl: -10, rake: 0, wins: 1 });
+    expect(aggregateRecords(recs, 'u1', null, 1500)).toEqual({ hands: 1, pnl: 100, rake: 0, wins: 1 });
   });
 
   it('aggregateRecords: неизвестный юзер → нули', () => {
-    expect(aggregateRecords(recs, 'nope', null, null)).toEqual({ hands: 0, pnl: 0, rake: 0 });
+    expect(aggregateRecords(recs, 'nope', null, null)).toEqual({ hands: 0, pnl: 0, rake: 0, wins: 0 });
   });
 
   it('aggregateAllRecords: разбивка по всем юзерам', () => {
     const all = aggregateAllRecords(recs);
-    expect(all['u1']).toEqual({ hands: 3, pnl: 90, rake: 0 });
-    expect(all['u2']).toEqual({ hands: 1, pnl: 50, rake: 0 });
+    expect(all['u1']).toEqual({ hands: 3, pnl: 90, rake: 0, wins: 2 });
+    expect(all['u2']).toEqual({ hands: 1, pnl: 50, rake: 0, wins: 1 });
   });
 
   it('aggregateAllRecordsInPeriod: без границ = как aggregateAllRecords', () => {
@@ -51,8 +51,8 @@ describe('statsService — чистые агрегаторы', () => {
 
   it('aggregateAllRecordsInPeriod: окно отфильтровывает старые записи (для таблицы лидеров)', () => {
     const inWindow = aggregateAllRecordsInPeriod(recs, 2000, null);
-    expect(inWindow['u1']).toEqual({ hands: 2, pnl: -10, rake: 0 }); // t=2000,5000
-    expect(inWindow['u2']).toEqual({ hands: 1, pnl: 50, rake: 0 }); // t=3000
+    expect(inWindow['u1']).toEqual({ hands: 2, pnl: -10, rake: 0, wins: 1 }); // t=2000,5000
+    expect(inWindow['u2']).toEqual({ hands: 1, pnl: 50, rake: 0, wins: 1 }); // t=3000
   });
 });
 

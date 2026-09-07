@@ -12,6 +12,7 @@ export interface AchievementDef {
   condition: AchievementCondition;
   threshold: number;
   rewardAmount: number;
+  chestId?: string; // сундук вместо фиксированной награды (ROADMAP §10.21.7)
 }
 
 export interface AchievementView extends AchievementDef {
@@ -27,7 +28,7 @@ interface AchievementsState {
   loadMine: (token: string | null) => Promise<void>;
   loadAdmin: (token: string | null) => Promise<void>;
   saveConfig: (token: string | null, patch: { enabled?: boolean; catalog?: AchievementDef[] }) => Promise<void>;
-  claim: (token: string | null, id: string) => Promise<{ reward: number } | { error: string } | null>;
+  claim: (token: string | null, id: string) => Promise<{ reward: number; chestTitle?: string } | { error: string } | null>;
 }
 
 const authHeaders = (token: string | null): Record<string, string> =>
@@ -88,7 +89,7 @@ export const useAchievementsStore = create<AchievementsState>((set, get) => ({
       const d = await r.json();
       if (!r.ok) return { error: typeof d.error === 'string' ? d.error : 'unknown' };
       await get().loadMine(token);
-      return { reward: d.reward };
+      return { reward: d.reward, chestTitle: d.chestTitle };
     } catch {
       return null;
     }

@@ -61,6 +61,13 @@ interface MobilePlayerSeatProps {
   // Если true — D/SB/BB-бейдж внутри плашки не рисуется (родитель рендерит «на столе»).
   hideRoleBadge?: boolean;
   showHint?: boolean; // показывать подсказку комбинации у чужих аватаров (своя — в блоке карт GameRoom)
+  // Добровольный показ своих карт после раздачи (тап по карте → видна всем). Передаётся только
+  // герою и только пока окно открыто; карты становятся кнопками ЗДЕСЬ ЖЕ, без второго блока —
+  // раньше GameRoom рисовал отдельный fixed-набор, и две колоды накладывались друг на друга.
+  onShowCard?: (index: number) => void;
+  showCardPrompt?: string;
+  // Админ-метка «это бот» — белый кружок с красной «B» вместо аватарки (только для админа).
+  isBotSeat?: boolean;
   onAvatarClick?: (player: PlayerView) => void;
   // AK-стол (admin-тоггл) — тёмная плашка-капсула под ником/стеком + бейдж-капсула Пас
   // вместо plain-текста (референс AK Poker). Остальная структура не меняется.
@@ -94,6 +101,9 @@ const MobilePlayerSeatImpl = ({
   isAdminPeek,
   hideRoleBadge,
   showHint,
+  onShowCard,
+  showCardPrompt,
+  isBotSeat,
   onAvatarClick,
   akSkin,
 }: MobilePlayerSeatProps) => {
@@ -121,7 +131,7 @@ const MobilePlayerSeatImpl = ({
       className={
         'player-info-block relative flex flex-col items-center gap-1 ' +
         (isCurrent ? 'is-current ' : '') +
-        (player.isFolded ? 'opacity-50 grayscale ' : '')
+        (player.isFolded ? 'opacity-65 grayscale ' : '')
       }
     >
       {/* Bubble сверху (emoji + action). Action-тег героя переехал в fixed-блок карт (GameRoom,
@@ -144,7 +154,7 @@ const MobilePlayerSeatImpl = ({
       )}
 
       {/* face-up overlay только для себя (isMe) на showdown — карты противника веером в player-avatar-wrap */}
-      {isMe && hasCardsInHand && !player.isFolded && showHand && !isAdminPeek && (
+      {isMe && hasCardsInHand && !player.isFolded && showHand && !isAdminPeek && !onShowCard && (
         <div
           className="absolute z-30 flex gap-0.5 pointer-events-none"
           style={{
@@ -177,6 +187,48 @@ const MobilePlayerSeatImpl = ({
         </div>
       )}
 
+      {/* Добровольный показ (окно showdown): те же карты на том же месте, но кнопками — тап
+          раскрывает карту сопернику. Контейнер seat'а pointer-events-none, поэтому включаем
+          события точечно на кнопках. */}
+      {isMe && onShowCard && player.cards.length === 2 && (
+        <div
+          className="absolute z-40 flex flex-col items-center gap-1 pointer-events-none"
+          style={{ left: '50%', top: avatarPx / 2, transform: 'translate(-50%, -50%)' }}
+        >
+          {showCardPrompt && (
+            <span className="text-white/75 text-[9px] font-semibold whitespace-nowrap [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]">
+              {showCardPrompt}
+            </span>
+          )}
+          <div className="flex gap-0.5">
+            {[0, 1].map((i) => {
+              const c = player.cards[i];
+              if (!c) return null;
+              const shown = !!player.revealedCards?.includes(i);
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  disabled={shown}
+                  onClick={() => onShowCard(i)}
+                  className={
+                    'relative rounded pointer-events-auto transition-transform ' +
+                    (shown ? 'ring-2 ring-emerald-400 rounded-md' : 'active:translate-y-0.5')
+                  }
+                >
+                  <Card card={c} faceStyle={faceStyle} backStyle={backStyle} deck={deck} size="sm" />
+                  {shown ? (
+                    <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 rounded-full bg-emerald-500 text-white text-[8px] font-black flex items-center justify-center shadow">
+                      ✓
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* ME normal-play карты НЕ рендерятся внутри seat — они вынесены в GameRoom
           как fixed-блок над ActionPanel'ом (anchor to top edge of action box). */}
 
@@ -195,11 +247,17 @@ const MobilePlayerSeatImpl = ({
           }
           onClick={onAvatarClick ? () => onAvatarClick(player) : undefined}
         >
-          <ReactNiceAvatar
-            className="w-full h-full"
-            shape="circle"
-            {...avatarConfig(player.avatar || player.id)}
-          />
+          {isBotSeat ? (
+            <div className="w-full h-full bg-white flex items-center justify-center">
+              <span className="text-red-600 font-black leading-none" style={{ fontSize: avatarPx * 0.5 }}>B</span>
+            </div>
+          ) : (
+            <ReactNiceAvatar
+              className="w-full h-full"
+              shape="circle"
+              {...avatarConfig(player.avatar || player.id)}
+            />
+          )}
         </div>
 
         {/* Карты противника на стадии игры — выглядывают из-под аватарки сбоку (z-index ниже

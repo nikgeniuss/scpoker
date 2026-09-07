@@ -31,6 +31,8 @@ export const AkProfile = () => {
   const token = useAuthStore((s) => s.token);
   const setAvatarSeed = useAuthStore((s) => s.setAvatarSeed);
   const totalPaid = useRakebackStore((s) => s.totalPaid);
+  const rakebackEnabled = useRakebackStore((s) => s.enabled);
+  const tier = useRakebackStore((s) => s.tier);
   const loadRakebackMine = useRakebackStore((s) => s.loadMine);
   const navigate = useNavigate();
 
@@ -113,10 +115,14 @@ export const AkProfile = () => {
               <span>ID: {displayId}</span>
               {copiedId ? <Check size={12} className="text-ak-green" /> : <Copy size={12} />}
             </button>
-            {/* Статичный бейдж — в проекте нет системы VIP-уровней, декоративный элемент по референсу */}
-            <span className="mt-1.5 inline-block px-2.5 py-0.5 rounded-full bg-white/10 border border-white/20 text-white text-[11px] font-bold tracking-wide">
-              VIP0
-            </span>
+            {/* Реальный VIP-уровень из rakebackService (тот же тир, что в Profile.tsx и на
+                /rewards). Скрыт, пока рейкбэк выключен админом или тир ещё не загружен —
+                иначе бейдж обещал бы уровень системы, которая ничего не начисляет. */}
+            {rakebackEnabled && tier && (
+              <span className="mt-1.5 inline-block px-2.5 py-0.5 rounded-full bg-white/10 border border-white/20 text-white text-[11px] font-bold tracking-wide">
+                VIP {tier.name.toUpperCase()}
+              </span>
+            )}
           </div>
         </div>
       </div>

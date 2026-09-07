@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { serializeGameState } from '../gameStateSerializer.js';
+import { serializeGameState, activeTableModes } from '../gameStateSerializer.js';
 import { cards } from './helpers/cards.js';
 
 // §0.1 — карты соперников НЕ должны уходить клиенту до showdown. Изолированный тест чистого
@@ -73,6 +73,38 @@ describe('serializeGameState — защита карт (§0.1)', () => {
     const s = serializeGameState(room);
     expect(cardsOf(s, 'A')).toEqual([]); // победитель без вскрытия — карты скрыты
     expect(cardsOf(s, 'B')).toEqual([]);
+  });
+
+  // Выигрыш «все сфолдили» бывает на любой улице — правило одно: раскрытия нет, потому что
+  // считается ЧИСЛО не сфолдивших, а не количество карт на борде (вопрос из живого прогона).
+  it.each([
+    ['преflop', ''],
+    ['флоп', '2h 7d 9c'],
+    ['тёрн', '2h 7d 9c Jh'],
+    ['ривер', '2h 7d 9c Jh 4s'],
+  ])('выигрыш без вскрытия на улице «%s» → карты победителя скрыты от соперников', (_street, board) => {
+    const room = makeRoom({ phase: 'showdown' });
+    const r = room as unknown as { players: Map<string, { isFolded: boolean }>; communityCards: unknown[] };
+    r.communityCards = board ? cards(board) : [];
+    r.players.get('B')!.isFolded = true; // все, кроме A, сфолдили
+
+    const s = serializeGameState(room); // взгляд со стороны стола
+    expect(cardsOf(s, 'A')).toEqual([]);
+    expect(cardsOf(s, 'B')).toEqual([]);
+    // Сфолдивший соперник тоже не должен увидеть руку победителя.
+    expect(cardsOf(serializeGameState(room, 'B'), 'A')).toEqual([]);
+    // Сам победитель свои карты видит всегда.
+    expect(cardsOf(serializeGameState(room, 'A'), 'A')).toHaveLength(2);
+  });
+
+  it('выигрыш без вскрытия → имя комбинации победителя тоже не утекает (handHint)', () => {
+    const room = makeRoom({ phase: 'showdown' });
+    const r = room as unknown as { players: Map<string, { isFolded: boolean; wantsHint?: boolean }> };
+    r.players.get('B')!.isFolded = true;
+    r.players.get('B')!.wantsHint = true; // сфолдивший включил подсказку комбинаций
+
+    const s = serializeGameState(room, 'B');
+    expect(s.players.find((p) => p.id === 'A')!.handHint).toBeUndefined();
   });
 
   it('withPeek → карты всех + futureBoard присутствует', () => {
@@ -194,5 +226,37 @@ describe('serializeGameState — willWin (§0.1, только admin-peek на с
     (room as unknown as { players: Map<string, { isFolded: boolean }> }).players.get('B')!.isFolded = true;
     const s = serializeGameState(room, 'A', true);
     expect(willWinOf(s, 'A')).toBe(true);
+  });
+});
+
+// Бейджи активных спец-режимов над столом (ROADMAP §9.1): раньше о режимах можно было узнать
+// только в модалке до посадки, хотя они меняют ход раздачи и деньги.
+describe('activeTableModes — бейджи режимов стола', () => {
+  const room = (opts: Record<string, unknown>) =>
+    ({ ante: 0, straddleEnabled: false, bombPotEnabled: false, doubleBoardEnabled: false,
+       rimtEnabled: false, evCashoutEnabled: false, noTurnNoShowEnabled: false, ...opts }) as
+      Parameters<typeof activeTableModes>[0];
+
+  it('обычный стол — режимов нет', () => {
+    expect(activeTableModes(room({}))).toEqual([]);
+  });
+
+  it('анте попадает в список только когда оно ненулевое', () => {
+    expect(activeTableModes(room({ ante: 0 }))).toEqual([]);
+    expect(activeTableModes(room({ ante: 5 }))).toEqual(['ante']);
+  });
+
+  it('несколько режимов идут в фиксированном порядке', () => {
+    expect(activeTableModes(room({ ante: 5, straddleEnabled: true, doubleBoardEnabled: true })))
+      .toEqual(['ante', 'straddle', 'doubleBoard']);
+  });
+
+  it('EV Cashout вытесняет RIMT — иначе бейджи врут об одном и том же all-in', () => {
+    expect(activeTableModes(room({ rimtEnabled: true, evCashoutEnabled: true }))).toEqual(['evCashout']);
+    expect(activeTableModes(room({ rimtEnabled: true }))).toEqual(['rimt']);
+  });
+
+  it('сериализатор не кладёт поле в state, когда режимов нет (не раздуваем broadcast)', () => {
+    expect(serializeGameState(makeRoom()).tableModes).toBeUndefined();
   });
 });

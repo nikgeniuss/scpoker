@@ -19,6 +19,7 @@ import {
   languageKeyboard,
 } from './menus.js';
 import { getLanguage, setLanguage, type BotLanguage } from './botPrefs.js';
+import { planRetry } from './pollBackoff.js';
 
 function findUserByTelegramId(telegramId: number): User | null {
   try {
@@ -86,14 +87,24 @@ export async function startBot(): Promise<void> {
 
   console.log('TG bot: long polling запущен');
   let offset = 0;
+  let consecutiveFailures = 0;
 
   while (running) {
     let updates: TelegramUpdate[];
     try {
       updates = await getUpdates(offset, 30);
+      consecutiveFailures = 0;
     } catch (err) {
-      console.error('TG bot: getUpdates failed', err);
-      await new Promise((r) => setTimeout(r, 5000));
+      consecutiveFailures++;
+      // Пауза и уровень лога — по типу сбоя (см. pollBackoff): 429 ждёт ровно столько, сколько
+      // просит Telegram; сетевые обрывы long-poll идут по экспоненте и не шумят в логе.
+      const plan = planRetry(err, consecutiveFailures);
+      const msg = `TG bot: getUpdates failed (сбой #${consecutiveFailures}, повтор через ${plan.delayMs}мс): ${
+        err instanceof Error ? err.message : String(err)
+      }`;
+      if (plan.log === 'error') console.error(msg);
+      else if (plan.log === 'warn') console.warn(msg);
+      await new Promise((r) => setTimeout(r, plan.delayMs));
       continue;
     }
 

@@ -58,6 +58,55 @@ describe('GameManager — movePlayerToTable / isTableSafeToRebalance', () => {
     expect(stateA.players).toHaveLength(2); // никто не сдвинулся
   });
 
+  it('блокирует перенос В стол, где идёт раздача, без allowMidHand (живой прогон нашёл баг 2026-09-02)', async () => {
+    const { gm } = await createTestGameManager();
+    const realGm = gm as unknown as GameManager;
+
+    const tableA = realGm.createTournamentTable({ tournamentId: 't1', name: 'A', maxPlayers: 3, smallBlind: 10, bigBlind: 20, ante: 0, format: 'nlh' });
+    const tableB = realGm.createTournamentTable({ tournamentId: 't1', name: 'B', maxPlayers: 3, smallBlind: 10, bigBlind: 20, ante: 0, format: 'nlh' });
+    realGm.seatTournamentPlayer(tableA, 'A', 'Alice', 1000); // tableA один игрок — раздача не идёт
+    realGm.seatTournamentPlayer(tableB, 'B', 'Bob', 1000);
+    realGm.seatTournamentPlayer(tableB, 'C', 'Carol', 1000);
+    gm.startGame(tableB); // на целевом столе раздача уже идёт
+
+    // Обычная балансировка ждёт окна на ОБОИХ столах — иначе игрок попадёт в чужую руку без карт.
+    expect(realGm.movePlayerToTable(tableA, tableB, 'A')).toBe(false);
+
+    const stateA = gm.getGameState(tableA) as unknown as StateView;
+    const stateB = gm.getGameState(tableB) as unknown as StateView;
+    expect(stateA.players.map((p) => p.id)).toEqual(['A']); // остался на месте
+    expect(stateB.players).toHaveLength(2);
+  });
+
+  it('allowMidHand (консолидация): сажает folded, без карт и без хода в текущей раздаче', async () => {
+    const { gm } = await createTestGameManager();
+    const realGm = gm as unknown as GameManager;
+
+    const tableA = realGm.createTournamentTable({ tournamentId: 't1', name: 'A', maxPlayers: 3, smallBlind: 10, bigBlind: 20, ante: 0, format: 'nlh' });
+    const tableB = realGm.createTournamentTable({ tournamentId: 't1', name: 'B', maxPlayers: 3, smallBlind: 10, bigBlind: 20, ante: 0, format: 'nlh' });
+    realGm.seatTournamentPlayer(tableA, 'A', 'Alice', 1000);
+    realGm.seatTournamentPlayer(tableB, 'B', 'Bob', 1000);
+    realGm.seatTournamentPlayer(tableB, 'C', 'Carol', 1000);
+    gm.startGame(tableB);
+
+    expect(realGm.movePlayerToTable(tableA, tableB, 'A', true)).toBe(true);
+
+    const stateB = gm.getGameState(tableB) as unknown as StateView & {
+      players: Array<{ id: string; isFolded?: boolean; currentBet?: number }>;
+      currentPlayerIndex: number;
+    };
+    const moved = stateB.players.find((p) => p.id === 'A')!;
+    expect(moved.isFolded).toBe(true);
+    expect(moved.currentBet).toBe(0);
+    expect(moved.chips).toBe(1000); // стек переехал как есть
+
+    const ownView = gm.getGameState(tableB, 'A') as unknown as { players: Array<{ id: string; cards?: unknown[] }> };
+    expect(ownView.players.find((p) => p.id === 'A')!.cards).toEqual([]);
+
+    // Ход не должен достаться игроку без карт — ровно та ситуация, что ловили на живом прогоне.
+    expect(stateB.players[stateB.currentPlayerIndex]?.id).not.toBe('A');
+  });
+
   it('не переносит, если на целевом столе нет мест', async () => {
     const { gm } = await createTestGameManager();
     const realGm = gm as unknown as GameManager;

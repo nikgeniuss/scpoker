@@ -5,7 +5,6 @@ vi.mock('../../auth/storage.js', () => import('./helpers/storage.js'));
 import { clearStorage, setStorage } from './helpers/storage.js';
 import {
   computeAchievements,
-  computeTournamentStats,
   claimAchievement,
   getAchievementsCatalog,
   updateAchievementsSettings,
@@ -39,20 +38,6 @@ describe('achievementsService — computeAchievements (чистая функци
     const views = computeAchievements(CATALOG, [], progress);
     expect(views.find((v) => v.id === 'tournament-win')?.earned).toBe(true);
     expect(views.find((v) => v.id === 'first-hand')?.earned).toBe(false);
-  });
-});
-
-describe('achievementsService — computeTournamentStats (чистая функция)', () => {
-  it('считает уникальные турниры (ре-энтри не задваивают played) и победы', () => {
-    const entries = [
-      { tournamentId: 't1', userId: 'u1', finishPlace: 5 },
-      { tournamentId: 't1', userId: 'u1', finishPlace: 3 }, // ре-энтри того же турнира
-      { tournamentId: 't2', userId: 'u1', finishPlace: 1 },
-      { tournamentId: 't3', userId: 'u2', finishPlace: 1 }, // чужой турнир
-    ];
-    expect(computeTournamentStats(entries, 'u1')).toEqual({ tournamentsPlayed: 2, tournamentWins: 1 });
-    expect(computeTournamentStats(entries, 'u2')).toEqual({ tournamentsPlayed: 1, tournamentWins: 1 });
-    expect(computeTournamentStats(entries, 'ghost')).toEqual({ tournamentsPlayed: 0, tournamentWins: 0 });
   });
 });
 

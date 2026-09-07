@@ -67,7 +67,7 @@ export const ResponsibleGambling = () => {
       value={value}
       onChange={(e) => onChange(e.target.value as Period)}
       disabled={blocked}
-      className="px-2 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm outline-none disabled:opacity-40"
+      className="shrink-0 px-2 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm outline-none disabled:opacity-40"
     >
       <option value="day">{t('responsibleGambling.periodDay')}</option>
       <option value="week">{t('responsibleGambling.periodWeek')}</option>
@@ -122,19 +122,19 @@ export const ResponsibleGambling = () => {
                 <div className="text-xs text-gray-400">{formatMoney(depositThisPeriod)} / {formatMoney(state.depositLimitCents)}</div>
               </div>
             ) : null}
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <input
                 value={depositLimit}
                 onChange={(e) => setDepositLimit(e.target.value)}
                 disabled={blocked}
                 placeholder="0"
-                className="flex-1 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white outline-none disabled:opacity-40"
+                className="flex-1 min-w-[6rem] px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white outline-none disabled:opacity-40"
               />
               {periodSelect(depositPeriod, setDepositPeriod)}
               <button
                 disabled={blocked}
                 onClick={() => saveOne({ depositLimitCents: depositLimit ? parseMoney(depositLimit) : null, depositLimitPeriod: depositPeriod })}
-                className="px-4 py-2 rounded-lg bg-emerald-600 font-bold text-sm disabled:opacity-40"
+                className="shrink-0 grow sm:grow-0 px-4 py-2 rounded-lg bg-emerald-600 font-bold text-sm disabled:opacity-40"
               >
                 {t('responsibleGambling.save')}
               </button>
@@ -158,19 +158,19 @@ export const ResponsibleGambling = () => {
                 <div className="text-xs text-gray-400">{formatMoney(lossThisPeriod)} / {formatMoney(state.lossLimitCents)}</div>
               </div>
             ) : null}
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <input
                 value={lossLimit}
                 onChange={(e) => setLossLimit(e.target.value)}
                 disabled={blocked}
                 placeholder="0"
-                className="flex-1 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white outline-none disabled:opacity-40"
+                className="flex-1 min-w-[6rem] px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white outline-none disabled:opacity-40"
               />
               {periodSelect(lossPeriod, setLossPeriod)}
               <button
                 disabled={blocked}
                 onClick={() => saveOne({ lossLimitCents: lossLimit ? parseMoney(lossLimit) : null, lossLimitPeriod: lossPeriod })}
-                className="px-4 py-2 rounded-lg bg-emerald-600 font-bold text-sm disabled:opacity-40"
+                className="shrink-0 grow sm:grow-0 px-4 py-2 rounded-lg bg-emerald-600 font-bold text-sm disabled:opacity-40"
               >
                 {t('responsibleGambling.save')}
               </button>
@@ -183,19 +183,19 @@ export const ResponsibleGambling = () => {
           <section className="rounded-2xl border border-white/10 bg-white/5 p-4 mb-4">
             <h2 className="font-bold mb-1">{t('responsibleGambling.sessionLimitTitle')}</h2>
             <p className="text-xs text-gray-500 mb-3">{t('responsibleGambling.sessionLimitHint')}</p>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <input
                 value={sessionLimit}
                 onChange={(e) => setSessionLimit(e.target.value)}
                 disabled={blocked}
                 placeholder="0"
-                className="flex-1 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white outline-none disabled:opacity-40"
+                className="flex-1 min-w-[6rem] px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white outline-none disabled:opacity-40"
               />
-              <span className="self-center text-sm text-gray-400">{t('responsibleGambling.minutes')}</span>
+              <span className="shrink-0 self-center text-sm text-gray-400">{t('responsibleGambling.minutes')}</span>
               <button
                 disabled={blocked}
                 onClick={() => saveOne({ sessionTimeLimitMinutes: sessionLimit ? Math.round(Number(sessionLimit)) : null })}
-                className="px-4 py-2 rounded-lg bg-emerald-600 font-bold text-sm disabled:opacity-40"
+                className="shrink-0 grow sm:grow-0 px-4 py-2 rounded-lg bg-emerald-600 font-bold text-sm disabled:opacity-40"
               >
                 {t('responsibleGambling.save')}
               </button>

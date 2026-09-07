@@ -65,10 +65,15 @@ export function verifyTotp(secretBase32: string, token: string, window = 1, time
   if (!/^\d{6}$/.test(token)) return false;
   const counter = Math.floor(time / 1000 / stepSec);
   const secret = base32Decode(secretBase32);
+  // Сравнение constant-time и БЕЗ раннего выхода из цикла: и посимвольный тайминг, и число
+  // проверенных шагов не должны зависеть от того, какой именно код прислали.
+  const expected = Buffer.from(token, 'utf8');
+  let matched = false;
   for (let i = -window; i <= window; i++) {
-    if (hotp(secret, counter + i) === token) return true;
+    const candidate = Buffer.from(hotp(secret, counter + i), 'utf8');
+    if (candidate.length === expected.length && crypto.timingSafeEqual(candidate, expected)) matched = true;
   }
-  return false;
+  return matched;
 }
 
 // Секрет группами по 4 символа — для ручного ввода в приложение-аутентификатор.

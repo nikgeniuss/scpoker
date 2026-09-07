@@ -7,7 +7,9 @@ import { JWT_SECRET } from '../config.js';
 export function verifyToken<T = unknown>(token: string | undefined | null): T | null {
   if (!token) return null;
   try {
-    return jwt.verify(token, JWT_SECRET) as T;
+    // algorithms фиксируем явно (defense-in-depth): проверяющая сторона не должна принимать
+    // токен, подписанный не тем алгоритмом, которым мы подписываем.
+    return jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as T;
   } catch {
     return null;
   }

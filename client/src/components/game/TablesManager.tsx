@@ -1,4 +1,7 @@
 import { useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import toast from 'react-hot-toast';
 import { getSocket } from '../../lib/socket';
 import { SOCKET_EVENTS } from '@poker-room/shared';
 import type { GameState } from '@poker-room/shared';
@@ -13,6 +16,8 @@ import { triggerHaptic } from '../../lib/haptic';
 // «живыми» в пилюлях даже когда смотрим на другой. Один сокет в нескольких socket.io-комнатах
 // (§0.6 не нарушаем — сокет по-прежнему один на user.id).
 export const TablesManager = () => {
+  const navigate = useNavigate();
+  const { t } = useTranslation();
   const myId = useAuthStore((s) => s.user?.id ?? null);
   // Предыдущее состояние «мой ход» по столам — чтобы ловить переход false→true.
   const prevTurn = useRef<Record<string, boolean>>({});
@@ -51,6 +56,19 @@ export const TablesManager = () => {
     };
     socket.on(SOCKET_EVENTS.GAME_WINNER, onWinner);
 
+    // Пересадка при балансировке MTT: сервер уже перевёл сокет на новый стол. Уводим туда же
+    // экран, иначе игрок остаётся смотреть на опустевший старый стол («ждём второго игрока»),
+    // а пилюля закрытого стола висит до перезагрузки (живой прогон 2026-09-02).
+    const onTableAssigned = ({ roomId, fromRoomId }: { tournamentId?: string; roomId?: string; fromRoomId?: string }) => {
+      if (!roomId || !fromRoomId) return; // без fromRoomId это первичная посадка (старт турнира) — не дёргаем экран
+      useTablesStore.getState().remove(fromRoomId);
+      if (window.location.pathname === '/game/' + fromRoomId) {
+        toast(t('tablesManager.movedToNewTable'));
+        navigate('/game/' + roomId);
+      }
+    };
+    socket.on(SOCKET_EVENTS.TOURNAMENT_TABLE_ASSIGNED, onTableAssigned);
+
     // Восстановление столов на (ре)коннекте/reload делает СЕРВЕР (reconnectUserTables):
     // он сам возвращает сокет в комнаты, где игрок сидит, и шлёт состояние → пилюли вернутся.
     // Клиентский re-join не нужен (и был бы рискованным — мог пере-сажать).
@@ -58,8 +76,9 @@ export const TablesManager = () => {
     return () => {
       socket.off(SOCKET_EVENTS.GAME_UPDATE, onUpdate);
       socket.off(SOCKET_EVENTS.GAME_WINNER, onWinner);
+      socket.off(SOCKET_EVENTS.TOURNAMENT_TABLE_ASSIGNED, onTableAssigned);
     };
-  }, [myId]);
+  }, [myId, navigate, t]);
 
   return null;
 };

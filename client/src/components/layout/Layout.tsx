@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
+import { apiErrorMessage } from '../../config/apiErrors';
 import { useAuthStore } from '../../store/authStore';
 import { useTournamentStore } from '../../store/tournamentStore';
 import { useDecksStore } from '../../store/decksStore';
@@ -175,7 +176,7 @@ export const Layout = ({ children }: LayoutProps) => {
     if (!token) return;
     const result = await useTournamentStore.getState().register(token, tournamentId);
     if (!result.ok) {
-      toast.error(result.error);
+      toast.error(apiErrorMessage(result.error, t));
       navigate('/tournaments');
       return;
     }

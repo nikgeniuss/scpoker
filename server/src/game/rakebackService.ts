@@ -6,6 +6,10 @@ import { readJSON, writeJSON } from '../auth/storage.js';
 
 const FILE = 'rakeback.json';
 const HISTORY_CAP = 200;
+// Скользящее недельное окно для карточки «Кэшбэк недели» на /rewards. Считаем его per-user
+// счётчиком, а не по history: HISTORY_CAP — общий кап на ВСЕХ игроков сразу, на живом столе
+// он смывается быстрее недели (ROADMAP §10.21.8).
+const WEEK_MS = 7 * 24 * 60 * 60_000;
 
 export interface RakebackTier {
   name: string;
@@ -25,6 +29,8 @@ export interface RakebackHistoryEntry {
 export interface RakebackUserState {
   lifetimeRake: number; // накопленный рейк за всё время (определяет уровень)
   totalPaid: number;    // всего получено кэшбэка
+  weeklyPaid: number;   // получено кэшбэка в текущем недельном окне
+  weekStartAt: number;  // начало текущего недельного окна (epoch ms; 0 — окна ещё не было)
 }
 
 export interface RakebackState {
@@ -64,7 +70,12 @@ function sanitizeUsers(v: unknown): Record<string, RakebackUserState> {
   if (!v || typeof v !== 'object') return {};
   const out: Record<string, RakebackUserState> = {};
   for (const [id, raw] of Object.entries(v as Record<string, Partial<RakebackUserState>>)) {
-    out[id] = { lifetimeRake: num(raw?.lifetimeRake, 0), totalPaid: num(raw?.totalPaid, 0) };
+    out[id] = {
+      lifetimeRake: num(raw?.lifetimeRake, 0),
+      totalPaid: num(raw?.totalPaid, 0),
+      weeklyPaid: num(raw?.weeklyPaid, 0),   // записи до появления полей — с нуля
+      weekStartAt: num(raw?.weekStartAt, 0),
+    };
   }
   return out;
 }
@@ -107,6 +118,16 @@ export function pickNextTier(tiers: RakebackTier[], lifetimeRakeCents: number): 
   return null;
 }
 
+// Сдвиг недельного окна — чистая функция. Окно ещё не начиналось или истекло (прошло >= 7 суток)
+// → начинается заново с нуля; иначе состояние как есть.
+export function rollWeekly(
+  u: { weeklyPaid: number; weekStartAt: number },
+  now: number,
+): { weeklyPaid: number; weekStartAt: number } {
+  if (u.weekStartAt <= 0 || now - u.weekStartAt >= WEEK_MS) return { weeklyPaid: 0, weekStartAt: now };
+  return { weeklyPaid: u.weeklyPaid, weekStartAt: u.weekStartAt };
+}
+
 // Кэшбэк с одной раздачи — чистая функция.
 export function computeRakebackPayout(rakeCents: number, tier: RakebackTier): number {
   if (rakeCents <= 0 || tier.percent <= 0) return 0;
@@ -128,6 +149,8 @@ export interface UserRakebackInfo {
   enabled: boolean;
   lifetimeRake: number;
   totalPaid: number;
+  weeklyPaid: number;   // кэшбэк за текущее недельное окно (карточка «Кэшбэк недели»)
+  weekStartAt: number;  // начало окна; 0 — начислений ещё не было
   tier: RakebackTier;
   nextTier: RakebackTier | null;
   tiers: RakebackTier[];
@@ -137,14 +160,19 @@ export interface UserRakebackInfo {
 // Личный кабинет рейкбэка игрока.
 export function getUserRakebackInfo(userId: string): UserRakebackInfo {
   const s = load();
-  const u = s.users[userId] ?? { lifetimeRake: 0, totalPaid: 0 };
+  const u = s.users[userId] ?? { lifetimeRake: 0, totalPaid: 0, weeklyPaid: 0, weekStartAt: 0 };
   const tier = pickTier(s.tiers, u.lifetimeRake);
   const next = pickNextTier(s.tiers, u.lifetimeRake);
   const history = s.history.filter((h) => h.userId === userId).slice(0, 50);
+  // Окно сдвигаем на чтении тоже: истёкшая неделя должна показывать 0, не дожидаясь следующей
+  // раздачи. Результат не сохраняем — чтение не должно писать в файл.
+  const week = rollWeekly(u, Date.now());
   return {
     enabled: s.enabled,
     lifetimeRake: u.lifetimeRake,
     totalPaid: u.totalPaid,
+    weeklyPaid: week.weeklyPaid,
+    weekStartAt: u.weekStartAt,
     tier,
     nextTier: next,
     tiers: s.tiers,
@@ -172,11 +200,14 @@ export function applyRakeback(
   if (rakeCents <= 0) return null;
   const s = load();
   if (!s.enabled) return null;
-  const u = s.users[userId] ?? { lifetimeRake: 0, totalPaid: 0 };
+  const u = s.users[userId] ?? { lifetimeRake: 0, totalPaid: 0, weeklyPaid: 0, weekStartAt: 0 };
   u.lifetimeRake += rakeCents;
   const tier = pickTier(s.tiers, u.lifetimeRake);
   const payout = computeRakebackPayout(rakeCents, tier);
   u.totalPaid += payout;
+  const week = rollWeekly(u, Date.now());
+  u.weeklyPaid = week.weeklyPaid + payout;
+  u.weekStartAt = week.weekStartAt;
   s.users[userId] = u;
   if (payout > 0) {
     s.history = [

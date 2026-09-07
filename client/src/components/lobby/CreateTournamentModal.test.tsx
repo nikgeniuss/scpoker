@@ -235,3 +235,41 @@ describe('<CreateTournamentModal /> — вход по промо', () => {
     expect(onSubmit.mock.calls[0][0].promoMaxRedemptions).toBe(12);
   });
 });
+
+// Защиты от случайного/повторного создания (живой прогон 2026-09-02: двойной клик создал два
+// одинаковых MTT, оба доиграли и оба выплатили гарантию).
+describe('<CreateTournamentModal /> — защита от лишних отправок', () => {
+  it('Enter в поле не создаёт турнир, а снимает фокус (клавиатура сворачивается)', () => {
+    const onSubmit = vi.fn<(opts: CreateTournamentOptions) => void>();
+    render(<CreateTournamentModal onClose={() => {}} onSubmit={onSubmit} />);
+
+    const nameInput = screen.getByPlaceholderText('Название турнира') as HTMLInputElement;
+    nameInput.focus();
+    expect(document.activeElement).toBe(nameInput);
+
+    fireEvent.change(nameInput, { target: { value: 'Мой турнир' } });
+    fireEvent.keyDown(nameInput, { key: 'Enter', code: 'Enter' });
+
+    expect(onSubmit).not.toHaveBeenCalled(); // сабмита нет
+    expect(document.activeElement).not.toBe(nameInput); // фокус снят → клавиатура закрывается
+    expect(nameInput.value).toBe('Мой турнир'); // значение принято
+  });
+
+  it('двойной клик по «Создать» отправляет запрос один раз', async () => {
+    let resolveSubmit: () => void = () => {};
+    const onSubmit = vi.fn<(opts: CreateTournamentOptions) => Promise<void>>(
+      () => new Promise<void>((res) => { resolveSubmit = res; }),
+    );
+    render(<CreateTournamentModal onClose={() => {}} onSubmit={onSubmit} />);
+
+    const button = screen.getByText('Создать');
+    fireEvent.click(button);
+    fireEvent.click(button); // второй клик, пока первый запрос ещё в полёте
+    fireEvent.click(button);
+
+    expect(onSubmit).toHaveBeenCalledOnce();
+    expect(screen.getByText('Создание…')).toBeDisabled();
+
+    resolveSubmit();
+  });
+});

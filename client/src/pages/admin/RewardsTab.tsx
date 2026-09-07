@@ -1,5 +1,7 @@
 import { StreakRewardsSection } from '../../components/admin/StreakRewardsSection';
 import { AchievementsRewardsSection } from '../../components/admin/AchievementsRewardsSection';
+import { MissionsRewardsSection } from '../../components/admin/MissionsRewardsSection';
+import { ChestsRewardsSection } from '../../components/admin/ChestsRewardsSection';
 import { RaceRewardsSection } from '../../components/admin/RaceRewardsSection';
 import { ReferralRewardsSection } from '../../components/admin/ReferralRewardsSection';
 import { ShopRewardsSection } from '../../components/admin/ShopRewardsSection';
@@ -15,6 +17,8 @@ export const RewardsTab = () => {
       <h2 className="text-2xl font-bold text-white mb-4">🎁 Награды</h2>
       <StreakRewardsSection />
       <AchievementsRewardsSection />
+      <MissionsRewardsSection />
+      <ChestsRewardsSection />
       <RaceRewardsSection />
       <ReferralRewardsSection />
       <ShopRewardsSection />

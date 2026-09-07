@@ -19,6 +19,7 @@ interface RakebackState {
   // Личный кабинет (loadMine)
   lifetimeRake: number;
   totalPaid: number;
+  weeklyPaid: number; // кэшбэк за текущее недельное окно (карточка «Кэшбэк недели» на /rewards)
   tier: RakebackTier | null;
   nextTier: RakebackTier | null;
   history: RakebackHistoryEntry[];
@@ -37,6 +38,7 @@ export const useRakebackStore = create<RakebackState>((set) => ({
   tiers: [],
   lifetimeRake: 0,
   totalPaid: 0,
+  weeklyPaid: 0,
   tier: null,
   nextTier: null,
   history: [],
@@ -64,6 +66,7 @@ export const useRakebackStore = create<RakebackState>((set) => ({
         tiers: d.tiers,
         lifetimeRake: d.lifetimeRake,
         totalPaid: d.totalPaid,
+        weeklyPaid: d.weeklyPaid ?? 0,
         tier: d.tier,
         nextTier: d.nextTier,
         history: d.history ?? [],

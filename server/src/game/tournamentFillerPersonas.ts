@@ -38,11 +38,30 @@ const FILLER_PERSONA_ARCHETYPES: BotPersona[] = [
   { aggression: 0.18, bluffRate: 0.01, heroFoldRate: 0.04, slowplayRate: 0.08, vpip: 0.58, reactionFast: [800, 1800], reactionSlow: [2500, 4600], fastBias: 0.68 },
 ];
 
+// Насколько турнирные боты слабее своей базовой персоны (0.15 = «ещё на 15% слабее», запрос
+// пользователя после живого прогона). Крутится ОДНОЙ цифрой и применяется и к заполнителям, и к
+// тестовым ботам (BotManager) — оба типа играют только в турнирах.
+// Слабее в этой модели = меньше агрессии, блефа и правильных хиро-фолдов, но БОЛЬШЕ vpip:
+// бот заходит в большее число рук с мусором и чаще платит, вместо того чтобы давить.
+export const TOURNAMENT_BOT_WEAKNESS = 0.15;
+
+export function weakenPersona(base: BotPersona, weakness = TOURNAMENT_BOT_WEAKNESS): BotPersona {
+  const down = (v: number) => Math.max(0, v * (1 - weakness));
+  const up = (v: number) => Math.min(1, v * (1 + weakness));
+  return {
+    ...base,
+    aggression: down(base.aggression),
+    bluffRate: down(base.bluffRate),
+    heroFoldRate: down(base.heroFoldRate),
+    vpip: up(base.vpip),
+  };
+}
+
 // Выбор архетипа + лёгкий детерминированный джиттер (±10%) по seed бота — чтобы 100+ ботов
 // не были статистически идентичны друг другу поверх разных имён.
 export function buildFillerPersona(seed: number): BotPersona {
   const rng = makeSeededRng(seed);
-  const base = FILLER_PERSONA_ARCHETYPES[Math.floor(rng() * FILLER_PERSONA_ARCHETYPES.length)];
+  const base = weakenPersona(FILLER_PERSONA_ARCHETYPES[Math.floor(rng() * FILLER_PERSONA_ARCHETYPES.length)]);
   const jitter = (v: number) => Math.max(0, Math.min(1, v * (0.9 + rng() * 0.2)));
   return {
     aggression: jitter(base.aggression),

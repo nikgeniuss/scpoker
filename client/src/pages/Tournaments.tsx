@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Plus, Trophy } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { apiErrorMessage } from '../config/apiErrors';
 import { useAuthStore } from '../store/authStore';
 import { useTournamentStore } from '../store/tournamentStore';
 import { TournamentCard } from '../components/lobby/TournamentCard';
@@ -34,7 +35,7 @@ export const Tournaments = () => {
     if (!token) return;
     const result = await createTournament(token, opts);
     if (!result.ok) {
-      toast.error(result.error);
+      toast.error(apiErrorMessage(result.error, t));
       return;
     }
     setShowCreate(false);
@@ -43,19 +44,19 @@ export const Tournaments = () => {
   const withToken = (fn: (token: string, id: string) => Promise<{ ok: true } | { ok: false; error: string }>, id: string) => async () => {
     if (!token) return;
     const result = await fn(token, id);
-    if (!result.ok) toast.error(result.error);
+    if (!result.ok) toast.error(apiErrorMessage(result.error, t));
   };
 
   const handleAddBots = async (id: string, count: number) => {
     if (!token) return;
     const result = await addBots(token, id, count);
-    if (!result.ok) toast.error(result.error);
+    if (!result.ok) toast.error(apiErrorMessage(result.error, t));
   };
 
   const handleRedeemPromo = async (id: string, code: string) => {
     if (!token) return { ok: false as const, error: 'no-token' };
     const result = await redeemPromo(token, id, code);
-    if (!result.ok) toast.error(result.error);
+    if (!result.ok) toast.error(apiErrorMessage(result.error, t));
     return result;
   };
 

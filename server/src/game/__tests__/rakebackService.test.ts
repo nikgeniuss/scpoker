@@ -7,6 +7,7 @@ import {
   pickTier,
   pickNextTier,
   computeRakebackPayout,
+  rollWeekly,
   applyRakeback,
   getUserRakebackInfo,
   updateRakebackSettings,
@@ -125,5 +126,72 @@ describe('rakebackService — настройки и публичная вьюш�
     const unsorted = [TIERS[2], TIERS[0], TIERS[1]];
     const updated = updateRakebackSettings({ tiers: unsorted });
     expect(updated.tiers.map((t) => t.name)).toEqual(['Bronze', 'Silver', 'Gold']);
+  });
+});
+
+// Недельное окно кэшбэка — карточка «Кэшбэк недели» на /rewards (ROADMAP §10.21.8, вариант 2).
+// Считается per-user счётчиком, а не по history: общий HISTORY_CAP смывается быстрее недели.
+const WEEK_MS = 7 * 24 * 60 * 60_000;
+
+describe('rakebackService — недельное окно кэшбэка', () => {
+  beforeEach(() => {
+    clearStorage();
+  });
+
+  it('rollWeekly: окна ещё не было — начинается сейчас, с нуля', () => {
+    expect(rollWeekly({ weeklyPaid: 0, weekStartAt: 0 }, 1000)).toEqual({ weeklyPaid: 0, weekStartAt: 1000 });
+  });
+
+  it('rollWeekly: окно ещё идёт — состояние не трогаем', () => {
+    const now = 1_000_000_000;
+    const u = { weeklyPaid: 50, weekStartAt: now - WEEK_MS + 1 };
+    expect(rollWeekly(u, now)).toEqual(u);
+  });
+
+  it('rollWeekly: неделя истекла — счётчик обнуляется, окно начинается заново', () => {
+    const now = 1_000_000_000;
+    expect(rollWeekly({ weeklyPaid: 50, weekStartAt: now - WEEK_MS }, now)).toEqual({ weeklyPaid: 0, weekStartAt: now });
+  });
+
+  it('applyRakeback копит weeklyPaid отдельно от totalPaid', () => {
+    seed(true);
+    applyRakeback('u1', 'r1', 100); // Bronze 10% → 10
+    applyRakeback('u1', 'r1', 100);
+    const info = getUserRakebackInfo('u1');
+    expect(info.totalPaid).toBe(20);
+    expect(info.weeklyPaid).toBe(20);
+  });
+
+  it('истёкшее окно показывает 0 на чтении, не дожидаясь следующей раздачи', () => {
+    setStorage('rakeback.json', {
+      enabled: true,
+      tiers: TIERS,
+      users: { u1: { lifetimeRake: 5000, totalPaid: 500, weeklyPaid: 500, weekStartAt: Date.now() - WEEK_MS - 1 } },
+      history: [],
+    });
+    const info = getUserRakebackInfo('u1');
+    expect(info.weeklyPaid).toBe(0);
+    expect(info.totalPaid).toBe(500); // lifetime-итог обнулением окна не задет
+  });
+
+  it('новая раздача после истёкшего окна начинает неделю с нуля', () => {
+    setStorage('rakeback.json', {
+      enabled: true,
+      tiers: TIERS,
+      users: { u1: { lifetimeRake: 0, totalPaid: 500, weeklyPaid: 500, weekStartAt: Date.now() - WEEK_MS - 1 } },
+      history: [],
+    });
+    applyRakeback('u1', 'r1', 100); // Bronze 10% → 10
+    expect(getUserRakebackInfo('u1').weeklyPaid).toBe(10);
+  });
+
+  it('старые записи без полей окна читаются как нулевые', () => {
+    setStorage('rakeback.json', {
+      enabled: true,
+      tiers: TIERS,
+      users: { u1: { lifetimeRake: 100, totalPaid: 10 } },
+      history: [],
+    });
+    expect(getUserRakebackInfo('u1').weeklyPaid).toBe(0);
   });
 });

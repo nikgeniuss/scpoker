@@ -12,6 +12,8 @@ import { getBadBeatState, updateBadBeat, topUpBadBeat, sumBadBeatHits } from '..
 import { getRakebackState, updateRakebackSettings } from '../game/rakebackService.js';
 import { getStreakConfig, updateStreakSettings } from '../game/streakService.js';
 import { getAchievementsCatalog, updateAchievementsSettings } from '../game/achievementsService.js';
+import { getMissionsCatalog, updateMissionsSettings } from '../game/missionsService.js';
+import { getChestsConfig, updateChestsSettings } from '../game/chestService.js';
 import { getRaceConfig, updateRaceSettings } from '../game/raceService.js';
 import { getReferralConfig, updateReferralSettings } from '../game/referralService.js';
 import { getShopCatalog, updateShopSettings } from '../game/loyaltyShopService.js';
@@ -19,6 +21,7 @@ import { getCatalog as getInventoryCatalog, updateInventorySettings } from '../g
 import { countTablesOpened, roomNameMap, readRoomEvents } from '../game/roomEvents.js';
 import { readFrozenTableEvents } from '../game/frozenTableLog.js';
 import { recordChipOp, getChipOpsLog } from '../game/chipOpsLog.js';
+import { getTournamentLedger, summarizeLedger } from '../game/tournament/tournamentLedger.js';
 
 // Админ-роуты (/api/admin/*). Все требуют adminMiddleware (применён на уровне роутера).
 // Вынесено из index.ts (ROADMAP §9.3-C).
@@ -331,6 +334,12 @@ export function createAdminRouter(gameManager: GameManager): Router {
     res.json(getChipOpsLog());
   });
 
+  // Журнал турнирной экономики: собрано за входы / рейк / оверлей (эмиссия) / выплачено.
+  router.get('/tournament-ledger', (req, res) => {
+    const log = getTournamentLedger();
+    res.json({ log, totals: summarizeLedger(log) });
+  });
+
   // Удаление юзера (необратимо). Нельзя удалить самого себя.
   router.delete('/users/:id', (req, res) => {
     const targetId = String(req.params.id);
@@ -437,6 +446,22 @@ export function createAdminRouter(gameManager: GameManager): Router {
 
   router.put('/achievements', (req, res) => {
     res.json(updateAchievementsSettings(req.body as Record<string, unknown>));
+  });
+
+  router.get('/missions', (req, res) => {
+    res.json(getMissionsCatalog());
+  });
+
+  router.put('/missions', (req, res) => {
+    res.json(updateMissionsSettings(req.body as Record<string, unknown>));
+  });
+
+  router.get('/chests', (req, res) => {
+    res.json(getChestsConfig());
+  });
+
+  router.put('/chests', (req, res) => {
+    res.json(updateChestsSettings(req.body as Record<string, unknown>));
   });
 
   router.get('/race', (req, res) => {

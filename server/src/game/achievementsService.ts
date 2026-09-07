@@ -4,6 +4,7 @@
 // только сам каталог (admin-редактируемый) и факт «уже забрал» (per-user, чтобы не выдать дважды).
 // Источник правды — server/data/achievements.json (атомарно через writeJSON, §0.4).
 import { readJSON, writeJSON } from '../auth/storage.js';
+import { openChest } from './chestService.js';
 
 const FILE = 'achievements.json';
 
@@ -16,7 +17,8 @@ export interface AchievementDef {
   title: string; // свободный текст, задаёт админ (как RakebackTier.name — не i18n-ключ)
   condition: AchievementCondition;
   threshold: number;
-  rewardAmount: number; // HUB-коины
+  rewardAmount: number; // HUB-коины (используется, если сундук не задан или выключен)
+  chestId?: string;     // выдать сундук вместо фиксированной суммы (ROADMAP §10.21.7)
 }
 
 interface AchievementsState {
@@ -51,6 +53,7 @@ function sanitizeDef(raw: unknown): AchievementDef | null {
     condition: CONDITIONS.includes(r.condition as AchievementCondition) ? (r.condition as AchievementCondition) : 'hands',
     threshold: Math.max(0, num(r.threshold, 0)),
     rewardAmount: Math.max(0, num(r.rewardAmount, 0)),
+    ...(typeof r.chestId === 'string' && r.chestId.trim() ? { chestId: r.chestId.trim() } : {}),
   };
 }
 
@@ -141,19 +144,6 @@ export function computeAchievements(
   }));
 }
 
-// Число сыгранных ТУРНИРОВ (уникальных, ре-энтри не считаются повторно) и побед (finishPlace=1).
-// Чистая функция — вызывающий строит flat-список из tournamentManager.list() (турнирное ядро
-// не трогаем ни единой строкой, см. §10.21.10 — самая чувствительная фаза только §10.21.6).
-export function computeTournamentStats(
-  entries: { tournamentId: string; userId: string; finishPlace?: number }[],
-  userId: string,
-): { tournamentsPlayed: number; tournamentWins: number } {
-  const mine = entries.filter((e) => e.userId === userId);
-  const uniqueTournaments = new Set(mine.map((e) => e.tournamentId));
-  const wins = mine.filter((e) => e.finishPlace === 1).length;
-  return { tournamentsPlayed: uniqueTournaments.size, tournamentWins: wins };
-}
-
 export function getClaimedIds(userId: string): string[] {
   return load().claimed[userId] ?? [];
 }
@@ -164,7 +154,7 @@ export function claimAchievement(
   userId: string,
   achievementId: string,
   progress: AchievementProgress,
-): { reward: number } | { error: 'not-found' | 'not-earned' | 'already-claimed' } {
+): { reward: number; chestTitle?: string } | { error: 'not-found' | 'not-earned' | 'already-claimed' } {
   const s = load();
   const def = s.catalog.find((a) => a.id === achievementId);
   if (!def) return { error: 'not-found' };
@@ -173,5 +163,7 @@ export function claimAchievement(
   if (progress[def.condition] < def.threshold) return { error: 'not-earned' };
   s.claimed[userId] = [...claimedIds, achievementId];
   save(s);
-  return { reward: def.rewardAmount };
+  // См. claimMission: сундук решает сумму на сервере, иначе платим фиксированную награду.
+  const chest = def.chestId ? openChest(def.chestId) : null;
+  return chest ? { reward: chest.amount, chestTitle: chest.title } : { reward: def.rewardAmount };
 }

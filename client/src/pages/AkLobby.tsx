@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Trophy, Users, Coins, Plus, Gift, Bell, Dices, Shield, DollarSign } from 'lucide-react';
 import ReactNiceAvatar from 'react-nice-avatar';
 import toast from 'react-hot-toast';
+import { apiErrorMessage } from '../config/apiErrors';
 import type { RoomInfo, TournamentInfo } from '@poker-room/shared';
 import { useAuthStore } from '../store/authStore';
 import { useInboxStore } from '../store/inboxStore';
@@ -61,12 +62,12 @@ export const AkLobby = () => {
   const handleRegister = async (id: string) => {
     if (!token) return;
     const result = await register(token, id);
-    if (!result.ok) toast.error(result.error);
+    if (!result.ok) toast.error(apiErrorMessage(result.error, t));
   };
   const handleUnregister = async (id: string) => {
     if (!token) return;
     const result = await unregister(token, id);
-    if (!result.ok) toast.error(result.error);
+    if (!result.ok) toast.error(apiErrorMessage(result.error, t));
   };
   const goToTable = (trn: TournamentInfo) => {
     const myTableId = trn.entries.find((e) => e.userId === myId && e.status === 'playing')?.tableId;

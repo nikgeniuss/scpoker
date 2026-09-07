@@ -1,5 +1,5 @@
 import type { Room } from './GameManager.js';
-import type { GameState } from '@poker-room/shared';
+import type { GameState, TableMode } from '@poker-room/shared';
 import { getFutureBoardCards } from './deck.js';
 import { handHintName, handRankValue } from './handHint.js';
 import { evaluateHand, compareHands } from './hands.js';
@@ -30,8 +30,26 @@ export function computeWillWin(room: Room, playerId: string): boolean | undefine
 //   - withPeek (глаз админа) — карты всех + futureBoard (caller обязан проверить роль!).
 // Без viewerId/peek вне showdown — карт нет ни у кого (безопасный дефолт).
 // Чистая функция (Room → GameState) — тестируется изолированно (gameStateSerializer.test.ts).
+// Активные спец-режимы стола для бейджей над столом (ROADMAP §9.1). Чистая функция от Room —
+// отдельно, чтобы список режимов правился в одном месте и тестировался без всей сериализации.
+export function activeTableModes(room: Pick<Room,
+  'ante' | 'straddleEnabled' | 'bombPotEnabled' | 'doubleBoardEnabled' | 'rimtEnabled' | 'evCashoutEnabled' | 'noTurnNoShowEnabled'
+>): TableMode[] {
+  const modes: TableMode[] = [];
+  if (room.ante > 0) modes.push('ante');
+  if (room.straddleEnabled) modes.push('straddle');
+  if (room.bombPotEnabled) modes.push('bombPot');
+  if (room.doubleBoardEnabled) modes.push('doubleBoard');
+  // EV Cashout имеет приоритет над RIMT (см. §10.6): показывать оба разом — врать игроку.
+  if (room.evCashoutEnabled) modes.push('evCashout');
+  else if (room.rimtEnabled) modes.push('rimt');
+  if (room.noTurnNoShowEnabled) modes.push('noTurnNoShow');
+  return modes;
+}
+
 export function serializeGameState(room: Room, viewerId?: string, withPeek = false): GameState {
   const tbOn = room.timebank.enabled;
+  const modes = activeTableModes(room);
   const isShowdown = room.phase === 'showdown';
   // Карты авто-раскрываются ТОЛЬКО при реальном вскрытии — когда ≥2 игроков дошли до showdown
   // (боролись за банк). Выигрыш без вскрытия (все сфолдили, остался один) тоже идёт через
@@ -129,6 +147,7 @@ export function serializeGameState(room: Room, viewerId?: string, withPeek = fal
           }
         : undefined,
     badBeatEligible: getBadBeatState().enabled && room.passwordHash === null && !room.isBotTable,
+    ...(modes.length > 0 ? { tableModes: modes } : {}),
     observers: room.observers ? Array.from(room.observers.values()).map(o => ({ id: o.userId, username: o.username })) : [],
     // Будущие community-карты для admin-peek. Учитываем burn-карты (dealCommunityCards
     // сжигает по 1 перед каждым флопом/тёрном/ривером) — иначе peek показывал бы карты

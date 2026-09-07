@@ -3,8 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ChevronRight, Copy, Check, AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { apiErrorMessage } from '../config/apiErrors';
 import { useAuthStore } from '../store/authStore';
 import { useWalletStore } from '../store/walletStore';
+import { useTelegram } from '../hooks/useTelegram';
+import { toCsv, csvFileName, showDeposits, showWithdrawals, PAYMENT_FILTERS, type PaymentFilter } from '../config/paymentHistory';
 import { formatMoney } from '../config/chipFormat';
 import type { PaymentChain, WithdrawalRequest } from '@poker-room/shared';
 
@@ -58,6 +61,10 @@ export function Wallet() {
   const navigate = useNavigate();
   const token = useAuthStore((s) => s.token);
   const { wallet, deposits, withdrawals, loading, fetchWallet, fetchHistory, requestWithdrawal } = useWalletStore();
+  const { isTelegram } = useTelegram();
+  // Фильтр и выгрузка истории (ROADMAP §11.1).
+  const [historyFilter, setHistoryFilter] = useState<PaymentFilter>('all');
+
   const [chain, setChain] = useState<PaymentChain>('ethereum');
   const [copied, setCopied] = useState(false);
   const [amount, setAmount] = useState('');
@@ -107,7 +114,7 @@ export function Wallet() {
         setPayoutAddress('');
         setConfirming(false);
       } else {
-        toast.error(result.error);
+        toast.error(apiErrorMessage(result.error, t));
       }
     } finally {
       setSubmitting(false);
@@ -116,16 +123,37 @@ export function Wallet() {
 
   const chainInfo = wallet?.chains[chain];
   const history = [
-    ...deposits.map((d) => ({ key: `d-${d.chain}-${d.txid}`, at: d.creditedAt, node: (
+    ...(showDeposits(historyFilter) ? deposits : []).map((d) => ({ key: `d-${d.chain}-${d.txid}`, at: d.creditedAt, node: (
       <span className="text-sm text-emerald-400">{t('wallet.depositRecord', { amount: usdtRawToDisplay(d.amountUsdtRaw) })}</span>
     ) })),
-    ...withdrawals.map((w) => ({ key: `w-${w.id}`, at: w.createdAt, node: (
+    ...(showWithdrawals(historyFilter) ? withdrawals : []).map((w) => ({ key: `w-${w.id}`, at: w.createdAt, node: (
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm text-white/80">{t('wallet.withdrawalRecord', { amount: formatMoney(w.amountChips) })}</span>
         <span className={'text-xs font-bold ' + WITHDRAWAL_STATUS_COLOR[w.status]}>{t(WITHDRAWAL_STATUS_KEY[w.status])}</span>
       </div>
     ) })),
   ].sort((a, b) => b.at.localeCompare(a.at));
+
+  // Выгрузка CSV. В Telegram Mini App скачивание файла заблокировано, поэтому там копируем
+  // в буфер — иначе кнопка молча ничего не делала бы (§5: работать должно на всех трёх таргетах).
+  const exportCsv = async () => {
+    const csv = toCsv(deposits, withdrawals, historyFilter);
+    if (isTelegram) {
+      try {
+        await navigator.clipboard.writeText(csv);
+        toast.success(t('wallet.exportCopied'));
+      } catch {
+        toast.error(t('wallet.exportFailed'));
+      }
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = csvFileName();
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="min-h-[100dvh] bg-void-black text-white flex flex-col">
@@ -256,7 +284,32 @@ export function Wallet() {
         </div>
 
         <div className="space-y-2">
-          <div className="text-sm font-bold text-white/70 px-1">{t('wallet.history')}</div>
+          <div className="flex items-center justify-between gap-2 px-1">
+            <span className="text-sm font-bold text-white/70">{t('wallet.history')}</span>
+            <button
+              type="button"
+              onClick={exportCsv}
+              disabled={deposits.length === 0 && withdrawals.length === 0}
+              className="text-xs font-bold text-white/50 hover:text-white/80 disabled:opacity-30 min-h-[44px] px-2"
+            >
+              {t('wallet.export')}
+            </button>
+          </div>
+          <div className="grid grid-cols-3 gap-1 p-1 rounded-2xl bg-white/5">
+            {PAYMENT_FILTERS.map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setHistoryFilter(f)}
+                className={
+                  'min-h-[44px] rounded-xl text-xs font-bold transition-colors ' +
+                  (historyFilter === f ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/70')
+                }
+              >
+                {t('wallet.filter_' + f)}
+              </button>
+            ))}
+          </div>
           {history.length === 0 ? (
             <div className="text-sm text-white/30 px-1">{t('wallet.noHistory')}</div>
           ) : (

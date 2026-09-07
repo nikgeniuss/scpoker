@@ -3,7 +3,7 @@ import { createTronAdapter } from '../tronAdapter.js';
 
 // Деривация и валидация адреса — чистая логика, без сети (RPC-вызовы покрыты testnet-прогоном, ROADMAP §11.1).
 describe('tronAdapter — деривация адресов', () => {
-  const adapter = createTronAdapter({ fullHost: 'https://api.shasta.trongrid.io', apiKey: null, usdtContractAddress: 'T-fake' });
+  const adapter = createTronAdapter({ fullHost: 'https://api.shasta.trongrid.io', apiKey: null, usdtContractAddress: 'T-fake', feeLimitSun: 100_000_000 });
   const mnemonic = 'test test test test test test test test test test test junk';
 
   it('детерминирована: один и тот же mnemonic+index → один и тот же адрес', () => {

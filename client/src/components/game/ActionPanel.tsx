@@ -193,16 +193,16 @@ export const ActionPanel = ({
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: 80, opacity: 0 }}
             transition={{ duration: 0.18 }}
-            className="md:hidden fixed right-2 top-20 bottom-44 z-30 flex flex-col items-center gap-2 bg-black/75 backdrop-blur rounded-2xl border border-white/10 px-2 py-3 w-12"
+            className="md:hidden fixed right-2 top-20 bottom-44 z-30 flex flex-col items-center gap-2 bg-black/80 backdrop-blur rounded-2xl border-2 border-poker-gold/70 shadow-[0_0_24px_rgba(16,185,129,0.45)] px-2 py-3 w-16"
           >
             <button
               type="button"
               onClick={() => setRaiseAmount(maxRaiseTotal)}
-              className="text-[10px] font-bold text-white/80 hover:text-white"
+              className="text-[11px] font-black text-poker-gold hover:text-white"
             >
               MAX
             </button>
-            <div className="text-poker-gold text-[10px] font-bold leading-tight text-center">
+            <div className="text-poker-gold text-[12px] font-black leading-tight text-center tabular-nums">
               {fmt(raiseAmount)}
             </div>
             <input
@@ -213,17 +213,17 @@ export const ActionPanel = ({
               value={raiseAmount}
               onChange={(e) => setRaiseAmount(Number(e.target.value))}
               aria-orientation="vertical"
-              className="accent-poker-gold flex-1"
+              className="raise-vrange accent-poker-gold flex-1"
               style={{
                 writingMode: 'vertical-lr' as React.CSSProperties['writingMode'],
                 direction: 'rtl',
-                width: '24px',
+                width: '40px',
               }}
             />
             <button
               type="button"
               onClick={() => setRaiseAmount(minRaiseTotal)}
-              className="text-[10px] font-bold text-white/80 hover:text-white"
+              className="text-[11px] font-black text-poker-gold hover:text-white"
             >
               MIN
             </button>

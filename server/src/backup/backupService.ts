@@ -2,6 +2,7 @@ import { readdirSync, statSync, mkdirSync, copyFileSync, unlinkSync, existsSync,
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { execFile } from 'child_process';
+import { uploadDailyBackup } from './offsiteBackup.js';
 
 // Резервное копирование server/data (ROADMAP §11.3): аккаунты, банкроллы, история рук и депозиты
 // живут в JSON-файлах в единственном экземпляре — до этого модуля копий не было нигде.
@@ -128,6 +129,9 @@ export async function runBackup(): Promise<void> {
         rmSync(join(DAILY_DIR, stale), { recursive: true, force: true });
       }
       console.log(`💾 [backup] суточная копия ${dayStamp()} создана (${copied} файлов)`);
+      // Выгрузка наружу — ровно раз в сутки, в прогоне, который создал папку дня (§11.3).
+      // Локальный бэкап уже готов, поэтому сбой отправки ничего не откатывает.
+      await uploadDailyBackup(today, dayStamp());
     }
   } catch (err) {
     // Бэкап никогда не должен ронять игровой процесс — при сбое просто ждём следующего прогона.

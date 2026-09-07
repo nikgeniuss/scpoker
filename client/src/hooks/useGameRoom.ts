@@ -94,8 +94,8 @@ export function useGameRoom(roomId: string | undefined, observe = false): GameRo
       if (evtRoomId && roomId && evtRoomId !== roomId) return;
       setCountdownEndsAt(endsAt);
     };
-    const onJoinDenied = ({ reason, retryAfterSec }: { reason: string; retryAfterSec?: number }) => {
-      toast.error(denyMessage(reason, 'Доступ закрыт: ' + reason, retryAfterSec));
+    const onJoinDenied = ({ reason, retryAfterSec, requiredBuyIn }: { reason: string; retryAfterSec?: number; requiredBuyIn?: number }) => {
+      toast.error(denyMessage(reason, 'Доступ закрыт: ' + reason, retryAfterSec, requiredBuyIn));
       navigate('/lobby');
     };
     const onError = ({ message }: { message: string }) => toast.error(message);

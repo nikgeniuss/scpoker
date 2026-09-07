@@ -117,3 +117,50 @@ describe('<Wallet />', () => {
     expect(screen.getByText('Выплачено').className).toContain('text-emerald-400');
   });
 });
+
+// Фильтр истории платежей (ROADMAP §11.1): раньше депозиты и выводы шли одним общим списком
+// без возможности разделить их.
+describe('<Wallet /> — фильтр истории', () => {
+  const deposit = {
+    txid: 'tx1', chain: 'ethereum' as const, userId: 'u1', address: '0xdep',
+    amountUsdtRaw: '10000000', amountChipsCredited: 1000, blockNumber: 1,
+    creditedAt: '2026-01-02T00:00:00.000Z', swept: true,
+  };
+
+  beforeEach(() => {
+    useAuthStore.setState({ token: 'tok', user: { id: 'u1', username: 'Me', role: 'user' }, isAdmin: false });
+    useWalletStore.setState({
+      wallet: WALLET_INFO,
+      deposits: [deposit],
+      withdrawals: [withdrawal('paid', 'w1', '2026-01-01T00:00:00.000Z')],
+      loaded: true, loading: false,
+      fetchWallet: async () => {}, fetchHistory: async () => {}, requestWithdrawal: async () => ({ ok: true }),
+    });
+  });
+
+  it('по умолчанию видны обе стороны истории', () => {
+    renderWallet();
+    expect(screen.getByText(/Депозит/)).toBeInTheDocument();
+    expect(screen.getByText(/Вывод .* фишек/)).toBeInTheDocument();
+  });
+
+  it('фильтр «Пополнения» скрывает выводы', () => {
+    renderWallet();
+    fireEvent.click(screen.getByText('Пополнения'));
+    expect(screen.getByText(/Депозит/)).toBeInTheDocument();
+    expect(screen.queryByText(/Вывод .* фишек/)).toBeNull();
+  });
+
+  it('фильтр «Выводы» скрывает пополнения', () => {
+    renderWallet();
+    fireEvent.click(screen.getByText('Выводы'));
+    expect(screen.queryByText(/Депозит/)).toBeNull();
+    expect(screen.getByText(/Вывод .* фишек/)).toBeInTheDocument();
+  });
+
+  it('пустая история — кнопка выгрузки заблокирована', () => {
+    useWalletStore.setState({ deposits: [], withdrawals: [] });
+    renderWallet();
+    expect(screen.getByText('Выгрузить')).toBeDisabled();
+  });
+});

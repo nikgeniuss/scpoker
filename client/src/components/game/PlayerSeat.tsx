@@ -48,6 +48,13 @@ interface PlayerSeatProps {
   bigBlind: number;
   displayMode: ChipDisplay;
   winningCards?: CardData[]; // На шоудауне у победителя — карты, входящие в выигрышную комбинацию
+  // Добровольный показ своих карт после раздачи — карты героя становятся кнопками на своём
+  // месте (раньше GameRoom рисовал для этого отдельный набор, и они накладывались).
+  onShowCard?: (index: number) => void;
+  showCardPrompt?: string;
+  // Админ-метка «это бот»: вместо аватарки — белый кружок с красной «B». Передаётся ТОЛЬКО
+  // админу (родитель гейтит по isAdmin) — обычный игрок не должен отличать ботов от людей.
+  isBotSeat?: boolean;
   winAmount?: number; // Сколько выиграл (showdown) — «+сумма»
   handName?: string | null; // Имя победной комбинации (showdown) — подпись под плашкой
   turnSecondsLeft?: number; // Сколько секунд осталось на основной ход (показываем только текущему игроку)
@@ -79,6 +86,9 @@ const PlayerSeatImpl = ({
   bigBlind,
   displayMode,
   winningCards,
+  onShowCard,
+  showCardPrompt,
+  isBotSeat,
   winAmount,
   handName,
   turnSecondsLeft,
@@ -120,18 +130,24 @@ const PlayerSeatImpl = ({
           )}
         </>
       )}
-      {/* Свои карты — слева от плашки в ряд. */}
+      {/* Свои карты — слева от плашки в ряд. В окне добровольного показа те же карты становятся
+          кнопками (тап раскрывает карту сопернику) — на своём месте, без второго набора. */}
       {isSelf && player.cards.length > 0 && (
-        <div className="flex gap-0.5">
+        <div className="flex flex-col items-center gap-0.5">
+          {onShowCard && showCardPrompt && (
+            <span className="text-white/75 text-[9px] font-semibold whitespace-nowrap [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]">
+              {showCardPrompt}
+            </span>
+          )}
+          <div className="flex gap-0.5">
           {player.cards.map((c, i) => {
             const inWinningCombo =
               !!winningCards?.some((w) => w.suit === c.suit && w.rank === c.rank);
             const showdownActive = showHand && !!winningCards && winningCards.length > 0;
             const highlight = isWinner && showHand && inWinningCombo;
             const dim = showdownActive && !highlight;
-            return (
+            const card = (
               <Card
-                key={i}
                 card={showHand ? c : undefined}
                 faceStyle={faceStyle}
                 backStyle={backStyle}
@@ -142,7 +158,26 @@ const PlayerSeatImpl = ({
                 dim={dim}
               />
             );
+            if (!onShowCard) return <div key={i}>{card}</div>;
+            const shown = !!player.revealedCards?.includes(i);
+            return (
+              <button
+                key={i}
+                type="button"
+                disabled={shown}
+                onClick={() => onShowCard(i)}
+                className={'relative rounded ' + (shown ? 'ring-2 ring-emerald-400 rounded-md' : 'hover:-translate-y-0.5 transition-transform')}
+              >
+                {card}
+                {shown && (
+                  <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 rounded-full bg-emerald-500 text-white text-[8px] font-black flex items-center justify-center shadow">
+                    ✓
+                  </span>
+                )}
+              </button>
+            );
           })}
+          </div>
         </div>
       )}
 
@@ -176,7 +211,7 @@ const PlayerSeatImpl = ({
             : player.disconnected
             ? 'bg-black/40 opacity-60 grayscale ring-1 ring-orange-500/40'
             : player.isFolded
-            ? 'bg-black/40 opacity-50'
+            ? 'bg-black/40 opacity-65'
             : 'bg-black/50 ring-1 ring-white/10')
         }
       >
@@ -193,11 +228,17 @@ const PlayerSeatImpl = ({
             }
             onClick={!isSelf && onAvatarClick ? () => onAvatarClick(player) : undefined}
           >
-            <ReactNiceAvatar
-              className="w-full h-full"
-              shape="circle"
-              {...avatarConfig(player.avatar || player.id)}
-            />
+            {isBotSeat ? (
+              <div className="w-full h-full bg-white flex items-center justify-center">
+                <span className="text-red-600 font-black text-lg leading-none">B</span>
+              </div>
+            ) : (
+              <ReactNiceAvatar
+                className="w-full h-full"
+                shape="circle"
+                {...avatarConfig(player.avatar || player.id)}
+              />
+            )}
           </div>
           {/* Карты противника веером поверх аватарки */}
           {!isSelf && player.cards.length > 0 && (

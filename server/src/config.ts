@@ -1,7 +1,10 @@
 import dotenv from 'dotenv';
 
-// dotenv.config() здесь, до того как другие модули прочитают process.env через этот файл
-dotenv.config();
+// dotenv.config() здесь, до того как другие модули прочитают process.env через этот файл.
+// quiet: true — dotenv иначе печатает на каждый вызов строку «injected env (N) from .env // tip: …»
+// со случайной подсказкой, часть которых рекламирует платные продукты мейнтейнера. Строка сыпалась
+// при каждом старте dev-сервера и в каждом тестовом файле, который тянет config.ts.
+dotenv.config({ quiet: true });
 
 const isProd = process.env.NODE_ENV === 'production';
 const DEV_DEFAULT_SECRET = 'sk-poker-secret-key';
@@ -73,6 +76,17 @@ export const DEPOSIT_SEED_MNEMONIC_EVM = resolveSecret('DEPOSIT_SEED_MNEMONIC_EV
 export const HOT_WALLET_PRIVATE_KEY_TRON = resolveSecret('HOT_WALLET_PRIVATE_KEY_TRON');
 export const HOT_WALLET_PRIVATE_KEY_EVM = resolveSecret('HOT_WALLET_PRIVATE_KEY_EVM');
 export const TRONGRID_API_KEY = process.env.TRONGRID_API_KEY || null;
+
+// Мониторинг и выгрузка бэкапов наружу (ROADMAP §11.3) — оба через уже существующего TG-бота,
+// новых сервисов и зависимостей не заводим. Все три переменные опциональны: не заданы —
+// соответствующая функция просто выключена (сервер стартует как раньше).
+// ALERT_TELEGRAM_CHAT_ID — куда слать алерты о падении процесса и ошибках записи данных.
+// BACKUP_TELEGRAM_CHAT_ID — куда слать суточный архив (можно тот же чат/канал).
+// BACKUP_ENCRYPTION_KEY — парольная фраза, которой архив шифруется ПЕРЕД отправкой: внутри
+// почты, даты рождения, хэши паролей и балансы, отдавать это в открытом виде нельзя.
+export const ALERT_TELEGRAM_CHAT_ID = process.env.ALERT_TELEGRAM_CHAT_ID || null;
+export const BACKUP_TELEGRAM_CHAT_ID = process.env.BACKUP_TELEGRAM_CHAT_ID || null;
+export const BACKUP_ENCRYPTION_KEY = process.env.BACKUP_ENCRYPTION_KEY || null;
 export const TRON_NETWORK = resolveTronNetwork();
 export const EVM_NETWORK = resolveEvmNetwork();
 export const ETH_RPC_URL =
@@ -95,4 +109,9 @@ export const ETH_USDT_CONTRACT =
   process.env.ETH_USDT_CONTRACT || (EVM_NETWORK === 'mainnet' ? '0xdAC17F958D2ee523a2206206994597C13D831ec7' : '');
 export const BSC_USDT_CONTRACT =
   process.env.BSC_USDT_CONTRACT || (EVM_NETWORK === 'mainnet' ? '0x55d398326f99059fF775485246999027B3197955' : '');
+// Потолок комиссии одного TRC-20 перевода (sun; 1 TRX = 1e6 sun). Без него TronWeb отправляет
+// транзакцию с нулевым feeLimit, и при нехватке energy у отправителя она отваливается с
+// OUT_OF_ENERGY — то есть выплата игроку молча не проходит. Официальные примеры TronWeb ставят
+// 100-150 TRX; берём 100 TRX и оставляем настраиваемым: реальная цена energy на mainnet плавает.
+export const TRON_FEE_LIMIT_SUN = Math.max(0, Number(process.env.TRON_FEE_LIMIT_SUN) || 100_000_000);
 export const TRONGRID_FULL_HOST = TRON_NETWORK === 'mainnet' ? 'https://api.trongrid.io' : 'https://api.shasta.trongrid.io';

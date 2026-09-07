@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { Plus, Trash2 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useAchievementsStore, type AchievementDef, type AchievementCondition } from '../../store/achievementsStore';
+import { useChestsStore } from '../../store/chestsStore';
 import { InfoButton, InfoSheet } from '../lobby/createControls';
 
 // Секция «Достижения» вкладки «🎁 Награды» (ROADMAP §10.21.3). Прогресс считается на лету
@@ -53,6 +54,9 @@ export const AchievementsRewardsSection = () => {
   const loadAdmin = useAchievementsStore((s) => s.loadAdmin);
   const saveConfig = useAchievementsStore((s) => s.saveConfig);
   const loaded = useAchievementsStore((s) => s.loaded);
+  // Каталог сундуков — чтобы вместо фиксированной награды можно было выбрать случайную (§10.21.7).
+  const chests = useChestsStore((s) => s.catalog);
+  const loadChests = useChestsStore((s) => s.loadAdmin);
 
   const [enabled, setEnabled] = useState(false);
   const [catalog, setCatalog] = useState<AchievementDef[]>(DEFAULT_CATALOG);
@@ -63,7 +67,8 @@ export const AchievementsRewardsSection = () => {
 
   useEffect(() => {
     loadAdmin(token);
-  }, [loadAdmin, token]);
+    loadChests(token);
+  }, [loadAdmin, loadChests, token]);
 
   useEffect(() => {
     if (seeded.current || !loaded) return;
@@ -78,6 +83,8 @@ export const AchievementsRewardsSection = () => {
       cs.map((c, j) => {
         if (j !== i) return c;
         if (field === 'title') return { ...c, title: value };
+        // Пустое значение = фиксированная награда: поле не храним вовсе, чтобы не плодить '' в файле.
+        if (field === 'chestId') return value ? { ...c, chestId: value } : { ...c, chestId: undefined };
         if (field === 'condition') return { ...c, condition: value as AchievementCondition };
         const n = Number(value);
         if (!Number.isFinite(n)) return c;
@@ -147,17 +154,18 @@ export const AchievementsRewardsSection = () => {
         </div>
 
         <div className="rounded-xl border border-white/10 overflow-hidden text-sm overflow-x-auto">
-          <div className="grid grid-cols-[1.2fr_1.3fr_0.8fr_0.8fr_2rem] gap-2 px-3 py-2 bg-gray-900 font-bold text-gray-400 text-xs min-w-[560px]">
+          <div className="grid grid-cols-[1.2fr_1.3fr_0.7fr_0.8fr_1fr_2rem] gap-2 px-3 py-2 bg-gray-900 font-bold text-gray-400 text-xs min-w-[680px]">
             <span>Название</span>
             <span>Условие</span>
             <span>Порог</span>
             <span>Награда (HUB)</span>
+            <span>Сундук</span>
             <span />
           </div>
           {catalog.map((c, i) => (
             <div
               key={c.id}
-              className="grid grid-cols-[1.2fr_1.3fr_0.8fr_0.8fr_2rem] gap-2 px-3 py-2 border-t border-white/5 items-center min-w-[560px]"
+              className="grid grid-cols-[1.2fr_1.3fr_0.7fr_0.8fr_1fr_2rem] gap-2 px-3 py-2 border-t border-white/5 items-center min-w-[680px]"
             >
               <input
                 type="text"
@@ -190,6 +198,18 @@ export const AchievementsRewardsSection = () => {
                 onChange={(e) => editDef(i, 'rewardAmount', e.target.value)}
                 className="bg-white/5 border border-white/10 rounded px-2 py-1 text-white outline-none focus:border-emerald-400 tabular-nums"
               />
+              <select
+                value={c.chestId ?? ''}
+                onChange={(e) => editDef(i, 'chestId', e.target.value)}
+                className="bg-white/5 border border-white/10 rounded px-2 py-1 text-white outline-none focus:border-emerald-400"
+              >
+                <option value="" className="bg-gray-800">— фикс —</option>
+                {chests.map((ch) => (
+                  <option key={ch.id} value={ch.id} className="bg-gray-800">
+                    {ch.title}
+                  </option>
+                ))}
+              </select>
               <button
                 type="button"
                 onClick={() => removeDef(i)}

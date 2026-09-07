@@ -194,7 +194,11 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
         const retryAfterSec = denyReason === 'on-cooldown'
           ? Math.ceil(gameManager.kickCooldownRemainingMs(data.roomId, user.id) / 1000)
           : undefined;
-        socket.emit(SOCKET_EVENTS.JOIN_DENIED, { reason: denyReason, retryAfterSec });
+        // Без рэтхола: показываем конкретную сумму, иначе игрок не знает, сколько заносить.
+        const requiredBuyIn = denyReason === 'rathole-min-buyin'
+          ? gameManager.ratholeRequiredFor(data.roomId, user.id)
+          : undefined;
+        socket.emit(SOCKET_EVENTS.JOIN_DENIED, { reason: denyReason, retryAfterSec, requiredBuyIn });
         return;
       }
       socket.join(data.roomId);

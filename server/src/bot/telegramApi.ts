@@ -14,6 +14,23 @@ interface TelegramApiResponse<T> {
   ok: boolean;
   result?: T;
   description?: string;
+  error_code?: number;
+  parameters?: { retry_after?: number };
+}
+
+// Ошибка Telegram API с машиночитаемыми полями. Раньше склеивалась в строку, и `retry_after`
+// (сколько секунд Telegram просит подождать при 429) терялся — бот ждал своё фиксированное
+// время и мог долбить раньше срока, получая более длинный бан.
+export class TelegramApiError extends Error {
+  constructor(
+    readonly method: string,
+    readonly errorCode: number | undefined,
+    readonly description: string | undefined,
+    readonly retryAfterSec: number | undefined,
+  ) {
+    super(`Telegram API ${method} failed: ${description ?? errorCode ?? 'unknown'}`);
+    this.name = 'TelegramApiError';
+  }
 }
 
 async function callApi<T>(method: string, params: Record<string, unknown>): Promise<T> {
@@ -23,7 +40,9 @@ async function callApi<T>(method: string, params: Record<string, unknown>): Prom
     body: JSON.stringify(params),
   });
   const json = (await res.json()) as TelegramApiResponse<T>;
-  if (!json.ok) throw new Error(`Telegram API ${method} failed: ${json.description ?? res.status}`);
+  if (!json.ok) {
+    throw new TelegramApiError(method, json.error_code ?? res.status, json.description, json.parameters?.retry_after);
+  }
   return json.result as T;
 }
 

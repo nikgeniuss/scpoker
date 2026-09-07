@@ -188,3 +188,30 @@ export interface ChipOpEntry {
   amount: number;
   usernames: string[];
 }
+
+// Журнал турнирной экономики (/admin/tournament-ledger). Строка на завершённый турнир:
+// сколько собрано за входы, сколько удержано рейком, сколько доплачено оверлеем (эмиссия фишек).
+export interface TournamentLedgerEntry {
+  tournamentId: string;
+  name: string;
+  type: 'sng' | 'mtt';
+  finishedAt: number;
+  entries: number;
+  uniquePlayers: number;
+  collectedFees: number;
+  rake: number;
+  bounty: number;
+  overlay: number;
+  prizePool: number;
+  paidOut: number;
+  net: number;
+}
+
+export interface TournamentLedgerTotals {
+  tournaments: number;
+  collectedFees: number;
+  rake: number;
+  overlay: number;
+  paidOut: number;
+  net: number;
+}

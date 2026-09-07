@@ -443,7 +443,7 @@ export function completeTwoFactorLogin(
 ): { token: string } | { error: 'invalid-token' | 'invalid-code' } {
   let decoded: { id: string; twoFactorPending?: boolean };
   try {
-    decoded = jwt.verify(pendingToken, JWT_SECRET) as typeof decoded;
+    decoded = jwt.verify(pendingToken, JWT_SECRET, { algorithms: ['HS256'] }) as typeof decoded;
   } catch {
     return { error: 'invalid-token' };
   }
@@ -624,7 +624,7 @@ export function updateEmail(
 
 export function getUserByToken(token: string): User | null {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { id: string };
+    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as { id: string };
     const users = readJSON('users.json') as User[];
     return users.find(u => u.id === decoded.id) || null;
   } catch {
@@ -634,7 +634,7 @@ export function getUserByToken(token: string): User | null {
 
 export function isAdmin(token: string): boolean {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { role: string };
+    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as { role: string };
     return decoded.role === 'admin';
   } catch {
     return false;

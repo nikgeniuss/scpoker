@@ -26,6 +26,8 @@ import { getHudStats, type HandHistoryRecord, type HandAction } from './handHist
 import { computeRake, normalizeRake, type RakeConfig } from './rake.js';
 import { getBadBeatState, addToPool, payoutFromPool } from './badBeatService.js';
 import { applyRakeback } from './rakebackService.js';
+import { requiredBuyIn as ratholeRequiredBuyIn, recordLeave, getLeaveRecord, clearLeaveRecord, clearRoom as clearRatholeRoom } from './ratholeService.js';
+import { addProgress as addMissionProgress } from './missionsService.js';
 import { getResolvedEquipped } from './inventoryService.js';
 import { credit as creditRewardsWallet } from './rewardsWalletService.js';
 import { selectTier } from './badBeatDrop.js';
@@ -136,6 +138,7 @@ export interface CreateRoomOptions {
   rimtEnabled?: boolean;
   evCashoutEnabled?: boolean;
   noTurnNoShowEnabled?: boolean;
+  noRatholeHours?: number;
 }
 
 type JoinDeniedReason =
@@ -152,7 +155,8 @@ type JoinDeniedReason =
   | 'invalid-buyin'
   | 'too-many-tables'
   | 'club-members-only'
-  | 'anti-collusion';
+  | 'anti-collusion'
+  | 'rathole-min-buyin';
 
 // Мультитейблинг: максимум одновременно открытых столов на одного игрока.
 const MAX_TABLES_PER_USER = 3;
@@ -362,6 +366,7 @@ export interface Room {
   rimtEnabled: boolean;
   evCashoutEnabled: boolean;
   noTurnNoShowEnabled: boolean;
+  noRatholeHours: number; // 0 = правило выключено (см. ratholeService.ts)
   antiCollusionEnabled: boolean;
   communityCardsB: Card[] | null; // второй борд (Double Board) или второй прогон (RIMT)
   deckB: Card[] | null;           // форк остатка деки под второй борд/прогон
@@ -405,6 +410,9 @@ export class GameManager implements GameManagerForBots {
   // выигравшие раздачу, в которой произошёл бaст (для баунти, см. room.lastHandWinners); пустой
   // массив при форфейте (добровольный выход/дисконнект — никто не выигрывал раздачу). В тестах не выставлен.
   onTournamentBust?: (roomId: string, userId: string, killerIds: string[]) => void;
+  // Конец раздачи на турнирном столе — отдаём актуальные стеки, чтобы TournamentManager
+  // сохранил их в entries (единственный способ пересадить игроков после рестарта).
+  onTournamentStacks?: (roomId: string, stacks: Record<string, number>) => void;
   // Интервал периодической проверки зависших столов — стартует явно через startTableWatchdog()
   // (не из конструктора, см. комментарий там).
   private watchdogTimer: NodeJS.Timeout | null = null;
@@ -538,6 +546,7 @@ export class GameManager implements GameManagerForBots {
           rimtEnabled: !!(s as { rimtEnabled?: boolean }).rimtEnabled,
           evCashoutEnabled: !!(s as { evCashoutEnabled?: boolean }).evCashoutEnabled,
           noTurnNoShowEnabled: !!(s as { noTurnNoShowEnabled?: boolean }).noTurnNoShowEnabled,
+          noRatholeHours: Number((s as { noRatholeHours?: number }).noRatholeHours) || 0,
         }));
         const restored = this.rooms.get(s.id);
         if (restored && restored.sessionEndsAt) this.scheduleSessionClose(restored);
@@ -584,6 +593,7 @@ export class GameManager implements GameManagerForBots {
       rimtEnabled: r.rimtEnabled,
       evCashoutEnabled: r.evCashoutEnabled,
       noTurnNoShowEnabled: r.noTurnNoShowEnabled,
+      noRatholeHours: r.noRatholeHours,
       antiCollusionEnabled: r.antiCollusionEnabled,
     }));
     try {
@@ -812,6 +822,7 @@ export class GameManager implements GameManagerForBots {
       rimtEnabled: !!options.rimtEnabled,
       evCashoutEnabled: !!options.evCashoutEnabled,
       noTurnNoShowEnabled: !!options.noTurnNoShowEnabled,
+      noRatholeHours: Math.max(0, Math.min(24, Math.round(Number(options.noRatholeHours) || 0))),
     }));
 
     // Авто-закрытие по длительности сессии (если задана)
@@ -938,6 +949,25 @@ export class GameManager implements GameManagerForBots {
 
   // Можно ли сейчас трогать стол (двигать игрока/закрывать) — только между раздачами,
   // иначе перенос игрока мид-хэнд ломает порядок/банк/карты раздачи на исходном столе.
+  // Кто сейчас физически сидит за столом (после рестарта может быть пусто — игроки живут в памяти).
+  getSeatedPlayerIds(roomId: string): string[] | null {
+    const room = this.rooms.get(roomId);
+    if (!room) return null;
+    return Array.from(room.players.keys());
+  }
+
+  // Все люди (без ботов), сидящие сейчас хотя бы за одним столом — уникально по userId.
+  // Для тика «Часов за столом» (tableTimeService): мультитейблинг не должен считаться дважды.
+  getSeatedHumanIds(): string[] {
+    const ids = new Set<string>();
+    for (const room of this.rooms.values()) {
+      for (const id of room.players.keys()) {
+        if (!this.isBot(id)) ids.add(id);
+      }
+    }
+    return Array.from(ids);
+  }
+
   isTableSafeToRebalance(roomId: string): boolean {
     const room = this.rooms.get(roomId);
     return !!room && room.status === 'waiting';
@@ -945,27 +975,42 @@ export class GameManager implements GameManagerForBots {
 
   // Перенести игрока между турнирными столами (балансировка/консолидация, TournamentManager).
   // Не трогает банкролл — переносится тот же Player-объект со стеком как есть.
-  movePlayerToTable(fromRoomId: string, toRoomId: string, userId: string): boolean {
+  // allowMidHand: разрешить посадку, когда на ЦЕЛЕВОМ столе уже идёт раздача. Нужно только для
+  // консолидации (стол закрывается — ждать окна негде); при обычной балансировке перенос
+  // откладывается до окна на обоих столах, иначе игрок попадал в чужую раздачу без карт и получал
+  // ход (живой прогон 2026-09-02).
+  movePlayerToTable(fromRoomId: string, toRoomId: string, userId: string, allowMidHand = false): boolean {
     const fromRoom = this.rooms.get(fromRoomId);
     const toRoom = this.rooms.get(toRoomId);
     if (!fromRoom || !toRoom) return false;
     if (fromRoom.status !== 'waiting') return false;
+    if (toRoom.status !== 'waiting' && !allowMidHand) return false;
     const player = fromRoom.players.get(userId);
     if (!player) return false;
     if (toRoom.players.size >= toRoom.maxPlayers) return false;
 
     fromRoom.players.delete(userId);
     player.position = toRoom.players.size;
+    // Целевой стол в раздаче — садимся folded на текущую руку (тот же паттерн, что в addPlayer и
+    // seatTournamentPlayer): nextPlayer/isRoundComplete пропустят, карты придут со следующей.
+    if (toRoom.status === 'playing') {
+      player.cards = [];
+      player.isFolded = true;
+      player.currentBet = 0;
+    }
     toRoom.players.set(userId, player);
+
+    // Финальное состояние старого стола (уже без меня) должно уйти ДО leave — иначе клиент не
+    // узнает, что он оттуда убран, и пилюля стола зависнет в мультитейблинге навсегда.
+    this.broadcastGameState(fromRoomId);
 
     const sock = this.findUserSocket(userId);
     if (sock) {
       sock.leave(fromRoomId);
       sock.join(toRoomId);
-      sock.emit(SOCKET_EVENTS.TOURNAMENT_TABLE_ASSIGNED, { tournamentId: toRoom.tournamentId, roomId: toRoomId });
+      sock.emit(SOCKET_EVENTS.TOURNAMENT_TABLE_ASSIGNED, { tournamentId: toRoom.tournamentId, roomId: toRoomId, fromRoomId });
     }
 
-    this.broadcastGameState(fromRoomId);
     this.broadcastGameState(toRoomId);
     this.scheduleAutoStart(toRoomId);
     return true;
@@ -1046,8 +1091,37 @@ export class GameManager implements GameManagerForBots {
         return 'invalid-buyin';
       }
       if (bankroll < buyInAmount) return 'insufficient-bankroll';
+      // Без рэтхола (§10.6): вернувшийся в окно за ТОТ ЖЕ стол обязан сесть со стеком ухода.
+      // Проверяем только когда сумма уже выбрана: на предварительном запросе без суммы отказывать
+      // нельзя — игрок не смог бы даже открыть окно бай-ина.
+      if (this.ratholeMinBuyIn(room, userId, bankroll) > buyInAmount) return 'rathole-min-buyin';
     }
     return null;
+  }
+
+  // Минимальный вход для игрока с учётом правила «без рэтхола». Возвращает обычный минимум стола,
+  // если правило выключено, игрок — бот или записи о выходе нет (в т.ч. когда она протухла).
+  private ratholeMinBuyIn(room: Room, userId: string, bankroll: number): number {
+    const minBuyIn = room.bigBlind * room.buyInMinBb;
+    if (room.noRatholeHours <= 0 || this.isBot(userId)) return minBuyIn;
+    return ratholeRequiredBuyIn(
+      getLeaveRecord(room.id, userId),
+      Date.now(),
+      room.noRatholeHours,
+      bankroll,
+      minBuyIn,
+      room.bigBlind * room.buyInMaxBb,
+    );
+  }
+
+  // То же для сокет-слоя: сколько игрок обязан занести (0 — правило не действует). Нужно, чтобы
+  // отказ показывал конкретную сумму, а не абстрактное «сядьте больше».
+  ratholeRequiredFor(roomId: string, userId: string): number {
+    const room = this.rooms.get(roomId);
+    if (!room) return 0;
+    const bankroll = this.bankroll.getUserChips(userId) ?? 0;
+    const required = this.ratholeMinBuyIn(room, userId, bankroll);
+    return required > room.bigBlind * room.buyInMinBb ? required : 0;
   }
 
   // Является ли playerId ботом (префикс 'bot:') — делегирует в botIdentity (§9.3-D)
@@ -1171,8 +1245,14 @@ export class GameManager implements GameManagerForBots {
     if (!Number.isInteger(amount) || amount < minBuyIn || amount > maxBuyIn) return false;
     if (bankroll < amount) return false;
 
+    // Без рэтхола (§10.6): страховка на случай посадки мимо seatDeny (авто-посадка из очереди,
+    // прямой вызов) — правило одно и то же, проверка не может разъехаться с проверкой входа.
+    if (this.ratholeMinBuyIn(room, userId, bankroll) > amount) return false;
+
     // Списать сумму бай-ина из банкролла (остаток лежит вне стола)
     this.bankroll.persistChips(userId, bankroll - amount);
+    // Игрок сел заново — прошлая запись об уходе отработала и больше не действует.
+    if (room.noRatholeHours > 0 && !this.isBot(userId)) clearLeaveRecord(room.id, userId);
     console.log(`🚪 [join] ${username} → table "${room.name}" buy-in=${amount} (mid-hand=${room.status === 'playing'})`);
 
     const playerCount = room.players.size;
@@ -1246,6 +1326,10 @@ export class GameManager implements GameManagerForBots {
       const bankroll = this.bankroll.getUserChips(userId) ?? 0;
       console.log(`🚪 [leave] ${player.username} ← table "${room.name}" took=${player.chips} (bankroll ${bankroll} → ${bankroll + player.chips})`);
       this.bankroll.persistChips(userId, bankroll + player.chips);
+      // Без рэтхола (§10.6): запоминаем, с каким стеком ушёл — по нему считается минимум на возврат.
+      if (room.noRatholeHours > 0 && !this.isBot(userId)) {
+        recordLeave(room.id, userId, player.chips);
+      }
       clearDisconnectTimer(player);
     }
     room.players.delete(userId);
@@ -1259,6 +1343,7 @@ export class GameManager implements GameManagerForBots {
       clearStartTimer(room);
       clearWaitlistTimer(room);
       const wasBotTable = room.isBotTable;
+      if (room.noRatholeHours > 0) clearRatholeRoom(roomId);
       this.rooms.delete(roomId);
       if (wasBotTable) this.botManager.onTableClosed(roomId);
       this.saveRoomsSnapshot();
@@ -2273,6 +2358,13 @@ export class GameManager implements GameManagerForBots {
       .join(', ');
     console.log(`🧹 [hand-end] table="${room.name}" final: ${finalStacks}${room.pot > 0 ? ` (pot ${room.pot} сгорает)` : ''}\n`);
 
+    // Турнирный стол: сохраняем стеки в турнире (переживают рестарт, см. restoreTournaments).
+    if (room.tournamentId && this.onTournamentStacks) {
+      const stacks: Record<string, number> = {};
+      room.players.forEach(p => { stacks[p.id] = p.chips; });
+      this.onTournamentStacks(room.id, stacks);
+    }
+
     clearTurnTimers(room);
     clearShowdownTimer(room); // дедлайн шоудауна не должен «протухать» на следующую раздачу
     room.phase = 'waiting';
@@ -2328,6 +2420,9 @@ export class GameManager implements GameManagerForBots {
     // Рейк атрибутируем игрокам пропорционально вкладу в банк (totalCommitted ещё не сброшен).
     let totalCommit = 0;
     room.players.forEach((p) => { totalCommit += p.totalCommitted; });
+    // Прогресс недельных миссий копим по игрокам и пишем ОДНОЙ записью после обхода — файл не
+    // должен переписываться на каждого игрока стола (read-modify-write внахлёст, §0.3).
+    const missionDeltas: { userId: string; hands: number; rake: number }[] = [];
     room.players.forEach((p) => {
       if (this.isBot(p.id) || p.handStartChips === undefined) return;
       const playerRake =
@@ -2342,6 +2437,7 @@ export class GameManager implements GameManagerForBots {
         rake: playerRake,
         format: room.format,
       });
+      missionDeltas.push({ userId: p.id, hands: 1, rake: playerRake });
       if (playerRake > 0) {
         // Тихое начисление — без уведомления (на раскачанном столе рейк капает почти на каждой
         // раздаче, инбокс был бы залит спамом). Игрок смотрит накопленное на странице /rakeback.
@@ -2368,6 +2464,8 @@ export class GameManager implements GameManagerForBots {
         }
       }
     });
+
+    addMissionProgress(missionDeltas);
 
     // Авто-докупка стека — ДО autoLeaveBrokePlayers: долитый из банкролла игрок остаётся
     // за столом, а не вылетает как банкрот.

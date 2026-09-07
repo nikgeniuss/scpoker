@@ -20,8 +20,8 @@ describe('statsService — lifetime-итоги независимы от обр�
   it('recordHandStat копит lifetime по userId на каждый вызов', () => {
     recordHandStat({ t: 1000, roomId: 'r1', userId: 'u1', delta: 100, rake: 0 });
     recordHandStat({ t: 2000, roomId: 'r1', userId: 'u1', delta: -30, rake: 5 });
-    expect(aggregateUserStats('u1', null, null)).toEqual({ hands: 2, pnl: 70, rake: 5 });
-    expect(aggregateAllUsers()['u1']).toEqual({ hands: 2, pnl: 70, rake: 5 });
+    expect(aggregateUserStats('u1', null, null)).toEqual({ hands: 2, pnl: 70, rake: 5, wins: 1 });
+    expect(aggregateAllUsers()['u1']).toEqual({ hands: 2, pnl: 70, rake: 5, wins: 1 });
   });
 
   it('обрезка лога по кап-у не теряет lifetime-итоги', () => {
@@ -40,7 +40,7 @@ describe('statsService — lifetime-итоги независимы от обр�
     expect(log[log.length - 1].t).toBe(CAP); // новая запись на месте
 
     // lifetime учёл все CAP+1 раздач, а не только оставшиеся в (обрезанном) логе.
-    expect(aggregateUserStats('u1', null, null)).toEqual({ hands: CAP + 1, pnl: CAP + 5, rake: 0 });
+    expect(aggregateUserStats('u1', null, null)).toEqual({ hands: CAP + 1, pnl: CAP + 5, rake: 0, wins: 1 });
   });
 
   it('getChartData продолжает кумулятивную линию через точку-якорь после обрезки', () => {

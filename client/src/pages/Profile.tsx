@@ -16,7 +16,18 @@ import { loadBetPresets, saveBetPresets } from '../config/betPresets';
 import { loadChipDisplay, saveChipDisplay } from '../config/chipFormat';
 import { loadCardDeck, saveCardDeck } from '../config/cardDeck';
 import { loadGameSettings, saveGameSettings } from '../config/gameSettings';
-import { useHandsChart } from '../hooks/useHandsChart';
+import { useProfileStats } from '../hooks/useProfileStats';
+
+// ROI: null (турнирных входов не было) → прочерк, иначе знак + одна десятая процента.
+function formatRoi(roiPercent: number | null): string {
+  if (roiPercent === null) return '—';
+  return (roiPercent >= 0 ? '+' : '') + roiPercent.toFixed(1) + '%';
+}
+
+// Минуты за столом → часы с одной десятой (меньше 6 минут показываем как 0).
+function formatHours(minutes: number): string {
+  return (minutes / 60).toFixed(1);
+}
 
 export function Profile() {
   const { t } = useTranslation();
@@ -31,7 +42,7 @@ export function Profile() {
   const [chipDisplay, setChipDisplay] = useState(() => loadChipDisplay());
   const [cardDeck, setCardDeck] = useState(() => loadCardDeck());
   const [gameSettings, setGameSettings] = useState(() => loadGameSettings());
-  const { totalHands } = useHandsChart();
+  const { stats } = useProfileStats();
   const { enabled: rakebackEnabled, tier, loadMine } = useRakebackStore();
 
   useEffect(() => {
@@ -128,24 +139,24 @@ export function Profile() {
           </button>
         </div>
 
-        {/* Статистика — «Рук сыграно» реальные (см. useHandsChart), остальные три пока не
-            трекаются в БД (см. UserStats в statsService.ts) — TODO(roadmap): см. ROADMAP §9.1 */}
+        {/* Статистика — все четыре метрики реальные (/api/profile/stats): руки/победы за всё
+            время из lifetime-итогов statsService, ROI по турнирам, часы за столом. */}
         <div className="grid grid-cols-2 gap-2.5">
           <div className="rounded-2xl bg-white/5 p-3.5">
             <div className="text-white/40 text-[10px] mb-1">{t('profile.handsPlayed')}</div>
-            <div className="text-lg font-bold tabular-nums">{totalHands}</div>
+            <div className="text-lg font-bold tabular-nums">{stats ? stats.hands : '—'}</div>
           </div>
           <div className="rounded-2xl bg-white/5 p-3.5">
             <div className="text-white/40 text-[10px] mb-1">{t('profile.wins')}</div>
-            <div className="text-lg font-bold tabular-nums text-white/30">—</div>
+            <div className="text-lg font-bold tabular-nums">{stats ? stats.wins : '—'}</div>
           </div>
           <div className="rounded-2xl bg-white/5 p-3.5">
             <div className="text-white/40 text-[10px] mb-1">{t('profile.roi')}</div>
-            <div className="text-lg font-bold tabular-nums text-white/30">—</div>
+            <div className="text-lg font-bold tabular-nums">{formatRoi(stats?.roiPercent ?? null)}</div>
           </div>
           <div className="rounded-2xl bg-white/5 p-3.5">
             <div className="text-white/40 text-[10px] mb-1">{t('profile.hoursAtTable')}</div>
-            <div className="text-lg font-bold tabular-nums text-white/30">—</div>
+            <div className="text-lg font-bold tabular-nums">{stats ? formatHours(stats.tableMinutes) : '—'}</div>
           </div>
         </div>
       </div>

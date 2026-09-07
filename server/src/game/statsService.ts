@@ -24,10 +24,13 @@ export interface UserStats {
   hands: number;
   pnl: number;
   rake: number;
+  // Выигранных раздач (delta > 0) — для «Побед» в профиле. У записей, сделанных до появления
+  // поля, его нет: читаем через `?? 0`, задним числом не пересчитываем.
+  wins: number;
 }
 
 function emptyStats(): UserStats {
-  return { hands: 0, pnl: 0, rake: 0 };
+  return { hands: 0, pnl: 0, rake: 0, wins: 0 };
 }
 
 function readLog(): HandStatRecord[] {
@@ -70,6 +73,7 @@ export function aggregateRecords(
     acc.hands++;
     acc.pnl += r.delta;
     acc.rake += r.rake;
+    if (r.delta > 0) acc.wins++;
   }
   return acc;
 }
@@ -94,6 +98,7 @@ export function aggregateAllRecordsInPeriod(
     s.hands++;
     s.pnl += r.delta;
     s.rake += r.rake;
+    if (r.delta > 0) s.wins++;
   }
   return out;
 }
@@ -115,13 +120,15 @@ export function recordHandStat(rec: HandStatRecord): void {
   s.hands++;
   s.pnl += rec.delta;
   s.rake += rec.rake;
+  s.wins = (s.wins ?? 0) + (rec.delta > 0 ? 1 : 0); // ?? — записи до появления поля
   lifetime[rec.userId] = s;
   writeLifetime(lifetime);
 }
 
 export function aggregateUserStats(userId: string, sinceMs: number | null, untilMs: number | null): UserStats {
   if (sinceMs === null && untilMs === null) {
-    return readLifetime()[userId] ?? emptyStats();
+    const lt = readLifetime()[userId];
+    return lt ? { ...emptyStats(), ...lt } : emptyStats();
   }
   return aggregateRecords(readLog(), userId, sinceMs, untilMs);
 }

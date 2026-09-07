@@ -70,3 +70,24 @@ describe('tournamentSchedule — генерация уровней блайнд�
     expect(nextLevelBigBlind(schedule, totalMs + 999_999)).toBeUndefined(); // лестница кончилась
   });
 });
+
+// Повышение блайндов не должно дублироваться: setTimeout умеет проснуться на ~1мс РАНЬШЕ границы
+// уровня, и тогда currentLevelForElapsed (строгое `<`) ещё отдаёт старый уровень. TournamentManager
+// защищается сравнением с appliedLevel; здесь фиксируем само граничное поведение расписания,
+// на котором эта защита построена (живой прогон 2026-09-02 — каждое повышение двоилось в логе).
+describe('currentLevelForElapsed — граница уровня', () => {
+  const schedule = buildBlindSchedule(50, 5); // уровни по 5 минут
+  const LEVEL_MS = 5 * 60_000;
+
+  it('за 1мс до границы — ещё старый уровень', () => {
+    expect(currentLevelForElapsed(schedule, LEVEL_MS - 1).level).toBe(1);
+  });
+
+  it('ровно на границе — уже следующий', () => {
+    expect(currentLevelForElapsed(schedule, LEVEL_MS).level).toBe(2);
+  });
+
+  it('msUntilNextLevel на 1мс раньше границы даёт 1мс — таймер перепланируется, а не зависает', () => {
+    expect(msUntilNextLevel(schedule, LEVEL_MS - 1)).toBe(1);
+  });
+});

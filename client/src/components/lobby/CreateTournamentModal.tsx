@@ -131,11 +131,14 @@ const INFO: Record<string, { title: string; lines: string[] }> = {
 
 interface CreateTournamentModalProps {
   onClose: () => void;
-  onSubmit: (opts: CreateTournamentOptions) => void;
+  onSubmit: (opts: CreateTournamentOptions) => void | Promise<void>;
 }
 
 // Создание турнира (SNG v1) — только админ (решение пользователя, реальный призовой фонд).
 export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentModalProps) => {
+  // Защита от двойного submit: пока запрос в полёте, кнопка заблокирована (двойной клик создавал
+  // два одинаковых турнира — живой прогон 2026-09-02; на сервере есть парный guard).
+  const [submitting, setSubmitting] = useState(false);
   const [name, setName] = useState('Sit & Go');
   const [type, setType] = useState<TournamentType>('sng');
   const [format, setFormat] = useState<GameFormat>('nlh');
@@ -184,12 +187,12 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
   const [startingSmallBlind, startingBigBlind] = BLIND_LADDER[blindIdx];
   const startingStack = startingBigBlind * stackBb;
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim() || submitting) return;
     const regOpensAtMs = scheduleEnabled && regOpensAt ? new Date(regOpensAt).getTime() : undefined;
     const scheduledStartAtMs = scheduleEnabled && scheduledStartAt ? new Date(scheduledStartAt).getTime() : undefined;
-    onSubmit({
+    const opts: CreateTournamentOptions = {
       name: name.trim(), type, format, buyIn, startingStack, startingBigBlind, tableSize, blindSpeed, levelUpMinutes,
       ...(rakePercent > 0 ? { rakePercent } : {}),
       promoEnabled,
@@ -215,7 +218,13 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
       ...(scheduledStartAtMs ? { scheduledStartAt: scheduledStartAtMs } : {}),
       fillWithBots,
       ...(fillWithBots ? { botFillTarget } : {}),
-    });
+    };
+    setSubmitting(true);
+    try {
+      await onSubmit(opts);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   // Portal в document.body: страницы-хосты (Tournaments.tsx и др.) оборачивают контент в
@@ -250,7 +259,12 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
         <form
           onSubmit={submit}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') e.preventDefault();
+            // Enter в поле = «значение принято»: гасим сабмит и снимаем фокус, чтобы на мобиле/TWA
+            // свернулась экранная клавиатура. Создание — только явным нажатием кнопки.
+            if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') {
+              e.preventDefault();
+              (e.target as HTMLInputElement).blur();
+            }
           }}
         >
           <input
@@ -518,9 +532,13 @@ export const CreateTournamentModal = ({ onClose, onSubmit }: CreateTournamentMod
 
           <button
             type="submit"
-            className="w-full mt-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 font-bold text-white"
+            disabled={submitting}
+            className={
+              'w-full mt-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 font-bold text-white transition ' +
+              (submitting ? 'opacity-60 cursor-not-allowed' : '')
+            }
           >
-            Создать
+            {submitting ? 'Создание…' : 'Создать'}
           </button>
         </form>
       </motion.div>

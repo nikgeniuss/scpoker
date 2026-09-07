@@ -1,5 +1,5 @@
 import { readdirSync, existsSync } from 'fs';
-import { dirname, join, extname } from 'path';
+import { dirname, join, extname, resolve, sep } from 'path';
 import { fileURLToPath } from 'url';
 import { readJSON, writeJSON } from '../auth/storage.js';
 
@@ -199,9 +199,21 @@ export interface UpdateMappingResult {
   error?: string;
 }
 
+// deckId приходит из URL админ-роута и подставляется в путь — принимаем только имя каталога
+// (без разделителей, `..` и абсолютных путей) и дополнительно проверяем, что итог не вышел за
+// IMAGES_DIR. Иначе `../..` давал бы чтение произвольной директории и мусорный ключ в маппинге.
+export function isSafeDeckId(deckId: string): boolean {
+  if (!/^[A-Za-z0-9._-]+$/.test(deckId) || deckId === '.' || deckId === '..') return false;
+  const target = resolve(IMAGES_DIR, deckId);
+  return target !== resolve(IMAGES_DIR) && target.startsWith(resolve(IMAGES_DIR) + sep);
+}
+
 // Обновляет ручной mapping одной колоды. manualMap — целиком, не диффом.
 // Допустимы только ключи из ALL_CARD_KEYS и существующие имена файлов колоды.
 export function updateManualMapping(deckId: string, manualMap: Record<string, string>): UpdateMappingResult {
+  if (!isSafeDeckId(deckId)) {
+    return { success: false, error: 'Неверный идентификатор колоды' };
+  }
   const dirPath = join(IMAGES_DIR, deckId);
   if (!existsSync(dirPath)) {
     return { success: false, error: 'Колода не найдена' };

@@ -785,3 +785,59 @@ describe('TournamentManager — MTT, мультистол', () => {
     expect(Object.values(usersChips()).reduce((s, c) => s + c, 0)).toBe(bankrollBefore);
   });
 });
+
+// Дедуп создания (живой прогон 2026-09-02): двойной клик по «Создать» породил два одинаковых MTT
+// с разницей 514 мс — оба набрали игроков, доиграли и КАЖДЫЙ выплатил гарантию из кармана рума.
+describe('TournamentManager — защита от двойного создания', () => {
+  beforeEach(() => {
+    resetStorage({ users: [{ id: 'A', username: 'A', chips: 5000 }] });
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  const opts = {
+    name: 'Дубль', type: 'mtt' as const, format: 'nlh' as const, buyIn: 1000, startingStack: 15000,
+    tableSize: 9, blindSpeed: 'hyper' as const, levelUpMinutes: 9,
+  };
+
+  it('повторный create с теми же параметрами отдаёт тот же турнир, а не второй', async () => {
+    const { gm } = await createTestGameManager();
+    const tm = new TournamentManager(gm as unknown as GameManager);
+
+    const first = tm.create(opts, 'admin1');
+    const second = tm.create(opts, 'admin1');
+    if ('error' in first || 'error' in second) throw new Error('create failed');
+
+    expect(second.id).toBe(first.id);
+    expect(tm.list()).toHaveLength(1);
+  });
+
+  it('другой админ или другие параметры — это отдельный турнир', async () => {
+    const { gm } = await createTestGameManager();
+    const tm = new TournamentManager(gm as unknown as GameManager);
+
+    const first = tm.create(opts, 'admin1');
+    const otherAdmin = tm.create(opts, 'admin2');
+    const otherBuyIn = tm.create({ ...opts, buyIn: 2000 }, 'admin1');
+    if ('error' in first || 'error' in otherAdmin || 'error' in otherBuyIn) throw new Error('create failed');
+
+    expect(new Set([first.id, otherAdmin.id, otherBuyIn.id]).size).toBe(3);
+    expect(tm.list()).toHaveLength(3);
+  });
+
+  it('за пределами окна дедупа тот же турнир создаётся заново (намеренный повтор)', async () => {
+    const { gm } = await createTestGameManager();
+    const tm = new TournamentManager(gm as unknown as GameManager);
+
+    const first = tm.create(opts, 'admin1');
+    if ('error' in first) throw new Error(first.error);
+
+    // Окно 5 c — сдвигаем «создан» в прошлое, как будто админ вернулся к форме позже.
+    const info = tm.get(first.id)!;
+    info.createdAt = Date.now() - 60_000;
+
+    const later = tm.create(opts, 'admin1');
+    if ('error' in later) throw new Error(later.error);
+    expect(later.id).not.toBe(first.id);
+    expect(tm.list()).toHaveLength(2);
+  });
+});

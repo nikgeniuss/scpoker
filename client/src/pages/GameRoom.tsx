@@ -9,6 +9,7 @@ import { useInventoryStore } from '../store/inventoryStore';
 import { tableGlowColor } from '../config/cosmetics';
 import { API_URL } from '../config/api';
 import type { GamePhase } from '@poker-room/shared';
+import { isBotId } from '@poker-room/shared';
 import { Card } from '../components/game/Card';
 import { PlayerSeat } from '../components/game/PlayerSeat';
 import { ChipStack } from '../components/game/ChipStack';
@@ -489,6 +490,21 @@ export const GameRoom = () => {
               Bad Beat Jackpot
             </div>
           )}
+          {/* Активные спец-режимы стола (ROADMAP §9.1): раньше о них можно было узнать только
+              в модалке до посадки, хотя они меняют ход раздачи и деньги. Строка переносится —
+              на узком экране несколько режимов не ломают вёрстку центра. */}
+          {state.tableModes && state.tableModes.length > 0 && (
+            <div className="flex flex-wrap justify-center gap-1 max-w-[240px] -mt-0.5">
+              {state.tableModes.map((mode) => (
+                <span
+                  key={mode}
+                  className="px-2 py-0.5 rounded-full bg-sky-500/15 border border-sky-500/30 text-sky-300 text-[10px] font-bold uppercase tracking-widest"
+                >
+                  {t('game.mode.' + mode)}
+                </span>
+              ))}
+            </div>
+          )}
           <motion.div
             key={state.pot}
             initial={{ scale: 0.85 }}
@@ -675,6 +691,9 @@ export const GameRoom = () => {
                 <PlayerSeat
                   player={player}
                   isSelf={player.id === myId}
+                  onShowCard={canShowCards && player.id === myId ? showCard : undefined}
+                  showCardPrompt={t('game.showCardToOpponent')}
+                  isBotSeat={isAdmin && isBotId(player.id)}
                   isCurrent={player.id === currentPlayerId && state.phase !== 'waiting' && state.phase !== 'showdown'}
                   isDealer={player.id === dealerPlayerId && state.phase !== 'waiting'}
                   isSmallBlind={player.id === sbPlayerId && state.phase !== 'waiting' && player.id !== dealerPlayerId}
@@ -884,6 +903,9 @@ export const GameRoom = () => {
                 <MobilePlayerSeat
                   player={player}
                   isMe={player.id === myId}
+                  onShowCard={canShowCards && player.id === myId ? showCard : undefined}
+                  showCardPrompt={t('game.showCardToOpponent')}
+                  isBotSeat={isAdmin && isBotId(player.id)}
                   isCurrent={isCurr}
                   isWinner={!!winners && winners.includes(player.id)}
                   isDealer={player.id === dealerPlayerId && state.phase !== 'waiting'}
@@ -1154,44 +1176,6 @@ export const GameRoom = () => {
                 </div>
               );
             })()}
-          </div>
-        </div>
-      )}
-
-      {/* Добровольный показ своих карт после раздачи: тап по карте → видна всем. Появляется
-          только если карты ещё не раскрыты (сфолдил / выиграл без вскрытия). 5-сек окно showdown. */}
-      {canShowCards && me && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-1.5 pointer-events-auto">
-          <span className="text-white/75 text-[11px] font-semibold [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]">
-            {t('game.showCardToOpponent')}
-          </span>
-          <div className="flex gap-2">
-            {me.cards.map((c, i) => {
-              const shown = !!me.revealedCards?.includes(i);
-              return (
-                <button
-                  key={i}
-                  type="button"
-                  disabled={shown}
-                  onClick={() => showCard(i)}
-                  className={
-                    'relative rounded-lg transition-transform scale-[0.81] ' +
-                    (shown ? 'ring-2 ring-emerald-400' : 'hover:-translate-y-1 active:translate-y-0')
-                  }
-                >
-                  <Card card={c} faceStyle="classic" backStyle={design.cardBackStyle} deck={cardDeck} size="md" />
-                  {shown ? (
-                    <span className="absolute -top-2 -right-2 w-4 h-4 rounded-full bg-emerald-500 text-white text-[10px] font-black flex items-center justify-center shadow">
-                      ✓
-                    </span>
-                  ) : (
-                    <span className="absolute inset-x-0 -bottom-4 text-center text-emerald-300 text-[9px] font-bold">
-                      {t('game.show')}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
           </div>
         </div>
       )}

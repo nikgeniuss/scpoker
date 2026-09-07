@@ -5,7 +5,8 @@ import { useAuthStore } from '../store/authStore';
 export interface ChartPoint { t: number; cumPnL: number; }
 
 // Кумулятивный график PnL текущего игрока + производные (руки сыграно, итоговый PnL).
-// Один источник для PokerCraft.tsx и Profile.tsx — не дублировать fetch/derive-логику.
+// Потребитель — PokerCraft.tsx (график). Плитки профиля считают руки по lifetime-итогам
+// (/api/profile/stats), потому что лог раздач обрезается капом и график может не досчитать.
 export function useHandsChart() {
   const token = useAuthStore(s => s.token);
   const [data, setData] = useState<ChartPoint[]>([]);

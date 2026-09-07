@@ -38,6 +38,7 @@ export function makeRoom(params: {
   rimtEnabled?: boolean;
   evCashoutEnabled?: boolean;
   noTurnNoShowEnabled?: boolean;
+  noRatholeHours?: number;
 }): Room {
   return {
     id: params.id,
@@ -104,6 +105,7 @@ export function makeRoom(params: {
     rimtEnabled: params.rimtEnabled ?? false,
     evCashoutEnabled: params.evCashoutEnabled ?? false,
     noTurnNoShowEnabled: params.noTurnNoShowEnabled ?? false,
+    noRatholeHours: params.noRatholeHours ?? 0,
     // Всегда включена, не настраивается — решение пользователя 2026-08-24 (security review):
     // тумблер, доступный создателю стола, отдавал контроль над защитой от сговора тем, от кого
     // она должна защищать (двое сговорившихся создают свой стол с дефолтным OFF).

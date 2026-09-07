@@ -21,6 +21,7 @@ export interface TronAdapterConfig {
   fullHost: string; // TronGrid URL (mainnet или Shasta)
   apiKey: string | null;
   usdtContractAddress: string;
+  feeLimitSun: number; // потолок комиссии TRC-20 перевода (см. TRON_FEE_LIMIT_SUN)
 }
 
 export function createTronAdapter(config: TronAdapterConfig): ChainAdapter {
@@ -95,7 +96,9 @@ export function createTronAdapter(config: TronAdapterConfig): ChainAdapter {
     async sendUsdt(privateKey, toAddress, amountRaw) {
       const senderTronWeb = new TronWeb({ fullHost: config.fullHost, headers, privateKey });
       const contract = await senderTronWeb.contract(TRC20_ABI as never, config.usdtContractAddress);
-      const txid: string = await contract.methods.transfer(toAddress, amountRaw.toString()).send({});
+      // feeLimit обязателен: без него транзакция уходит с нулевым потолком и при нехватке
+      // energy отваливается с OUT_OF_ENERGY — выплата не проходит.
+      const txid: string = await contract.methods.transfer(toAddress, amountRaw.toString()).send({ feeLimit: config.feeLimitSun });
       return { txid };
     },
 

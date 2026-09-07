@@ -7,6 +7,8 @@ import { useAuthStore } from '../store/authStore';
 import { useRakebackStore } from '../store/rakebackStore';
 import { useStreakStore } from '../store/streakStore';
 import { useAchievementsStore } from '../store/achievementsStore';
+import { useMissionsStore } from '../store/missionsStore';
+import { useChestsStore } from '../store/chestsStore';
 import { useShopStore } from '../store/shopStore';
 import { useRewardsWalletStore } from '../store/rewardsWalletStore';
 
@@ -14,17 +16,39 @@ import { useRewardsWalletStore } from '../store/rewardsWalletStore';
 // данные из rakebackService (клик ведёт на /rakeback), «Бонус за визит» — реальные данные из
 // streakService (§10.21.2), «Достижения» — реальные из achievementsService (§10.21.3, забрать
 // тапом по заработанной-незабранной карточке), «Билет SNG» ведёт в реальный магазин лояльности
-// (§10.21.6, /shop). «Кэшбэк недели» — декоративная заглушка, решение отложено (ROADMAP §10.21.8).
+// (§10.21.6, /shop). «Кэшбэк недели» — витрина реального рейкбэка за последние 7 дней
+// (решение пользователя по ROADMAP §10.21.8, вариант 2): новой денежной сущности нет, показываем
+// per-user счётчик weeklyPaid из rakebackService. Декоративных карточек на экране больше нет.
 
-const STILL_DECORATIVE = ['weeklyCashback'] as const;
+// Название сундука по id — на карточке показываем его вместо суммы (сумма заранее не известна).
+function chestTitle(chests: { id: string; title: string }[], chestId: string): string {
+  return chests.find((c) => c.id === chestId)?.title ?? 'Сундук';
+}
+
+// Текст тоста при получении награды: из сундука — с его названием, иначе просто сумма.
+function rewardToast(result: { reward: number; chestTitle?: string }): string {
+  return result.chestTitle ? `${result.chestTitle}: +${result.reward} HUB` : `+${result.reward} HUB`;
+}
+
+// Сколько осталось до сброса миссий — «2д 5ч» / «5ч» / «<1ч». Периода ещё нет (0) — прочерк.
+function formatResetIn(periodEnd: number): string {
+  const left = periodEnd - Date.now();
+  if (!periodEnd || left <= 0) return '—';
+  const days = Math.floor(left / 86_400_000);
+  const hours = Math.floor((left % 86_400_000) / 3_600_000);
+  if (days > 0) return days + 'д ' + hours + 'ч';
+  return hours > 0 ? hours + 'ч' : '<1ч';
+}
 
 export const Rewards = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const token = useAuthStore((s) => s.token);
-  const { tier, nextTier, lifetimeRake, loadMine } = useRakebackStore();
+  const { enabled: rakebackEnabled, tier, nextTier, lifetimeRake, weeklyPaid, loadMine } = useRakebackStore();
   const streak = useStreakStore();
   const achievements = useAchievementsStore();
+  const missions = useMissionsStore();
+  const chests = useChestsStore();
   const shopEnabled = useShopStore((s) => s.enabled);
   const loadShopPublic = useShopStore((s) => s.loadPublic);
   const { balance, loadMine: loadWallet } = useRewardsWalletStore();
@@ -33,6 +57,8 @@ export const Rewards = () => {
     loadMine(token);
     streak.loadMine(token);
     achievements.loadMine(token);
+    missions.loadMine(token);
+    chests.loadPublic();
     loadShopPublic();
     loadWallet(token);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -41,7 +67,16 @@ export const Rewards = () => {
   const handleClaim = async (id: string) => {
     const result = await achievements.claim(token, id);
     if (result && 'reward' in result) {
-      toast.success(`+${result.reward} HUB`);
+      toast.success(rewardToast(result));
+    } else if (result && 'error' in result) {
+      toast.error(t('rewards.claimError'));
+    }
+  };
+
+  const handleClaimMission = async (id: string) => {
+    const result = await missions.claim(token, id);
+    if (result && 'reward' in result) {
+      toast.success(rewardToast(result));
     } else if (result && 'error' in result) {
       toast.error(t('rewards.claimError'));
     }
@@ -74,7 +109,11 @@ export const Rewards = () => {
           <span className="text-base font-black tabular-nums text-amber-300">{balance}</span>
         </div>
 
-        {/* VIP-статус — реальный рейкбэк-уровень, клик открывает полную страницу */}
+        {/* VIP-статус — реальный рейкбэк-уровень, клик открывает полную страницу. Скрыт, пока
+            рейкбэк выключен админом или тир ещё не загружен: иначе игроку показывалась бы
+            лестница уровней, которая ничего не начисляет (то же условие, что у бейджа в
+            Profile.tsx, §10.21.1). */}
+        {rakebackEnabled && tier && (
         <button
           onClick={() => navigate('/rakeback')}
           className="w-full text-left rounded-2xl border border-white/10 bg-white/5 p-4 flex flex-col gap-2.5 mb-6 hover:bg-white/[0.07] transition-colors"
@@ -101,6 +140,31 @@ export const Rewards = () => {
             {nextTier ? t('rewards.progressToNext', { percent: progressPct }) : t('rewards.maxLevel')}
           </div>
         </button>
+        )}
+
+        {/* Сундуки — шансы показываются ОТКРЫТО (ROADMAP §10.21.7): непрозрачные шансы дают
+            жалобы и недоверие. Блок виден, только пока механика включена админом. */}
+        {chests.enabled && chests.chests.length > 0 && (
+          <div className="mb-6">
+            <div className="text-[10.5px] font-bold uppercase tracking-wider text-white/40 mb-2.5">
+              {t('rewards.chests')}
+            </div>
+            <div className="flex flex-col gap-2">
+              {chests.chests.map((c) => (
+                <div key={c.id} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                  <div className="text-sm font-bold">🎁 {c.title}</div>
+                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10.5px] text-white/40 tabular-nums">
+                    {c.odds.map((o, i) => (
+                      <span key={i}>
+                        {o.percent}% · {o.amount} HUB
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Достижения — реальные (achievementsService), тап по заработанной-незабранной = клейм */}
         {achievements.enabled && achievements.achievements.length > 0 && (
@@ -128,8 +192,66 @@ export const Rewards = () => {
                     <Trophy size={18} className={a.earned ? 'text-amber-400' : 'text-white/40'} />
                     <span className="text-[9px] font-semibold text-white/70 leading-tight">{a.title}</span>
                     {claimable && (
-                      <span className="text-[9px] font-bold text-emerald-400">+{a.rewardAmount} HUB</span>
+                      <span className="text-[9px] font-bold text-emerald-400">
+                        {a.chestId ? '🎁' : `+${a.rewardAmount} HUB`}
+                      </span>
                     )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Миссии недели — повторяющиеся задания, прогресс копится счётчиками на сервере и
+            обнуляется в понедельник 00:00 UTC (§10.21.3). Скрыты, пока механика выключена. */}
+        {missions.enabled && missions.missions.length > 0 && (
+          <div className="mb-6">
+            <div className="flex items-baseline justify-between gap-2 mb-2.5">
+              <span className="text-[10.5px] font-bold uppercase tracking-wider text-white/40">
+                {t('rewards.missions')}
+              </span>
+              <span className="text-[10.5px] text-white/30">
+                {t('rewards.missionsResetIn', { time: formatResetIn(missions.periodEnd) })}
+              </span>
+            </div>
+            <div className="flex flex-col gap-2">
+              {missions.missions.map((m) => {
+                const pct = m.threshold > 0 ? Math.min(100, Math.round((m.progress / m.threshold) * 100)) : 100;
+                const claimable = m.earned && !m.claimed;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    disabled={!claimable}
+                    onClick={() => handleClaimMission(m.id)}
+                    className={
+                      'w-full text-left rounded-2xl border px-4 py-3 transition-colors ' +
+                      (claimable
+                        ? 'border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20'
+                        : 'border-white/10 bg-white/5')
+                    }
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-bold truncate">{m.title}</span>
+                      <span
+                        className={
+                          'flex-shrink-0 text-[10.5px] font-bold ' +
+                          (m.claimed ? 'text-white/30' : claimable ? 'text-emerald-400' : 'text-white/40')
+                        }
+                      >
+                        {m.claimed ? t('rewards.claimed') : m.chestId ? `🎁 ${chestTitle(chests.chests, m.chestId)}` : `+${m.rewardAmount} HUB`}
+                      </span>
+                    </div>
+                    <div className="mt-2 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                      <div
+                        className={'h-full ' + (m.earned ? 'bg-emerald-400' : 'bg-white/30')}
+                        style={{ width: pct + '%' }}
+                      />
+                    </div>
+                    <div className="mt-1 text-[10.5px] text-white/40 tabular-nums">
+                      {Math.min(m.progress, m.threshold)} / {m.threshold}
+                    </div>
                   </button>
                 );
               })}
@@ -177,20 +299,30 @@ export const Rewards = () => {
                 </span>
               </button>
             )}
-            {STILL_DECORATIVE.map((key) => (
-              <div
-                key={key}
-                className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3.5 flex items-center gap-3"
+            {/* Кэшбэк недели — сумма реального рейкбэка за текущее недельное окно. Как и VIP-блок
+                выше, скрыт при выключенном рейкбэке: иначе показывали бы ноль от системы,
+                которая ничего не начисляет. Клик ведёт в тот же кабинет /rakeback. */}
+            {rakebackEnabled && (
+              <button
+                onClick={() => navigate('/rakeback')}
+                className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3.5 flex items-center gap-3 text-left hover:bg-white/[0.07] transition-colors"
               >
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-bold">{t(`rewards.${key}`)}</div>
-                  <div className="text-xs text-white/40 mt-0.5">{t(`rewards.${key}Sub`)}</div>
+                  <div className="text-sm font-bold">{t('rewards.weeklyCashback')}</div>
+                  <div className="text-xs text-white/40 mt-0.5">{t('rewards.weeklyCashbackSub')}</div>
                 </div>
-                <span className="flex-shrink-0 text-[10.5px] font-bold text-white/30 px-3.5 py-2 rounded-full border border-white/10">
-                  {t('rewards.comingSoon')}
+                <span
+                  className={
+                    'flex-shrink-0 text-[10.5px] font-bold px-3.5 py-2 rounded-full border ' +
+                    (weeklyPaid > 0
+                      ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10'
+                      : 'text-white/30 border-white/10')
+                  }
+                >
+                  {weeklyPaid} HUB
                 </span>
-              </div>
-            ))}
+              </button>
+            )}
           </div>
         </div>
       </div>

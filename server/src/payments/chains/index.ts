@@ -4,6 +4,7 @@ import { createTronAdapter } from './tronAdapter.js';
 import { createEvmAdapter } from './evmAdapter.js';
 import {
   TRONGRID_FULL_HOST,
+  TRON_FEE_LIMIT_SUN,
   TRONGRID_API_KEY,
   TRON_USDT_CONTRACT,
   ETH_RPC_URL,
@@ -22,6 +23,7 @@ if (TRON_USDT_CONTRACT) {
     fullHost: TRONGRID_FULL_HOST,
     apiKey: TRONGRID_API_KEY,
     usdtContractAddress: TRON_USDT_CONTRACT,
+    feeLimitSun: TRON_FEE_LIMIT_SUN,
   });
 }
 if (ETH_USDT_CONTRACT) {

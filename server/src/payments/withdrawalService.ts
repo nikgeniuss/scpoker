@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import { readWithdrawals, writeWithdrawals } from './withdrawalsStorage.js';
 import { getChainAdapter } from './chains/index.js';
 import { paymentsBankroll } from './paymentsBankroll.js';
-import { usdtToUsdtRaw, usdtRawToChips } from './exchange.js';
+import { usdtToUsdtRaw, usdtRawToChips, chipsToUsdtRaw } from './exchange.js';
 import type { PaymentChain, PaymentsSettings, WithdrawalRequest } from '@poker-room/shared';
 
 type ServiceError = { error: string };
@@ -32,9 +32,13 @@ export function createWithdrawalRequest(
     return { error: `amount-out-of-range:${settings.minWithdrawalUsdt}-${settings.maxWithdrawalUsdt}` };
   }
 
-  const amountUsdtRaw = usdtToUsdtRaw(amountUsdt);
-  const amountChips = usdtRawToChips(amountUsdtRaw, settings.exchangeRateCentsPerUsdt);
+  const requestedRaw = usdtToUsdtRaw(amountUsdt);
+  const amountChips = usdtRawToChips(requestedRaw, settings.exchangeRateCentsPerUsdt);
   if (amountChips <= 0) return { error: 'amount-too-small' };
+  // Отправляем ровно столько USDT, сколько покрыто списанными фишками. Обе конвертации округляют
+  // вниз, поэтому запрошенная сумма могла быть на доли цента БОЛЬШЕ списания — эта разница уходила
+  // из кассы при каждом выводе (найдено security review 2026-08-24).
+  const amountUsdtRaw = chipsToUsdtRaw(amountChips, settings.exchangeRateCentsPerUsdt);
 
   const currentChips = paymentsBankroll.getUserChips(userId);
   if (currentChips === null) return { error: 'user-not-found' };

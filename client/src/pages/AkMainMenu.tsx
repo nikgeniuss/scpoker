@@ -96,7 +96,7 @@ export const AkMainMenu = () => {
                 <div className="flex-1 min-w-0">
                   <div className="text-ak-text font-bold text-sm truncate">{myClub.name}</div>
                   <div className="text-ak-text-muted text-xs mt-0.5">
-                    {myClub.members.length} {myClub.members.length === 1 ? 'участник' : myClub.members.length < 5 ? 'участника' : 'участников'}
+                    {t('mainMenu.clubMembers', { count: myClub.members.length })}
                     {myClub.pendingRequests.length > 0 && (
                       <span className="ml-2 text-ak-gold">· {myClub.pendingRequests.length} заявок</span>
                     )}

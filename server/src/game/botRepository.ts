@@ -57,6 +57,7 @@ export class BotRepository {
       }
       dirty = this.mergeNewFillerPersonas() || dirty;
       dirty = this.syncTargetsFromDefaults() || dirty;
+      dirty = this.syncFillerPersonas() || dirty;
       if (dirty) this.save();
     }
   }
@@ -114,6 +115,20 @@ export class BotRepository {
     }
     if (added > 0) console.log(`🤖 Merged ${added} new filler personas → filler pool now has more entries`);
     return added > 0;
+  }
+
+  // Персона заполнителя детерминирована по его id, но лежит в bots.json с момента создания —
+  // значит правка силы турнирных ботов (TOURNAMENT_BOT_WEAKNESS) сама по себе НЕ затронула бы
+  // уже созданный пул. Пересчитываем персону из того же seed и перезаписываем, если разошлась.
+  private syncFillerPersonas(): boolean {
+    let changed = 0;
+    for (const bot of this.bots.values()) {
+      if (!bot.id.startsWith(FILLER_BOT_ID_PREFIX)) continue;
+      const fresh = buildFillerPersona(hashStr(bot.id));
+      if (JSON.stringify(bot.persona) !== JSON.stringify(fresh)) { bot.persona = fresh; changed++; }
+    }
+    if (changed > 0) console.log(`🤖 Synced persona for ${changed} tournament filler bot(s) — сила пересчитана`);
+    return changed > 0;
   }
 
   private syncTargetsFromDefaults(): boolean {

@@ -80,6 +80,10 @@ export interface GameState {
   bigBlind: number;
   format: GameFormat; // 'nlh' | 'shortdeck' — формат стола (UI-лейблы)
   badBeatEligible?: boolean; // стол участвует в BBJ (публичный + не bot-стол + джекпот включён)
+  // Активные спец-режимы стола — бейджи над столом (ROADMAP §9.1). Массив, а не набор булевых
+  // полей: он почти всегда пуст или короток, и не раздувает каждый broadcast (§0.9).
+  // Отсутствует/пуст — стол обычный, бейджи не рисуются.
+  tableModes?: TableMode[];
   rake: RakeConfig; // per-table рейк (percent/capBb), для показа в TableInfoModal (percent=0 → выключен)
   // Платная фича Rabbit Hunting (ROADMAP §10.12): если рука закончилась раньше ривера, можно за
   // плату увидеть карты, которые пришли бы. Окно — только пока phase==='showdown'. revealed=null —
@@ -328,6 +332,7 @@ export interface RoomInfo {
   evCashoutEnabled: boolean;
   noTurnNoShowEnabled: boolean;
   antiCollusionEnabled: boolean;
+  noRatholeHours?: number; // >0 — вернуться за стол в это окно можно только со стеком ухода (§10.6)
 }
 
 // Per-table рейк (комиссия рума с банка). percent=0 → выключен. (см. server/src/game/rake.ts)
@@ -367,6 +372,10 @@ export interface CreateRoomOptions {
   rimtEnabled?: boolean;       // ранний all-in до ривера — борд доигрывается дважды
   evCashoutEnabled?: boolean;  // ранний all-in до ривера — банк делится по equity (приоритет над rimtEnabled)
   noTurnNoShowEnabled?: boolean; // победитель без вскрытия автоматически показывает карты
+  // Без рэтхола (§10.6): окно в часах, в течение которого вернувшийся за ЭТОТ стол игрок обязан
+  // сесть со стеком не меньше того, с которым ушёл. 0/не задан = правило выключено (старое
+  // поведение). Проигравшего не касается: он садится обычным минимальным бай-ином.
+  noRatholeHours?: number;
   // antiCollusionEnabled — было per-table опцией, убрано 2026-08-24 (security review): защита
   // от сговора всегда включена на сервере (roomFactory.ts), не настраивается создателем стола.
 }
@@ -411,6 +420,9 @@ export interface TournamentEntry {
   username: string;
   status: TournamentEntryStatus;
   tableId?: string;     // id текущего стола (MTT, только пока status==='playing')
+  chips?: number;       // турнирный стек на конец последней раздачи. Персистится, чтобы running-
+                        // турнир пережил рестарт сервера: игроки за столами в памяти, и без этого
+                        // снимка их некем пересадить (живой прогон 2026-09-02 — турнир завис навсегда)
   finishPlace?: number; // при элиминации — предварительная оценка; окончательное место (уникальное,
                         // одно на игрока) присваивается в finish() через computeFinalPlaces
   eliminationOrder?: number; // монотонный номер выхода из турнира (1, 2, 3...) — задаёт порядок мест.
@@ -473,6 +485,12 @@ export interface TournamentInfo {
   // Рейк — доля бай-ина, уходящая руму МИМО призового фонда (SNG+MTT), 0-50%. buyIn = prizePool-часть +
   // bounty-часть (если включено) + rake-часть. По умолчанию 0 (старое поведение, без рейка).
   rakePercent?: number;
+  // Накопленная экономика турнира (журнал tournament-ledger.json): сколько всего собрано за входы
+  // (бай-ины + ре-энтри), сколько из этого ушло руму рейком и сколько — в баунти-фонд. Копятся в
+  // creditEntryFee; prizePool = collectedFees - collectedRake - collectedBounty (+ overlay).
+  collectedFees?: number;
+  collectedRake?: number;
+  collectedBounty?: number;
   // Промокод на бесплатный вход (см. PromoCode) — сгенерирован при создании ЭТОГО турнира, если
   // promoEnabled. Отдаётся клиенту ТОЛЬКО создавшему турнир админу (см. tournaments.routes.ts) —
   // обычным игрокам не рассылается, иначе код можно было бы утащить из devtools в обход раздачи.
@@ -579,4 +597,38 @@ export type JoinDeniedReason =
   | 'insufficient-bankroll' // банкролл < bigBlind*buyInMinBb
   | 'invalid-buyin'         // запрошенная сумма вне [bigBlind*minBb, bigBlind*maxBb]
   | 'club-members-only'     // стол только для членов клуба
-  | 'anti-collusion';       // тот же IP/device уже сидит за этим столом (antiCollusionEnabled)
+  | 'anti-collusion'        // тот же IP/device уже сидит за этим столом (antiCollusionEnabled)
+  | 'rathole-min-buyin';    // без рэтхола: вернуться в окно можно только со стеком ухода (§10.6)
+
+// Спец-режимы стола, которые игрок должен видеть ЗА столом, а не только в модалке до посадки:
+// они меняют ход раздачи (форс-беты, второй борд, доигрывание) или деньги (анте).
+export type TableMode =
+  | 'ante'         // анте вносят все до блайндов
+  | 'straddle'     // UTG обязательно стрэддлит 2×BB
+  | 'bombPot'      // все вносят форс-бет, торгов на префлопе нет
+  | 'doubleBoard'  // два независимых борда, банк 50/50
+  | 'rimt'         // ранний all-in — борд доигрывается дважды
+  | 'evCashout'    // ранний all-in — банк делится по equity
+  | 'noTurnNoShow'; // победитель без вскрытия показывает карты автоматически
+
+// Идентичность бота: id бота всегда с префиксом 'bot:' (сервер — botIdentity.ts). Клиенту нужен
+// тот же предикат для админ-метки «B» за столом (обычному игроку метка не рендерится).
+export const BOT_ID_PREFIX = 'bot:';
+
+export function isBotId(playerId: string): boolean {
+  return playerId.startsWith(BOT_ID_PREFIX);
+}
+
+// Сундуки (ROADMAP §10.21.7): рандомизированная награда вместо фиксированной. Веса — источник
+// правды, проценты для показа игроку считаются из них (шансы показываются ОТКРЫТО).
+// Общий тип: сервер разыгрывает приз (chestService), админка редактирует таблицу, игрок видит шансы.
+export interface ChestPrize {
+  weight: number; // относительный вес (не процент) — проценты вычисляются как weight/сумма весов
+  amount: number; // HUB-коины
+}
+
+export interface ChestDef {
+  id: string;
+  title: string;
+  prizes: ChestPrize[];
+}

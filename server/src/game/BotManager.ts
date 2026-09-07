@@ -1,9 +1,11 @@
 // BotManager: оркестрация ботов — создание автостолов, ротация, lifecycle.
 // Хранилище (bots.json, runtimes) → BotRepository. Планирование решений → BotDecisionScheduler.
+import { randomInt } from 'crypto';
 import { nanoid } from 'nanoid';
 import { isBot as isBotId } from './botIdentity.js';
 import { makeSeededRng, hashStr, type BotDecisionContext, type BotDecision, type BotPersona } from './botBrain.js';
 import { BotRepository, FILLER_BOT_ID_PREFIX, type BotInfo } from './botRepository.js';
+import { weakenPersona } from './tournamentFillerPersonas.js';
 import { BotDecisionScheduler } from './botDecisionScheduler.js';
 
 // Re-export для обратной совместимости (GameManager и admin-роуты импортируют отсюда).
@@ -164,7 +166,7 @@ export class BotManager {
         username: `Тестбот-${suffix}`,
         chips,
         targetPnL: 'minus',
-        persona: { ...TEST_BLEED_PERSONA },
+        persona: weakenPersona({ ...TEST_BLEED_PERSONA }),
         createdAt: now,
         totalPnL: 0,
       };
@@ -453,7 +455,13 @@ export class BotManager {
     }
   }
 
+  // Секрет процесса: без него seed складывался только из публичных величин — botId уходит клиенту
+  // в каждом GAME_UPDATE, handIndex досчитывается наблюдением за столом, а mulberry32 — открытый
+  // алгоритм. То есть решения бота можно было предсказать (security review 2026-08-24). Соль живёт
+  // только в памяти сервера и меняется на каждом рестарте.
+  private readonly rngSalt = randomInt(0, 2 ** 31);
+
   makeRngForHand(botId: string, handIndex: number): () => number {
-    return makeSeededRng(hashStr(botId) ^ handIndex);
+    return makeSeededRng((hashStr(botId) ^ handIndex ^ this.rngSalt) >>> 0);
   }
 }

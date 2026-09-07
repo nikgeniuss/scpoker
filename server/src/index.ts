@@ -33,6 +33,8 @@ import { createPromoCodesAdminRouter } from './routes/promoCodesAdmin.routes.js'
 import { createRakebackRouter } from './routes/rakeback.routes.js';
 import { createStreakRouter } from './routes/streak.routes.js';
 import { createAchievementsRouter } from './routes/achievements.routes.js';
+import { createMissionsRouter } from './routes/missions.routes.js';
+import { createChestsRouter } from './routes/chests.routes.js';
 import { createRaceRouter } from './routes/race.routes.js';
 import { start as startRaceScheduler } from './game/raceService.js';
 import { createReferralRouter } from './routes/referral.routes.js';
@@ -42,7 +44,10 @@ import { createShopRouter } from './routes/shop.routes.js';
 import { createInventoryRouter } from './routes/inventory.routes.js';
 import { createRewardsWalletRouter } from './routes/rewardsWallet.routes.js';
 import { createResponsibleGamblingRouter } from './routes/responsibleGambling.routes.js';
+import { createProfileRouter } from './routes/profile.routes.js';
+import { start as startTableTimeTicker } from './game/tableTimeService.js';
 import { startBot } from './bot/bot.js';
+import { installCrashAlerts, sendAlert, isAlertingEnabled } from './monitoring/alertService.js';
 
 // CORS:
 // - В dev (ALLOWED_ORIGINS не задан) — origin: '*', credentials: false.
@@ -124,7 +129,9 @@ app.use('/api/admin/tournaments', createTournamentsAdminRouter(tournamentManager
 app.use('/api/admin/promo-codes', createPromoCodesAdminRouter(tournamentManager));
 app.use('/api/rakeback', createRakebackRouter());
 app.use('/api/streak', createStreakRouter());
-app.use('/api/achievements', createAchievementsRouter(tournamentManager));
+app.use('/api/achievements', createAchievementsRouter());
+app.use('/api/missions', createMissionsRouter());
+app.use('/api/chests', createChestsRouter());
 app.use('/api/race', createRaceRouter());
 startRaceScheduler(15 * 60_000); // проверка закрытия периода раз в 15 мин — период измеряется днями, точность не критична
 app.use('/api/referral', createReferralRouter());
@@ -138,6 +145,10 @@ app.use('/api/shop', createShopRouter(tournamentManager));
 app.use('/api/inventory', createInventoryRouter());
 app.use('/api/rewards-wallet', createRewardsWalletRouter());
 app.use('/api/responsible-gambling', createResponsibleGamblingRouter(gameManager));
+app.use('/api/profile', createProfileRouter());
+// Тик «Часов за столом» (ROADMAP §9.1): раз в минуту всем сидящим за столами начисляется минута.
+// Не по событиям выхода — их легко пропустить (leave/disconnect/bust/kick) и рестарт теряет сессию.
+startTableTimeTicker(60_000, () => gameManager.getSeatedHumanIds());
 
 // Весь socket-слой (handshake JWT + single-session + обработчики событий).
 registerSocketHandlers(io, gameManager);
@@ -150,7 +161,14 @@ if (TELEGRAM_BOT_TOKEN) {
   void startBot();
 }
 
+// Алерты о падении процесса (ROADMAP §11.3). Ставим ПОСЛЕ инициализации всего остального, но до
+// listen: раньше падение можно было заметить только зайдя на машину и посмотрев консоль.
+installCrashAlerts();
+
 const PORT = Number(process.env.PORT) || 3001;
 httpServer.listen(PORT, '0.0.0.0', () => {
   console.log('Server running on port ' + PORT);
+  // Сообщение о старте — это и проверка канала, и сигнал о незамеченном рестарте: частые
+  // «сервер поднялся» подряд означают крэш-луп, даже если сам крэш-алерт не дошёл.
+  if (isAlertingEnabled()) void sendAlert('startup', `Сервер запущен на порту ${PORT}`);
 });

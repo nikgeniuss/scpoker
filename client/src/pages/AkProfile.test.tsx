@@ -28,7 +28,7 @@ describe('<AkProfile />', () => {
       user: { id: 'u1', username: 'Vasya', role: 'user', chips: 12345, publicId: 'AB12-CD34' },
       isAdmin: false,
     });
-    useRakebackStore.setState({ totalPaid: 0, lifetimeRake: 0, tier: null, nextTier: null, history: [], loaded: false });
+    useRakebackStore.setState({ enabled: false, totalPaid: 0, lifetimeRake: 0, weeklyPaid: 0, tier: null, nextTier: null, history: [], loaded: false });
   });
 
   it('показывает ник, ID и баланс из useAuthStore/formatMoney', () => {
@@ -67,6 +67,24 @@ describe('<AkProfile />', () => {
     expect(screen.queryByText('Настройки Игры')).not.toBeInTheDocument();
     fireEvent.click(screen.getByText('Настройки игры'));
     expect(screen.getByText('Настройки Игры')).toBeInTheDocument();
+  });
+
+  // VIP-бейдж — реальный тир из rakebackService (был статичный «VIP0», ROADMAP §9.1).
+  it('рейкбэк выключен — VIP-бейдж не показывается', () => {
+    renderAkProfile();
+    expect(screen.queryByText(/^VIP/)).toBeNull();
+  });
+
+  it('рейкбэк включён и тир загружен — бейдж показывает реальный уровень', () => {
+    useRakebackStore.setState({ enabled: true, tier: { name: 'Bronze', minRakeCents: 0, percent: 5 } });
+    renderAkProfile();
+    expect(screen.getByText('VIP BRONZE')).toBeInTheDocument();
+  });
+
+  it('рейкбэк включён, но тир ещё не пришёл — бейдж не рисуем', () => {
+    useRakebackStore.setState({ enabled: true, tier: null });
+    renderAkProfile();
+    expect(screen.queryByText(/^VIP/)).toBeNull();
   });
 
   it('без пользователя — ничего не рендерит', () => {

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuthStore } from '../../store/authStore';
 import { useAdminApi } from '../../hooks/useAdminApi';
+import { TournamentLedgerSection } from '../../components/admin/TournamentLedgerSection';
 import { formatMoney } from '../../config/chipFormat';
 
 // Админ-вкладка «Данные»: отчёты по играм за диапазон дат — игры, PnL игроков, рейк, столы,
@@ -231,6 +232,7 @@ export const DataTab = () => {
           </p>
         </div>
       )}
+      <TournamentLedgerSection />
     </div>
   );
 };

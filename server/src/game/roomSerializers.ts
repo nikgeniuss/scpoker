@@ -48,6 +48,7 @@ export function toRoomInfo(room: Room): RoomInfo {
     rimtEnabled: room.rimtEnabled,
     evCashoutEnabled: room.evCashoutEnabled,
     noTurnNoShowEnabled: room.noTurnNoShowEnabled,
+    ...(room.noRatholeHours > 0 ? { noRatholeHours: room.noRatholeHours } : {}),
     antiCollusionEnabled: room.antiCollusionEnabled,
   };
 }

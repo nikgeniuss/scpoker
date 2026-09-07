@@ -10,6 +10,7 @@ import { useClubStore } from '../../store/clubStore';
 import type { CreateRoomOptions as CreateOptions, GameFormat } from '@poker-room/shared';
 import { Toggle, Stepper, Segmented, RangeSlider, DualRangeSlider, Dropdown, SettingRow, InfoSheet, InfoButton } from './createControls';
 import { fetchTemplates, putTemplates, type RoomTemplate } from '../../config/roomTemplates';
+import { BLIND_LADDER, ladderIndexFor, sliderIndexFor, stepAt } from '../../config/blindLadder';
 import { formatMoney, parseMoney } from '../../config/chipFormat';
 
 const DEFAULT_TURN_DURATION_SEC = 15;
@@ -49,7 +50,6 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
     squid: { title: t('createRoomModal.infoSquidTitle'), lines: [t('createRoomModal.infoSquidLine')] },
     aof: { title: t('createRoomModal.infoAofTitle'), lines: [t('createRoomModal.infoAofLine')] },
     straddle: { title: t('createRoomModal.infoStraddleTitle'), lines: [t('createRoomModal.infoStraddleLine')] },
-    calltime: { title: t('createRoomModal.infoCallTimeTitle'), lines: [t('createRoomModal.infoCallTimeLine')] },
     norathole: { title: t('createRoomModal.infoNoRatholeTitle'), lines: [t('createRoomModal.infoNoRatholeLine')] },
     bombpot: { title: t('createRoomModal.infoBombPotTitle'), lines: [t('createRoomModal.infoBombPotLine')] },
     ev: { title: t('createRoomModal.infoEvTitle'), lines: [t('createRoomModal.infoEvLine')] },
@@ -112,6 +112,9 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
   // Доделка §10.6 (2026-06-26) — спец-режимы стола, все автоматические (без опта на раздачу).
   const [straddleEnabled, setStraddleEnabled] = useState(false);
   const [noTurnNoShowEnabled, setNoTurnNoShowEnabled] = useState(false);
+  // Без рэтхола (§10.6): окно в часах; выключено — правило не действует (старое поведение).
+  const [noRatholeEnabled, setNoRatholeEnabled] = useState(false);
+  const [noRatholeHours, setNoRatholeHours] = useState(6);
   const [bombPotEnabled, setBombPotEnabled] = useState(false);
   const [doubleBoardEnabled, setDoubleBoardEnabled] = useState(false);
   const [rimtEnabled, setRimtEnabled] = useState(false);
@@ -150,6 +153,7 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
     autoExtendSession: sessionHours > 0 && autoExtendSession ? true : undefined,
     straddleEnabled: straddleEnabled || undefined,
     noTurnNoShowEnabled: noTurnNoShowEnabled || undefined,
+    noRatholeHours: noRatholeEnabled ? noRatholeHours : undefined,
     bombPotEnabled: bombPotEnabled || undefined,
     doubleBoardEnabled: doubleBoardEnabled || undefined,
     rimtEnabled: rimtEnabled || undefined,
@@ -180,6 +184,8 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
     setAutoExtendSession(!!o.autoExtendSession);
     setStraddleEnabled(!!o.straddleEnabled);
     setNoTurnNoShowEnabled(!!o.noTurnNoShowEnabled);
+    setNoRatholeEnabled(!!o.noRatholeHours);
+    if (o.noRatholeHours) setNoRatholeHours(o.noRatholeHours);
     setBombPotEnabled(!!o.bombPotEnabled);
     setDoubleBoardEnabled(!!o.doubleBoardEnabled);
     setRimtEnabled(!!o.rimtEnabled);
@@ -524,6 +530,29 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
                 }}
               />
             </div>
+            {/* Слайдер по стандартной лестнице блайндов (ROADMAP §10.6): пресеты дают четыре
+                уровня ставок, поля — произвольные значения, слайдер — быстрый выбор типовой
+                ступени между ними. Значение вне лестницы ручку не двигает силой: показываем
+                ближайшую ступень и помечаем, что значение своё. */}
+            <div className="py-2">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-gray-400">{t('createRoomModal.blindsLadderLabel')}</span>
+                {ladderIndexFor(smallBlind, bigBlind) < 0 && (
+                  <span className="text-[11px] text-gray-500">{t('createRoomModal.blindsCustom')}</span>
+                )}
+              </div>
+              <RangeSlider
+                min={0}
+                max={BLIND_LADDER.length - 1}
+                step={1}
+                value={sliderIndexFor(smallBlind, bigBlind)}
+                onChange={(i) => {
+                  const step = stepAt(i);
+                  setSmallBlind(step.sb);
+                  setBigBlind(step.bb);
+                }}
+              />
+            </div>
             <div className="grid grid-cols-2 gap-3 py-2 border-b border-white/5">
               <div>
                 <label className="text-xs text-gray-400 mb-1 block">{t('createRoomModal.smallBlindLabel')}</label>
@@ -600,16 +629,16 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
               </div>
             </div>
 
-            {/* Прочие игровые опции (в разработке) */}
-            <SettingRow label={t('createRoomModal.callTime')} soon disabled onInfo={openInfo('calltime')}>
-              <Toggle checked={false} onChange={noop} disabled />
+            {/* Прочие игровые опции */}
+            <SettingRow label={t('createRoomModal.noRathole')} onInfo={openInfo('norathole')}>
+              <Toggle checked={noRatholeEnabled} onChange={setNoRatholeEnabled} />
             </SettingRow>
-            <SettingRow label={t('createRoomModal.noRathole')} soon disabled onInfo={openInfo('norathole')}>
-              <span className="text-sm text-gray-500">{t('createRoomModal.hoursValue', { count: 6 })}</span>
-            </SettingRow>
-            <div className="pb-3 border-b border-white/5 opacity-40">
-              <RangeSlider min={1} max={12} step={1} value={6} onChange={noop} disabled />
-            </div>
+            {noRatholeEnabled && (
+              <div className="pb-3 border-b border-white/5">
+                <div className="text-sm text-gray-400 mb-2">{t('createRoomModal.hoursValue', { count: noRatholeHours })}</div>
+                <RangeSlider min={1} max={12} step={1} value={noRatholeHours} onChange={setNoRatholeHours} />
+              </div>
+            )}
             <SettingRow label={t('createRoomModal.bombPot')} onInfo={openInfo('bombpot')}>
               <Toggle checked={bombPotEnabled} onChange={setBombPotEnabled} />
             </SettingRow>

@@ -48,7 +48,7 @@ export const TablePills = () => {
             onClick={() => navigate('/game/' + id)}
             title={tbl.roomName}
             className={
-              'relative flex items-center gap-1 px-1.5 h-9 rounded-xl border backdrop-blur transition ' +
+              'relative flex items-center justify-center gap-1 px-1.5 h-9 min-w-9 rounded-xl border backdrop-blur transition ' +
               (tbl.isMyTurn
                 ? 'border-amber-400 ring-2 ring-amber-400/70 bg-amber-500/15 animate-pulse'
                 : active
