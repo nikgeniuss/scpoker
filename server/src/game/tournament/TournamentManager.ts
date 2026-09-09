@@ -15,6 +15,7 @@ import { recordTournamentFinish } from './tournamentLedger.js';
 import { recordTournamentTotals } from './tournamentPlayerTotals.js';
 import { addProgress as addMissionProgress } from '../missionsService.js';
 import { isBot } from '../botIdentity.js';
+import { accrueTournamentRake as accrueBonusTournamentRake } from '../depositBonusService.js';
 import { FILLER_BOT_ID_PREFIX } from '../botRepository.js';
 
 type ServiceError = { error: string };
@@ -637,6 +638,7 @@ export class TournamentManager {
       this.gameManager.seatTournamentPlayer(tableId, userId, username, t.info.startingStack);
       t.info.entries.push({ userId, username, status: 'playing', tableId, ...(bounty > 0 ? { bounty } : {}) });
       this.creditEntryFee(t.info, fee, bounty, rake);
+      accrueBonusTournamentRake(userId, rake);
       this.persist();
       console.log(`🏅 [tournament-register] ${username} → "${t.info.name}" (${t.info.id}) ${priorEntries.length > 0 ? '(ре-энтри) ' : '(поздняя рег.) '}стол=${tableId} prizePool=${t.info.prizePool}`);
       // Неровный сплит при старте MTT может оставить стол с 1 игроком (status='waiting',
@@ -769,6 +771,7 @@ export class TournamentManager {
     t.info.status = 'running';
     t.info.tableIds = [roomId];
     t.info.startedAt = Date.now();
+    this.accrueEntriesTournamentRake(t.info);
     this.persist();
     console.log(`🏅 [tournament-start] SNG "${t.info.name}" (${t.info.id}) стартовал: ${t.info.entries.length} игроков, стол=${roomId}, старт-стек=${t.info.startingStack}, SB/BB=${firstLevel.smallBlind}/${firstLevel.bigBlind}`);
 
@@ -817,6 +820,7 @@ export class TournamentManager {
     t.info.status = 'running';
     t.info.tableIds = tableIds;
     t.info.startedAt = Date.now();
+    this.accrueEntriesTournamentRake(t.info);
     this.persist();
     console.log(`🏅 [tournament-start] MTT "${t.info.name}" (${t.info.id}) стартовал: ${t.info.entries.length} игроков, ${numTables} стол(ов), старт-стек=${t.info.startingStack}, SB/BB=${firstLevel.smallBlind}/${firstLevel.bigBlind}`);
 
@@ -1097,6 +1101,18 @@ export class TournamentManager {
   private rakePerEntry(info: TournamentInfo): number {
     if (!info.rakePercent) return 0;
     return Math.floor((info.buyIn * info.rakePercent) / 100);
+  }
+
+  // Турнирная комиссия в отыгрыш депозитного бонуса (§10.21.9). Зачитывается на СТАРТЕ, а не при
+  // регистрации: до старта вход можно отменить (unregister возвращает бай-ин), и зачтённый рейк
+  // пришлось бы откатывать. Боты ничего не платят, промо-входы оплачивает рум — оба не в счёт.
+  private accrueEntriesTournamentRake(info: TournamentInfo): void {
+    const rake = this.rakePerEntry(info);
+    if (rake <= 0) return;
+    info.entries.forEach(e => {
+      if (isBot(e.userId) || e.promoCode) return;
+      accrueBonusTournamentRake(e.userId, rake);
+    });
   }
 
   // Баунти/PKO: баунти жертвы делится между всеми killerIds (поровну — split при тае на шоудауне)

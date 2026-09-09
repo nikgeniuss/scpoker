@@ -110,6 +110,10 @@ export interface GameManagerLike {
     userId: string,
     cfg: { enabled: boolean; thresholdBb: number; targetBb: number },
   ): void;
+  getSettings(): { defaultRake: { percent: number; capBb: number } } & Record<string, unknown>;
+  updateSettings(partial: Record<string, unknown>): Record<string, unknown>;
+  applyDefaultRakeToRooms(): { updated: number };
+  getRoomList(): Array<{ id: string; rake: { percent: number; capBb: number } }>;
 }
 
 // Посадить игрока за стол. Записывает банкролл в mock-users.json, создаёт сокет в io,

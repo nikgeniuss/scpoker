@@ -9,6 +9,7 @@ import { sweepDeposit } from './sweepService.js';
 import type { DepositRecord, PaymentsSettings, ResponsibleGamblingSettings, WalletMapping } from '@poker-room/shared';
 import { getResponsibleGamblingState, markResponsibleGamblingWarned } from '../auth/auth.js';
 import { periodRange, isLimitCrossed } from '../game/responsibleGamblingService.js';
+import { grantForDeposit as grantDepositBonus } from '../game/depositBonusService.js';
 
 const NO_RG_SETTINGS: ResponsibleGamblingSettings = {
   depositLimitEnabled: false,
@@ -150,6 +151,12 @@ async function runPoll(
           // Свип — best-effort прямо здесь же; неудача не теряет депозит (см. ретрай выше).
           await trySweep(deposit, wallets);
           notifyPaymentsInbox(wallet.userId, 'deposit', `Депозит зачислен: ${usdtRawToUsdt(t.amountRaw).toFixed(2)} USDT`);
+
+          // Депозитный бонус (§10.21.9). Сервис сам решает, положен ли бонус (выключен/мал депозит/
+          // нулевой процент) и по какой ставке. Первым считается депозит, до которого записей этого
+          // игрока не было — текущая уже добавлена в массив выше, поэтому сравнение с единицей.
+          const isFirstDeposit = deposits.filter((d) => d.userId === wallet.userId).length === 1;
+          grantDepositBonus(wallet.userId, amountChips, isFirstDeposit, t.txid);
 
           // Лимит на депозит (ROADMAP §11.2) — только предупреждение, кредит чипов уже применён выше.
           if (getRgSettings().depositLimitEnabled) {

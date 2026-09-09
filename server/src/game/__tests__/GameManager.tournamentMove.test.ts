@@ -165,3 +165,45 @@ describe('GameManager — movePlayerToTable / isTableSafeToRebalance', () => {
     expect(stateA.players[0].disconnected).toBe(true);
   });
 });
+
+// Ре-энтри/поздняя регистрация на стол, где раздача уже идёт (вопрос пользователя 2026-09-08:
+// «может ли предложиться ход, когда карт нет на руках»). Подсевший не участвует в текущей руке:
+// ход ему не переходит и круг ставок он не держит — карты приходят со следующей раздачи.
+describe('GameManager — посадка посреди раздачи (ре-энтри)', () => {
+  beforeEach(() => {
+    resetStorage({
+      users: [
+        { id: 'A', username: 'Alice', chips: 5000 },
+        { id: 'B', username: 'Bob', chips: 5000 },
+        { id: 'C', username: 'Carol', chips: 5000 },
+      ],
+    });
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  type TurnView = { players: Array<{ id: string; cards: unknown[]; isFolded: boolean }>; currentPlayerId?: string | null };
+
+  it('подсевшему посреди раздачи не переходит ход и он не блокирует круг', async () => {
+    const { gm } = await createTestGameManager();
+    const realGm = gm as unknown as GameManager;
+
+    const table = realGm.createTournamentTable({ tournamentId: 't1', name: 'T', maxPlayers: 6, smallBlind: 10, bigBlind: 20, ante: 0, format: 'nlh' });
+    realGm.seatTournamentPlayer(table, 'A', 'Alice', 1000);
+    realGm.seatTournamentPlayer(table, 'B', 'Bob', 1000);
+    realGm.startGame(table);
+
+    // Раздача идёт — C заходит по ре-энтри.
+    expect(realGm.seatTournamentPlayer(table, 'C', 'Carol', 1000)).toBe(true);
+
+    const midHand = realGm.getGameState(table) as unknown as TurnView;
+    const carol = midHand.players.find((p) => p.id === 'C')!;
+    expect(carol.cards).toHaveLength(0);
+    expect(carol.isFolded).toBe(true);
+    expect(midHand.currentPlayerId).not.toBe('C');
+
+    // Круг закрывается без участия C: A и B доигрывают раздачу до конца.
+    realGm.handlePlayerAction(table, midHand.currentPlayerId as string, 'call');
+    const afterCall = realGm.getGameState(table) as unknown as TurnView;
+    expect(afterCall.currentPlayerId).not.toBe('C');
+  });
+});

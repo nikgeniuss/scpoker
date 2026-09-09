@@ -6,6 +6,7 @@ import { RaceRewardsSection } from '../../components/admin/RaceRewardsSection';
 import { ReferralRewardsSection } from '../../components/admin/ReferralRewardsSection';
 import { ShopRewardsSection } from '../../components/admin/ShopRewardsSection';
 import { CosmeticsRewardsSection } from '../../components/admin/CosmeticsRewardsSection';
+import { DepositBonusSection } from '../../components/admin/DepositBonusSection';
 
 // Вкладка «Награды» (ROADMAP §10.21) — единая точка настройки всех механик программы лояльности.
 // Каждая механика — отдельная секция (свой toggle, свой каталог/таблица, своя кнопка сохранения,
@@ -23,6 +24,7 @@ export const RewardsTab = () => {
       <ReferralRewardsSection />
       <ShopRewardsSection />
       <CosmeticsRewardsSection />
+      <DepositBonusSection />
     </div>
   );
 };

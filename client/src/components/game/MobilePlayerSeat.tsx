@@ -134,21 +134,13 @@ const MobilePlayerSeatImpl = ({
         (player.isFolded ? 'opacity-65 grayscale ' : '')
       }
     >
-      {/* Bubble сверху (emoji + action). Action-тег героя переехал в fixed-блок карт (GameRoom,
-          единый зелёный стиль — референс AK Poker), здесь для isMe его не рисуем — иначе дубль. */}
-      {(emojiBubble || (actionBubble && !isMe)) && (
+      {/* Bubble сверху — только эмодзи. Тег действия переехал в плашку ника, на место строки
+          стека (решение пользователя 2026-09-08: над аватаром он висел далеко от игрока и терялся).
+          Action-тег героя живёт в fixed-блоке карт (GameRoom, единый зелёный стиль AK Poker). */}
+      {emojiBubble && (
         <div className="absolute -top-12 left-1/2 -translate-x-1/2 flex flex-col items-center gap-0.5 pointer-events-none z-30">
           <AnimatePresence mode="popLayout">
-            {emojiBubble && <EmojiBubble key={'e-' + emojiBubble.key} emoji={emojiBubble.emoji} />}
-            {actionBubble && !isMe && (
-              <ActionBubble
-                key={'a-' + actionBubble.key}
-                action={actionBubble.action}
-                amount={actionBubble.amount}
-                bigBlind={bigBlind}
-                displayMode={displayMode}
-              />
-            )}
+            <EmojiBubble key={'e-' + emojiBubble.key} emoji={emojiBubble.emoji} />
           </AnimatePresence>
         </div>
       )}
@@ -370,11 +362,24 @@ const MobilePlayerSeatImpl = ({
             {player.title}
           </span>
         )}
-        {/* Мой стек на мобиле показан над картами (GameRoom), в плашке seat'а — только у соперников. */}
+        {/* Мой стек на мобиле показан над картами (GameRoom), в плашке seat'а — только у соперников.
+            Пока держится тег действия, он занимает строку стека: игрок смотрит в одну точку. */}
         {!isMe && (
-          <span className="text-[10px] font-black text-amber-300 tabular-nums">
-            {formatChips(player.chips, bigBlind, displayMode)}
-          </span>
+          <AnimatePresence mode="popLayout" initial={false}>
+            {actionBubble ? (
+              <ActionBubble
+                key={'a-' + actionBubble.key}
+                action={actionBubble.action}
+                amount={actionBubble.amount}
+                bigBlind={bigBlind}
+                displayMode={displayMode}
+              />
+            ) : (
+              <span key="stack" className="text-[10px] font-black text-amber-300 tabular-nums">
+                {formatChips(player.chips, bigBlind, displayMode)}
+              </span>
+            )}
+          </AnimatePresence>
         )}
         {/* Подсказка комбинации у соперника (по тумблеру; для админа — видит чужие). Своя — в блоке карт. */}
         {showHint && !isMe && !player.isFolded && player.handHint && (

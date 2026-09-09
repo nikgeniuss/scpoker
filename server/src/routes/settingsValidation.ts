@@ -10,7 +10,7 @@ const isNonNegInt = (v: unknown): v is number =>
 export function validateSettingsPatch(
   body: Record<string, unknown>,
 ): { patch: Record<string, unknown> } | { error: string } {
-  const { turnDurationMs, autostartDelayMs, defaultPlayerChips, timebank, botMode, paidFeatures, payments, responsibleGambling } = body;
+  const { turnDurationMs, autostartDelayMs, defaultPlayerChips, defaultRake, timebank, botMode, paidFeatures, payments, responsibleGambling } = body;
   const patch: Record<string, unknown> = {};
 
   if (turnDurationMs !== undefined) {
@@ -249,6 +249,29 @@ export function validateSettingsPatch(
       }
     }
     patch.responsibleGambling = rgPatch;
+  }
+
+  // Рейк по умолчанию (percent — до 1 знака, cap — целые BB). Границы те же, что у per-table
+  // рейка в rake.ts validateRakeConfig; нормализацию делает GameManager.updateSettings.
+  if (defaultRake !== undefined) {
+    if (!defaultRake || typeof defaultRake !== 'object') {
+      return { error: 'defaultRake: object' };
+    }
+    const r = defaultRake as Record<string, unknown>;
+    const rakePatch: Record<string, unknown> = {};
+    if (r.percent !== undefined) {
+      if (typeof r.percent !== 'number' || !Number.isFinite(r.percent) || r.percent < 0 || r.percent > 100) {
+        return { error: 'defaultRake.percent: 0..100' };
+      }
+      rakePatch.percent = r.percent;
+    }
+    if (r.capBb !== undefined) {
+      if (!isNonNegInt(r.capBb) || r.capBb > 100) {
+        return { error: 'defaultRake.capBb: 0..100' };
+      }
+      rakePatch.capBb = r.capBb;
+    }
+    if (Object.keys(rakePatch).length > 0) patch.defaultRake = rakePatch;
   }
 
   return { patch };

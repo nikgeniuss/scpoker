@@ -8,7 +8,11 @@ import type { Card, GamePhase } from './types.js';
 // Закрыт ли круг ставок: каждый не-сфолдивший игрок либо all-in (chips=0),
 // либо уже действовал в этом круге И его ставка сравнялась с текущей.
 export function isRoundComplete(room: Room): boolean {
-  const activePlayers = Array.from(room.players.values()).filter(p => !p.isFolded);
+  // Карты на руках — обязательное условие участия в круге: игрок, подсевший посреди раздачи
+  // (ре-энтри/поздняя рег/ребаланс MTT), сидит без карт и действовать не может. Он помечается
+  // isFolded при посадке, но если флаг где-то слетит, круг без этой проверки не закрылся бы
+  // никогда — every() ждал бы действия от того, кто физически не может походить.
+  const activePlayers = Array.from(room.players.values()).filter(p => !p.isFolded && p.cards.length > 0);
   return activePlayers.every(p => {
     if (p.chips === 0) return true;
     return room.actionsThisRound.has(p.id) && p.currentBet === room.currentBet;

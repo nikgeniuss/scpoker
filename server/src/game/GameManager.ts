@@ -28,6 +28,7 @@ import { computeRake, normalizeRake, type RakeConfig } from './rake.js';
 import { getBadBeatState, addToPool, payoutFromPool } from './badBeatService.js';
 import { applyRakeback } from './rakebackService.js';
 import { accrueFromRake as accrueReferralFromRake } from './referralService.js';
+import { accrueRake as accrueDepositBonusRake } from './depositBonusService.js';
 import { requiredBuyIn as ratholeRequiredBuyIn, recordLeave, getLeaveRecord, clearLeaveRecord, clearRoom as clearRatholeRoom } from './ratholeService.js';
 import { addProgress as addMissionProgress } from './missionsService.js';
 import { getResolvedEquipped } from './inventoryService.js';
@@ -123,7 +124,7 @@ export interface CreateRoomOptions {
   // Если задан И allowPerTableOverride=true — используется как timebank-конфиг стола.
   // Иначе игнорируется (копируется глобал).
   timebank?: TimebankConfig;
-  rake?: RakeConfig; // per-table рейк (percent/capBb). Не задан → рейк выключен.
+  rake?: RakeConfig; // per-table рейк (percent/capBb). Не задан → рейк рума по умолчанию (settings.defaultRake).
   ante?: number; // анте в фишках, вносят все до блайндов (0/не задан = нет)
   sessionDurationHours?: number; // авто-закрытие стола через N часов (0/не задан = без ограничения)
   autoStartPlayers?: number; // автостарт раздачи от N игроков (2..maxPlayers, по умолчанию 2)
@@ -214,6 +215,9 @@ interface GameSettings {
   turnDurationMs: number;
   autostartDelayMs: number;
   defaultPlayerChips: number;
+  // Рейк по умолчанию: подставляется столам, созданным без явного rake (CreateRoomOptions.rake).
+  // Настраивается админом, применяется и к уже существующим столам через applyDefaultRakeToRooms.
+  defaultRake: RakeConfig;
   timebank: TimebankSettings;
   botMode: BotModeSettings;
   paidFeatures: PaidFeaturesSettings;
@@ -288,6 +292,9 @@ const DEFAULT_SETTINGS: GameSettings = {
   turnDurationMs: 30000,
   autostartDelayMs: 10000,
   defaultPlayerChips: 1000,
+  // Ноль в КОДЕ: обновление сервера не должно само включать комиссию на живом руме. Реальное
+  // значение живёт в settings.json и меняется админом (Настройки игры → «Рейк рума»).
+  defaultRake: { percent: 0, capBb: 0 },
   timebank: { ...DEFAULT_TIMEBANK },
   botMode: { ...DEFAULT_BOT_MODE },
   paidFeatures: { rabbitHunt: { ...DEFAULT_PAID_FEATURES.rabbitHunt }, hudMode: DEFAULT_PAID_FEATURES.hudMode },
@@ -753,7 +760,10 @@ export class GameManager implements GameManagerForBots {
         chains: { ...DEFAULT_PAYMENTS.chains, ...(data.payments?.chains ?? {}) },
       };
       const rg: ResponsibleGamblingSettings = { ...DEFAULT_RESPONSIBLE_GAMBLING, ...(data.responsibleGambling ?? {}) };
-      return { ...DEFAULT_SETTINGS, ...data, timebank: tb, paidFeatures: pf, payments: pm, responsibleGambling: rg };
+      // Тот же глубокий merge для рейка: файл, записанный до появления настройки, не должен
+      // оставлять стол без percent/capBb, а частичный блок — затирать вторую половину.
+      const dr: RakeConfig = normalizeRake({ ...DEFAULT_SETTINGS.defaultRake, ...(data.defaultRake ?? {}) });
+      return { ...DEFAULT_SETTINGS, ...data, timebank: tb, paidFeatures: pf, payments: pm, responsibleGambling: rg, defaultRake: dr };
     } catch {
       return {
         ...DEFAULT_SETTINGS,
@@ -813,7 +823,7 @@ export class GameManager implements GameManagerForBots {
       buyInMinBb: options.buyInMinBb,
       buyInMaxBb: options.buyInMaxBb,
       timebank: roomTimebank,
-      rake: normalizeRake(options.rake),
+      rake: normalizeRake(options.rake ?? this.settings.defaultRake),
       ante: Math.max(0, Math.min(options.bigBlind, Math.floor(options.ante ?? 0))),
       format: options.format === 'shortdeck' ? 'shortdeck' : 'nlh',
       autoStartPlayers: Math.max(2, Math.min(options.maxPlayers, Math.floor(options.autoStartPlayers ?? AUTO_START_MIN_PLAYERS))),
@@ -1872,7 +1882,9 @@ export class GameManager implements GameManagerForBots {
 
     console.log(`Next player called, current index: ${room.currentPlayerIndex}`);
     
-    const activePlayers = Array.from(room.players.values()).filter(p => !p.isFolded);
+    // Те же два условия, что и в isRoundComplete: без карт игрок в раздаче не участвует
+    // (подсел посреди руки — ре-энтри, поздняя рег, ребаланс MTT).
+    const activePlayers = Array.from(room.players.values()).filter(p => !p.isFolded && p.cards.length > 0);
     
     if (activePlayers.length === 1) {
       console.log(`Only one active player left, ending game`);
@@ -1886,7 +1898,7 @@ export class GameManager implements GameManagerForBots {
 
     while (attempts < playerIds.length) {
       const nextPlayer = room.players.get(playerIds[nextIndex]);
-      if (nextPlayer && !nextPlayer.isFolded && nextPlayer.chips > 0) {
+      if (nextPlayer && !nextPlayer.isFolded && nextPlayer.chips > 0 && nextPlayer.cards.length > 0) {
         if (isRoundComplete(room)) {
           console.log(`Round complete, advancing phase`);
           this.advancePhase(roomId);
@@ -2458,6 +2470,9 @@ export class GameManager implements GameManagerForBots {
         // Доля пригласившего с рейка этого игрока (§10.21.5). До выполнения условия копится
         // внутри связи, после — начисляется рефереру сразу; кошелёк трогает сам сервис.
         accrueReferralFromRake(p.id, playerRake);
+        // Отыгрыш депозитного бонуса (§10.21.9): рейк открывает запертую часть по очереди FIFO.
+        // Сервис сам выходит на выключенной фиче и при отсутствии активных бонусов — файл не пишется.
+        accrueDepositBonusRake(p.id, playerRake);
       }
 
       // Лимит на потери (ROADMAP §11.2) — только предупреждение, раздача не блокируется.
@@ -2867,13 +2882,35 @@ export class GameManager implements GameManagerForBots {
     const nextRg: ResponsibleGamblingSettings = partial.responsibleGambling
       ? { ...this.settings.responsibleGambling, ...partial.responsibleGambling }
       : this.settings.responsibleGambling;
-    this.settings = { ...this.settings, ...partial, timebank: nextTb, botMode: nextBm, paidFeatures: nextPf, payments: nextPm, responsibleGambling: nextRg };
+    const nextRake: RakeConfig = partial.defaultRake
+      ? normalizeRake({ ...this.settings.defaultRake, ...partial.defaultRake })
+      : this.settings.defaultRake;
+    this.settings = { ...this.settings, ...partial, timebank: nextTb, botMode: nextBm, paidFeatures: nextPf, payments: nextPm, responsibleGambling: nextRg, defaultRake: nextRake };
     writeJSON('settings.json', this.settings);
     // botMode передавался в BotManager по ссылке только в конструкторе — без этого вызова
     // BotManager молча работал по старым настройкам (enabled/интервал/botsPerTable) до
     // рестарта сервера, переключатель в админке физически ничего не делал (найдено 2026-08-11).
     if (partial.botMode) this.botManager.updateSettings(partial.botMode);
     return { ...this.settings };
+  }
+
+  // Применить рейк по умолчанию ко ВСЕМ существующим столам (админ-действие). Рейк задаётся при
+  // создании стола и потом не менялся ниоткуда — без этого включить комиссию на уже работающем
+  // руме можно было только пересозданием столов. Турнирные столы пропускаем: их экономика —
+  // бай-ин и rakePercent турнира, отдельный рейк с банка там не берётся (см. createTournamentTable).
+  applyDefaultRakeToRooms(): { updated: number } {
+    const rake = this.settings.defaultRake;
+    let updated = 0;
+    this.rooms.forEach((room) => {
+      if (room.tournamentId) return;
+      room.rake = { ...rake };
+      updated += 1;
+    });
+    if (updated > 0) {
+      this.saveRoomsSnapshot();
+      this.notifyLobbyChange();
+    }
+    return { updated };
   }
 
   // Детальный список комнат для админ-панели.
@@ -3001,7 +3038,10 @@ export class GameManager implements GameManagerForBots {
       buyInMinBb: 20,
       buyInMaxBb: 200,
       timebank: toRoomTimebank(this.settings.timebank),
-      rake: { percent: 0, capBb: 0 }, // бот-столы без рейка
+      // Бот-столы берут тот же рейк рума, что и обычные: за ними играют живые игроки, и без
+      // комиссии рум не зарабатывал бы на них ничего (а отыгрыш депозитного бонуса стоял бы).
+      // Бот-фишки — деньги рума, так что их доля рейка просто возвращается руму.
+      rake: { ...this.settings.defaultRake },
       ante: 0,
       format: 'nlh', // бот-столы пока только NLH
       autoStartPlayers: AUTO_START_MIN_PLAYERS,

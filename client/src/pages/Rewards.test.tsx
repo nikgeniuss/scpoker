@@ -10,6 +10,7 @@ import { useShopStore } from '../store/shopStore';
 import { useRewardsWalletStore } from '../store/rewardsWalletStore';
 import { useMissionsStore } from '../store/missionsStore';
 import { useChestsStore } from '../store/chestsStore';
+import { useBonusStore } from '../store/bonusStore';
 
 // Карточка VIP-статуса на /rewards показывала лестницу уровней даже при ВЫКЛЮЧЕННОМ рейкбэке —
 // то есть систему, которая ничего не начисляет (найдено 2026-08-31 на живом экране в Telegram).
@@ -253,5 +254,95 @@ describe('<Rewards /> — сундуки', () => {
     useMissionsStore.setState({ enabled: true, missions: [MISSION], periodEnd: Date.now() + 86_400_000 });
     renderRewards();
     expect(screen.getByText('+15 HUB')).toBeInTheDocument();
+  });
+});
+
+
+// Депозитный бонус (§10.21.9): карточка появляется только когда бонус реально есть, а кнопка
+// «Забрать» не должна быть активной, пока рейк не открыл ни одной единицы.
+const BONUS = {
+  id: 'b1',
+  currency: 'hub' as const,
+  amount: 1000,
+  rakeRequired: 3000,
+  rakeAccrued: 900,
+  released: 300,
+  claimed: 0,
+  grantedAt: Date.now(),
+  expiresAt: Date.now() + 30 * 86_400_000,
+  source: 'first' as const,
+};
+
+describe('<Rewards /> — карточка депозитного бонуса', () => {
+  beforeEach(() => {
+    useAuthStore.setState({ token: 'tok', user: null, isAdmin: false });
+    useRakebackStore.setState({
+      enabled: false, tier: null, nextTier: null, lifetimeRake: 0, weeklyPaid: 0, loadMine: vi.fn(),
+    });
+    useStreakStore.setState({ enabled: false, loadMine: vi.fn() });
+    useAchievementsStore.setState({ enabled: false, achievements: [], loadMine: vi.fn() });
+    useShopStore.setState({ enabled: false, loadPublic: vi.fn() });
+    useRewardsWalletStore.setState({ balance: 0, loadMine: vi.fn() });
+    useMissionsStore.setState({ enabled: false, missions: [], periodEnd: 0, loadMine: vi.fn() });
+    useChestsStore.setState({ enabled: false, chests: [], loadPublic: vi.fn() });
+    useBonusStore.setState({
+      enabled: false, currency: 'hub', available: 0, locked: 0, bonuses: [],
+      loadMine: vi.fn(), claim: vi.fn(),
+    });
+  });
+
+  it('фича выключена — карточки нет', () => {
+    useBonusStore.setState({ enabled: false, bonuses: [BONUS], available: 300 });
+    renderRewards();
+    expect(screen.queryByText('Депозитный бонус')).toBeNull();
+  });
+
+  it('включена, но бонусов у игрока нет — карточку не рисуем', () => {
+    useBonusStore.setState({ enabled: true, bonuses: [], available: 0 });
+    renderRewards();
+    expect(screen.queryByText('Депозитный бонус')).toBeNull();
+  });
+
+  it('бонус есть — показан прогресс отыгрыша и доступная сумма', () => {
+    useBonusStore.setState({ enabled: true, bonuses: [BONUS], available: 300 });
+    renderRewards();
+
+    expect(screen.getByText('Депозитный бонус')).toBeInTheDocument();
+    expect(screen.getByText('1000 HUB')).toBeInTheDocument();
+    expect(screen.getByText('300 HUB')).toBeInTheDocument();
+    expect(screen.getByText('30%')).toBeInTheDocument();
+  });
+
+  it('нечего забирать — кнопка неактивна', () => {
+    useBonusStore.setState({
+      enabled: true,
+      bonuses: [{ ...BONUS, released: 0, rakeAccrued: 0 }],
+      available: 0,
+    });
+    renderRewards();
+    expect(screen.getByRole('button', { name: 'Забрать' })).toBeDisabled();
+  });
+
+  it('клик по «Забрать» уходит в claim', () => {
+    const claim = vi.fn().mockResolvedValue({ chips: 0, hub: 300 });
+    useBonusStore.setState({ enabled: true, bonuses: [BONUS], available: 300, claim });
+    renderRewards();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Забрать' }));
+    expect(claim).toHaveBeenCalledWith('tok');
+  });
+
+  it('бонус в фишках показывается деньгами, а не числом коинов', () => {
+    useBonusStore.setState({
+      enabled: true,
+      currency: 'chips',
+      bonuses: [{ ...BONUS, currency: 'chips' as const, amount: 10_000, released: 3_000 }],
+      available: 3_000,
+    });
+    renderRewards();
+
+    // formatMoney — центы без знака валюты: 10000 → «100», 3000 → «30» (chipFormat.ts).
+    expect(screen.getByText('100')).toBeInTheDocument();
+    expect(screen.getByText('30')).toBeInTheDocument();
   });
 });

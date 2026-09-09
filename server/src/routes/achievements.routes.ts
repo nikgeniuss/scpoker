@@ -12,6 +12,7 @@ import {
   getClaimedIds,
   type AchievementProgress,
 } from '../game/achievementsService.js';
+import { rateLimit } from '../middleware/rateLimit.js';
 
 // Достижения (/api/achievements, ROADMAP §10.21.3). Прогресс — compute-on-read из уже
 // существующих источников: statsService (руки), rakebackService (рейк), tournamentPlayerTotals
@@ -32,6 +33,10 @@ function buildProgress(userId: string): AchievementProgress {
   };
 }
 
+// Флуд денежных эндпоинтов не даёт двойных начислений (все claim-пути синхронны), но грузит
+// диск и рассылки — лимит по IP (аудит 2026-09-08).
+const rewardsLimiter = rateLimit('rewards', 30, 60_000);
+
 export function createAchievementsRouter(): Router {
   const router = Router();
   router.use(authMiddleware);
@@ -48,7 +53,7 @@ export function createAchievementsRouter(): Router {
     res.json({ enabled: true, achievements });
   });
 
-  router.post('/claim', (req, res) => {
+  router.post('/claim', rewardsLimiter, (req, res) => {
     const userId = (req as unknown as { user: { id: string } }).user.id;
     const { id } = req.body as { id?: string };
     if (typeof id !== 'string' || !id) {

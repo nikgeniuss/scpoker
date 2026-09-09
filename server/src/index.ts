@@ -1,5 +1,5 @@
 // Конфиг первым импортом — он сам грузит .env. Иначе другие модули прочитают process.env слишком рано.
-import { ALLOWED_ORIGINS, TELEGRAM_BOT_TOKEN } from './config.js';
+import { ALLOWED_ORIGINS, TELEGRAM_BOT_TOKEN, IS_PROD } from './config.js';
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
@@ -23,6 +23,8 @@ import { createPaymentsAdminRouter } from './routes/paymentsAdmin.routes.js';
 import { recordHand } from './game/handHistory.js';
 import { registerSocketHandlers } from './socket/registerSocketHandlers.js';
 import { setBankrollNotifier } from './payments/paymentsBankroll.js';
+import { paymentsBankroll } from './payments/paymentsBankroll.js';
+import { setChipsCreditor as setBonusChipsCreditor } from './game/depositBonusService.js';
 import { setPaymentsInboxNotifier } from './payments/paymentsInbox.js';
 import { start as startDepositPolling } from './payments/depositPollingService.js';
 import { TournamentManager } from './game/tournament/TournamentManager.js';
@@ -31,6 +33,7 @@ import { createTournamentsRouter } from './routes/tournaments.routes.js';
 import { createTournamentsAdminRouter } from './routes/tournamentsAdmin.routes.js';
 import { createPromoCodesAdminRouter } from './routes/promoCodesAdmin.routes.js';
 import { createRakebackRouter } from './routes/rakeback.routes.js';
+import { createBonusRouter } from './routes/bonus.routes.js';
 import { createStreakRouter } from './routes/streak.routes.js';
 import { createAchievementsRouter } from './routes/achievements.routes.js';
 import { createMissionsRouter } from './routes/missions.routes.js';
@@ -59,14 +62,33 @@ const corsConfig =
     : { origin: ALLOWED_ORIGINS, methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], credentials: true };
 
 const app = express();
+// Заголовок с названием и версией фреймворка — бесплатная подсказка атакующему, кому подбирать
+// эксплойты. Отключаем (аудит 2026-09-08).
+app.disable('x-powered-by');
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: corsConfig,
   transports: ['websocket', 'polling'],
+  // Игровые пакеты — сотни байт (действие/эмодзи/подписка на лобби). Дефолт в 1 МБ на кадр
+  // при известных memory-exhaustion багах WS-стека даёт дешёвый вектор нагрузки на память:
+  // режем до 64 КБ с запасом (аудит 2026-09-08).
+  maxHttpBufferSize: 64 * 1024,
 });
 
 app.use(cors(corsConfig));
 app.use(express.json());
+
+// Базовые security-заголовки. Своим middleware, без helmet: проект сознательно минимизирует
+// зависимости (см. totp.ts/rateLimit.ts), а нужны здесь четыре строки. HSTS ставим только в
+// проде — в dev по http он бессмысленен и мешает.
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-site');
+  if (IS_PROD) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  next();
+});
 
 // Статика колод карт: images/<deckName>/*.png → /decks/<deckName>/*.png.
 // Картинки публичные (нужны всем игрокам для отрисовки карт), auth не требуется.
@@ -107,6 +129,16 @@ setBankrollNotifier((userId, chips) => gameManager.notifyBankroll(userId, chips)
 setPaymentsInboxNotifier((userId, type, text) => gameManager.sendInboxNotification(userId, type, text));
 startDepositPolling(30_000, () => gameManager.getSettings().payments, () => gameManager.getSettings().responsibleGambling);
 
+// Депозитный бонус (§10.21.9): забранная часть в валюте 'chips' уходит в банкролл через тот же
+// paymentsBankroll, что и депозиты (нотификация баланса и запись users.json — уже в нём). Сервис
+// получает начисление колбэком, чтобы game-домен не импортировал payments напрямую (§0.10).
+setBonusChipsCreditor((userId, amount) => {
+  const current = paymentsBankroll.getUserChips(userId);
+  if (current === null) return false;
+  paymentsBankroll.persistChips(userId, current + amount);
+  return true;
+});
+
 // Турниры (ROADMAP §10 «Турниры», SNG v1) — оркестрация поверх GameManager (createTournamentTable/
 // seatTournamentPlayer/setTableBlinds/closeTournamentTable + onTournamentBust колбэк).
 setTournamentBankrollNotifier((userId, chips) => gameManager.notifyBankroll(userId, chips));
@@ -128,6 +160,7 @@ app.use('/api/tournaments', createTournamentsRouter(tournamentManager));
 app.use('/api/admin/tournaments', createTournamentsAdminRouter(tournamentManager));
 app.use('/api/admin/promo-codes', createPromoCodesAdminRouter(tournamentManager));
 app.use('/api/rakeback', createRakebackRouter());
+app.use('/api/bonus', createBonusRouter());
 app.use('/api/streak', createStreakRouter());
 app.use('/api/achievements', createAchievementsRouter());
 app.use('/api/missions', createMissionsRouter());

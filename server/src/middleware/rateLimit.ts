@@ -9,23 +9,31 @@ import { Request, Response, NextFunction } from 'express';
 interface Bucket { count: number; resetAt: number }
 const buckets = new Map<string, Bucket>();
 
+// Ядро лимита, общее для HTTP и сокет-событий: списывает одну единицу квоты по ключу.
+// false — квота исчерпана (окно ещё не закрылось). Ключ произвольный: IP для HTTP-роутов,
+// userId для сокет-действий (там IP один на все вкладки игрока, а ограничивать надо аккаунт).
+export function consumeQuota(key: string, max: number, windowMs: number, now = Date.now()): { ok: boolean; retryAfterSec: number } {
+  for (const [k, b] of buckets) if (b.resetAt < now) buckets.delete(k);
+
+  const existing = buckets.get(key);
+  if (!existing) {
+    buckets.set(key, { count: 1, resetAt: now + windowMs });
+    return { ok: true, retryAfterSec: 0 };
+  }
+  if (existing.count >= max) {
+    return { ok: false, retryAfterSec: Math.ceil((existing.resetAt - now) / 1000) };
+  }
+  existing.count++;
+  return { ok: true, retryAfterSec: 0 };
+}
+
 export function rateLimit(prefix: string, max: number, windowMs: number) {
   return (req: Request, res: Response, next: NextFunction): void => {
-    const now = Date.now();
-    for (const [k, b] of buckets) if (b.resetAt < now) buckets.delete(k);
-
-    const key = `${prefix}:${req.ip ?? 'unknown'}`;
-    const existing = buckets.get(key);
-    if (!existing) {
-      buckets.set(key, { count: 1, resetAt: now + windowMs });
-      next();
+    const { ok, retryAfterSec } = consumeQuota(`${prefix}:${req.ip ?? 'unknown'}`, max, windowMs);
+    if (!ok) {
+      res.status(429).json({ error: 'too-many-attempts', retryAfterSec });
       return;
     }
-    if (existing.count >= max) {
-      res.status(429).json({ error: 'too-many-attempts', retryAfterSec: Math.ceil((existing.resetAt - now) / 1000) });
-      return;
-    }
-    existing.count++;
     next();
   };
 }

@@ -112,10 +112,18 @@ export interface ResponsibleGamblingSettings {
   timeoutEnabled: boolean;
 }
 
+// Рейк рума по умолчанию: подставляется столам, созданным без явного rake, и применяется к
+// существующим столам кнопкой в SettingsTab (percent=0 → комиссия выключена).
+export interface DefaultRakeSettings {
+  percent: number;
+  capBb: number;
+}
+
 export interface GameSettings {
   turnDurationMs: number;
   autostartDelayMs: number;
   defaultPlayerChips: number;
+  defaultRake: DefaultRakeSettings;
   timebank: TimebankSettings;
   botMode: BotModeSettings;
   paidFeatures: PaidFeaturesSettings;

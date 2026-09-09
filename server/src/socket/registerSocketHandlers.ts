@@ -6,14 +6,32 @@ import { forceDisconnectOtherSessions, hasOtherActiveSocket } from './sessionMan
 import type { SocketUser } from './types.js';
 import { SOCKET_EVENTS } from '@poker-room/shared';
 import { isEmojiOwned } from '../game/inventoryService.js';
+import { consumeQuota } from '../middleware/rateLimit.js';
 
 // Emoji-реакции: список разрешённых + кулдаун 2 сек на пользователя (см. roadmap 10.12).
 // Сверх базового набора — эксклюзивные эмодзи из магазина косметики (ROADMAP §10.21.12):
 // isEmojiOwned проверяет владение НА СЕРВЕРЕ (не просто UI-гейт в палитре) — иначе можно
 // подделать сокет-пакет и слать премиум-эмодзи бесплатно.
+const ROOM_CREATE_MAX = 5;              // столов на аккаунт
+const ROOM_CREATE_WINDOW_MS = 5 * 60_000; // за 5 минут
+
 const ALLOWED_EMOJI = ['👍', '❤️', '😂', '😮', '😢', '👏', '🔥', '🤔', '😎', '🤑', '😠', '🎲'];
 const EMOJI_COOLDOWN_MS = 2000;
+// userId → время последней реакции. Запись живёт ровно кулдаун, дальше бесполезна, поэтому
+// протухшие чистятся ленивым проходом (не чаще раза в EMOJI_PRUNE_INTERVAL_MS): без этого карта
+// росла бы вечно — по записи на каждого игрока, когда-либо отправившего эмодзи.
 const lastEmojiAt = new Map<string, number>();
+const EMOJI_PRUNE_INTERVAL_MS = 60_000;
+let lastEmojiPruneAt = 0;
+
+// Убрать записи, по которым кулдаун уже истёк (они ничего не ограничивают).
+function pruneEmojiCooldowns(now: number): void {
+  if (now - lastEmojiPruneAt < EMOJI_PRUNE_INTERVAL_MS) return;
+  lastEmojiPruneAt = now;
+  lastEmojiAt.forEach((t, userId) => {
+    if (now - t >= EMOJI_COOLDOWN_MS) lastEmojiAt.delete(userId);
+  });
+}
 
 // Весь socket-слой: JWT-handshake + single-session + обработчики событий комнаты.
 // Вынесено из index.ts (ROADMAP §9.3-C).
@@ -62,6 +80,14 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
 
     socket.on(SOCKET_EVENTS.CREATE_ROOM, (data: { name: string; description?: string; smallBlind: number; bigBlind: number; maxPlayers: number; password?: string; turnDurationSec?: number; buyInMinBb?: number; buyInMaxBb?: number; timebank?: { enabled: boolean; startSec: number; bonusSec: number; bonusEveryHands: number; capSec: number }; sitOutTimeoutMin?: number; waitlistDelayMin?: number; format?: 'nlh' | 'shortdeck'; rake?: { percent: number; capBb: number }; ante?: number; sessionDurationHours?: number; autoStartPlayers?: number; pinned?: boolean; autoExtendSession?: boolean; clubId?: string; straddleEnabled?: boolean; bombPotEnabled?: boolean; doubleBoardEnabled?: boolean; rimtEnabled?: boolean; evCashoutEnabled?: boolean; noTurnNoShowEnabled?: boolean }) => {
       if (!data || typeof data.name !== 'string') return;
+      // Лимит на создание столов (аудит 2026-09-08): без него авторизованный игрок мог в цикле
+      // залить рум столами — рост памяти, файла rooms.json и широковещательных рассылок в лобби.
+      // Квота по userId, а не по IP: у игрока с несколькими вкладками IP один, ограничивать надо аккаунт.
+      const quota = consumeQuota(`create-room:${user.id}`, ROOM_CREATE_MAX, ROOM_CREATE_WINDOW_MS);
+      if (!quota.ok) {
+        socket.emit(SOCKET_EVENTS.ERROR, { message: `Слишком много столов подряд. Повторите через ${quota.retryAfterSec} с.` });
+        return;
+      }
       // Если клиент не прислал turnDurationSec — берём глобальный settings (legacy-клиенты)
       const defaultTurnSec = Math.round(gameManager.getSettings().turnDurationMs / 1000);
       const result = gameManager.createRoom(
@@ -284,6 +310,7 @@ export function registerSocketHandlers(io: Server, gameManager: GameManager): vo
       const last = lastEmojiAt.get(user.id) || 0;
       if (now - last < EMOJI_COOLDOWN_MS) return;
       lastEmojiAt.set(user.id, now);
+      pruneEmojiCooldowns(now);
       io.to(data.roomId).emit(SOCKET_EVENTS.EMOJI_BROADCAST, { playerId: user.id, emoji: data.emoji });
     });
 

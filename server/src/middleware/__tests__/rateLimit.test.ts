@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Request, Response, NextFunction } from 'express';
-import { rateLimit } from '../rateLimit.js';
+import { rateLimit, consumeQuota } from '../rateLimit.js';
 
 // Регресс-тест на найденную 2026-08-23 проблему (CWE-307): /login и /2fa-эндпоинты не имели
 // никакого ограничения попыток — перебор пароля/2FA-кода ничем не сдерживался, а синхронный
@@ -75,5 +75,34 @@ describe('rateLimit', () => {
     const other = makeRes();
     otherLimiter(makeReq('7.7.7.7'), other.res, next);
     expect(other.statusCode()).toBeUndefined();
+  });
+});
+
+// consumeQuota — то же ядро, что и у middleware, но с произвольным ключом: сокет-события
+// ограничиваются по userId, а не по IP (у игрока с несколькими вкладками IP один).
+describe('consumeQuota', () => {
+  it('пропускает до лимита и отказывает после', () => {
+    const key = 'quota-test:' + Math.random();
+    expect(consumeQuota(key, 2, 60_000).ok).toBe(true);
+    expect(consumeQuota(key, 2, 60_000).ok).toBe(true);
+
+    const denied = consumeQuota(key, 2, 60_000);
+    expect(denied.ok).toBe(false);
+    expect(denied.retryAfterSec).toBeGreaterThan(0);
+  });
+
+  it('после окончания окна счётчик обнуляется', () => {
+    const key = 'quota-window:' + Math.random();
+    const t0 = 1_000_000;
+    expect(consumeQuota(key, 1, 60_000, t0).ok).toBe(true);
+    expect(consumeQuota(key, 1, 60_000, t0 + 1_000).ok).toBe(false);
+    expect(consumeQuota(key, 1, 60_000, t0 + 61_000).ok).toBe(true);
+  });
+
+  it('разные ключи не делят квоту', () => {
+    const a = 'quota-a:' + Math.random();
+    const b = 'quota-b:' + Math.random();
+    expect(consumeQuota(a, 1, 60_000).ok).toBe(true);
+    expect(consumeQuota(b, 1, 60_000).ok).toBe(true);
   });
 });

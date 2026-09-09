@@ -8,6 +8,7 @@ import {
   redeemSubscription,
   getSubscriptionStatus,
 } from '../game/loyaltyShopService.js';
+import { rateLimit } from '../middleware/rateLimit.js';
 
 // Магазин лояльности (/api/shop, ROADMAP §10.21.6). Вся оркестрация — в redeemShopItem
 // (loyaltyShopService.ts), роут — только парсинг запроса и HTTP-обёртка.
@@ -18,6 +19,10 @@ function networkFromReq(req: Request): NetworkInfo {
 
 // hudMode приходит геттером из GameManager — роут не должен тянуть за собой весь GameManager
 // ради одного поля настроек (§0.10).
+// Флуд денежных эндпоинтов не даёт двойных начислений (все claim-пути синхронны), но грузит
+// диск и рассылки — лимит по IP (аудит 2026-09-08).
+const rewardsLimiter = rateLimit('rewards', 30, 60_000);
+
 export function createShopRouter(
   tournamentManager: TournamentManager,
   getHudMode: () => 'free' | 'paid',
@@ -28,7 +33,7 @@ export function createShopRouter(
     res.json(getShopCatalog());
   });
 
-  router.post('/redeem', authMiddleware, (req, res) => {
+  router.post('/redeem', authMiddleware, rewardsLimiter, (req, res) => {
     const user = (req as unknown as { user: { id: string; username: string } }).user;
     const { itemId, tournamentId } = req.body as { itemId?: string; tournamentId?: string };
     if (typeof itemId !== 'string' || typeof tournamentId !== 'string') {
@@ -52,7 +57,7 @@ export function createShopRouter(
 
   // Покупка/продление подписки на HUD. Отдельный роут от /redeem: тикету нужен tournamentId,
   // подписке — нет, и смешивать две валидации в одном хендлере значило бы делать её условной.
-  router.post('/subscribe', authMiddleware, (req, res) => {
+  router.post('/subscribe', authMiddleware, rewardsLimiter, (req, res) => {
     const user = (req as unknown as { user: { id: string } }).user;
     const { itemId } = req.body as { itemId?: string };
     if (typeof itemId !== 'string') {

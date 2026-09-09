@@ -1,4 +1,8 @@
 import dotenv from 'dotenv';
+import { randomBytes } from 'crypto';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
 // dotenv.config() здесь, до того как другие модули прочитают process.env через этот файл.
 // quiet: true — dotenv иначе печатает на каждый вызов строку «injected env (N) from .env // tip: …»
@@ -7,7 +11,32 @@ import dotenv from 'dotenv';
 dotenv.config({ quiet: true });
 
 const isProd = process.env.NODE_ENV === 'production';
-const DEV_DEFAULT_SECRET = 'sk-poker-secret-key';
+// Публичная константа-секрет остаётся ТОЛЬКО для тестов: они должны подписывать и проверять
+// токены детерминированно, а тестовый процесс наружу не смотрит.
+const TEST_SECRET = 'sk-poker-secret-key';
+const isTest = process.env.NODE_ENV === 'test' || !!process.env.VITEST;
+const DEV_SECRET_FILE = join(dirname(fileURLToPath(import.meta.url)), '../data/dev-jwt-secret.txt');
+
+// Dev-секрет: случайный, но постоянный между рестартами (лежит в server/data/, git его не видит).
+// Раньше здесь была та же строка, что лежит в открытом репозитории: любой, кто её знал, мог
+// подписать себе токен с role=admin, если сервер случайно поднимут без NODE_ENV=production
+// (аудит 2026-09-08). Файл читается один раз при старте.
+function devSecretFromFile(): string {
+  try {
+    if (existsSync(DEV_SECRET_FILE)) {
+      const saved = readFileSync(DEV_SECRET_FILE, 'utf-8').trim();
+      if (saved.length >= 32) return saved;
+    }
+    const generated = randomBytes(32).toString('hex');
+    mkdirSync(dirname(DEV_SECRET_FILE), { recursive: true });
+    writeFileSync(DEV_SECRET_FILE, generated, 'utf-8');
+    return generated;
+  } catch {
+    // Диск недоступен — секрет живёт только в памяти процесса: токены инвалидируются рестартом,
+    // но подделать их по известной константе всё равно нельзя.
+    return randomBytes(32).toString('hex');
+  }
+}
 
 function resolveJwtSecret(): string {
   const s = process.env.JWT_SECRET;
@@ -17,8 +46,9 @@ function resolveJwtSecret(): string {
     console.error('FATAL: JWT_SECRET is required in production');
     process.exit(1);
   }
-  console.warn('⚠️  JWT_SECRET не задан, используется dev-default. НЕ ДЛЯ ПРОДА!');
-  return DEV_DEFAULT_SECRET;
+  if (isTest) return TEST_SECRET;
+  console.warn('⚠️  JWT_SECRET не задан, сгенерирован локальный dev-секрет (server/data/dev-jwt-secret.txt). НЕ ДЛЯ ПРОДА!');
+  return devSecretFromFile();
 }
 
 function resolveAllowedOrigins(): string[] | '*' {

@@ -6,6 +6,8 @@ import type { CardData } from './Card';
 import { formatChips } from '../../config/chipFormat';
 import type { ChipDisplay } from '../../config/chipFormat';
 import type { CardDeck } from '../../config/cardDeck';
+import { AnimatePresence } from 'framer-motion';
+import { ActionBubble } from './ActionBubble';
 import { TurnProgressRing } from './TurnProgressRing';
 import ReactNiceAvatar from 'react-nice-avatar';
 import { avatarConfig } from '../../utils/avatar';
@@ -69,10 +71,14 @@ interface PlayerSeatProps {
   hideRoleBadge?: boolean;
   showHint?: boolean; // показывать подсказку комбинации/шанса (тумблер настроек)
   onAvatarClick?: (player: PlayerView) => void;
+  // Тег последнего действия соперника. Рисуется в плашке ВМЕСТО строки стека, пока держится
+  // (решение пользователя 2026-09-08): над аватаром он висел далеко от места и терялся.
+  actionBubble?: { key: number; action: string; amount?: number };
 }
 
 
 const PlayerSeatImpl = ({
+  actionBubble,
   player,
   isSelf,
   isCurrent,
@@ -339,9 +345,21 @@ const PlayerSeatImpl = ({
               {player.title}
             </span>
           )}
-          <span className="text-xs text-gray-300">
-            {formatChips(player.chips, bigBlind, displayMode)}
-          </span>
+          <AnimatePresence mode="popLayout" initial={false}>
+            {actionBubble ? (
+              <ActionBubble
+                key={'a-' + actionBubble.key}
+                action={actionBubble.action}
+                amount={actionBubble.amount}
+                bigBlind={bigBlind}
+                displayMode={displayMode}
+              />
+            ) : (
+              <span key="stack" className="text-xs text-gray-300">
+                {formatChips(player.chips, bigBlind, displayMode)}
+              </span>
+            )}
+          </AnimatePresence>
           {/* Подсказка комбинации/шанса (по тумблеру). winChance есть только у своего места. */}
           {showHint && !player.isFolded && player.handHint && (
             <span className="text-[9px] font-semibold text-emerald-300/90 leading-tight whitespace-nowrap">

@@ -51,3 +51,36 @@ describe('validateSettingsPatch — responsibleGambling', () => {
     expect(r).toEqual({ patch: {} });
   });
 });
+
+// Рейк рума (§10.6 + включение комиссии 2026-09-08): валидация блока defaultRake в PUT
+// /api/admin/settings. Нормализацию (округление percent, clamp) делает GameManager.updateSettings.
+describe('validateSettingsPatch — defaultRake', () => {
+  it('корректный блок проходит целиком', () => {
+    const r = validateSettingsPatch({ defaultRake: { percent: 1.5, capBb: 3 } });
+    expect(r).toEqual({ patch: { defaultRake: { percent: 1.5, capBb: 3 } } });
+  });
+
+  it('можно прислать только процент — cap останется прежним на сервере', () => {
+    const r = validateSettingsPatch({ defaultRake: { percent: 2 } });
+    expect(r).toEqual({ patch: { defaultRake: { percent: 2 } } });
+  });
+
+  it('процент вне 0..100 → ошибка', () => {
+    expect(validateSettingsPatch({ defaultRake: { percent: 101 } })).toEqual({ error: 'defaultRake.percent: 0..100' });
+    expect(validateSettingsPatch({ defaultRake: { percent: -1 } })).toEqual({ error: 'defaultRake.percent: 0..100' });
+  });
+
+  it('cap дробный или вне 0..100 → ошибка', () => {
+    expect(validateSettingsPatch({ defaultRake: { capBb: 2.5 } })).toEqual({ error: 'defaultRake.capBb: 0..100' });
+    expect(validateSettingsPatch({ defaultRake: { capBb: 101 } })).toEqual({ error: 'defaultRake.capBb: 0..100' });
+  });
+
+  it('не-объект → ошибка', () => {
+    expect(validateSettingsPatch({ defaultRake: 1.5 })).toEqual({ error: 'defaultRake: object' });
+  });
+
+  it('мусорные поля внутри блока игнорируются', () => {
+    const r = validateSettingsPatch({ defaultRake: { percent: 1.5, bogus: true } });
+    expect(r).toEqual({ patch: { defaultRake: { percent: 1.5 } } });
+  });
+});

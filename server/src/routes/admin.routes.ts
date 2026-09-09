@@ -10,6 +10,7 @@ import { aggregateUserStats, aggregateAllUsers, overviewStats, tableStats, forma
 import { getHandsForUser } from '../game/handHistory.js';
 import { getBadBeatState, updateBadBeat, topUpBadBeat, sumBadBeatHits } from '../game/badBeatService.js';
 import { getRakebackState, updateRakebackSettings } from '../game/rakebackService.js';
+import { getAdminState as getDepositBonusState, updateSettings as updateDepositBonusSettings } from '../game/depositBonusService.js';
 import { getStreakConfig, updateStreakSettings } from '../game/streakService.js';
 import { getAchievementsCatalog, updateAchievementsSettings } from '../game/achievementsService.js';
 import { getMissionsCatalog, updateMissionsSettings } from '../game/missionsService.js';
@@ -429,6 +430,21 @@ export function createAdminRouter(gameManager: GameManager): Router {
 
   router.put('/rakeback', (req, res) => {
     res.json(updateRakebackSettings(req.body as Record<string, unknown>));
+  });
+
+  // Применить рейк по умолчанию ко всем существующим столам: рейк задаётся при создании стола,
+  // и без этого включить комиссию на уже работающем руме можно было бы только пересозданием.
+  router.post('/rake/apply-all', (req, res) => {
+    res.json(gameManager.applyDefaultRakeToRooms());
+  });
+
+  // ===== Депозитный бонус с отыгрышем рейком (§10.21.9) =====
+  router.get('/deposit-bonus', (req, res) => {
+    res.json(getDepositBonusState());
+  });
+
+  router.put('/deposit-bonus', (req, res) => {
+    res.json(updateDepositBonusSettings(req.body as Record<string, unknown>));
   });
 
   // ===== Награды: визит-бонус/стрик (§10.21.2) =====

@@ -9,9 +9,9 @@ import { readJSON, writeJSON } from '../auth/storage.js';
 const FILE = 'rewards-wallet.json';
 const HISTORY_CAP = 200;
 
-export type RewardsLedgerReason = 'rakeback' | 'streak' | 'mission' | 'race' | 'referral' | 'shop' | 'chest';
+export type RewardsLedgerReason = 'rakeback' | 'streak' | 'mission' | 'race' | 'referral' | 'shop' | 'chest' | 'bonus';
 
-const REASONS: readonly RewardsLedgerReason[] = ['rakeback', 'streak', 'mission', 'race', 'referral', 'shop', 'chest'];
+const REASONS: readonly RewardsLedgerReason[] = ['rakeback', 'streak', 'mission', 'race', 'referral', 'shop', 'chest', 'bonus'];
 
 export interface RewardsLedgerEntry {
   t: number;

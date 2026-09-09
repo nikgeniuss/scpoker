@@ -11,6 +11,8 @@ import { useMissionsStore } from '../store/missionsStore';
 import { useChestsStore } from '../store/chestsStore';
 import { useShopStore } from '../store/shopStore';
 import { useRewardsWalletStore } from '../store/rewardsWalletStore';
+import { useBonusStore } from '../store/bonusStore';
+import { formatMoney } from '../config/chipFormat';
 
 // Экран «Награды» — редизайн под референс «Modern Poker Club». VIP-блок берёт реальные
 // данные из rakebackService (клик ведёт на /rakeback), «Бонус за визит» — реальные данные из
@@ -28,6 +30,11 @@ function chestTitle(chests: { id: string; title: string }[], chestId: string): s
 // Текст тоста при получении награды: из сундука — с его названием, иначе просто сумма.
 function rewardToast(result: { reward: number; chestTitle?: string }): string {
   return result.chestTitle ? `${result.chestTitle}: +${result.reward} HUB` : `+${result.reward} HUB`;
+}
+
+// Сумма в валюте бонуса: реальные фишки — деньгами, HUB-коины — числом (§10.21.9).
+function formatBonus(amount: number, currency: 'chips' | 'hub'): string {
+  return currency === 'chips' ? formatMoney(amount) : amount + ' HUB';
 }
 
 // Сколько осталось до сброса миссий — «2д 5ч» / «5ч» / «<1ч». Периода ещё нет (0) — прочерк.
@@ -52,6 +59,7 @@ export const Rewards = () => {
   const shopEnabled = useShopStore((s) => s.enabled);
   const loadShopPublic = useShopStore((s) => s.loadPublic);
   const { balance, loadMine: loadWallet } = useRewardsWalletStore();
+  const bonus = useBonusStore();
 
   useEffect(() => {
     loadMine(token);
@@ -61,6 +69,7 @@ export const Rewards = () => {
     chests.loadPublic();
     loadShopPublic();
     loadWallet(token);
+    bonus.loadMine(token);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadMine, token]);
 
@@ -80,6 +89,19 @@ export const Rewards = () => {
     } else if (result && 'error' in result) {
       toast.error(t('rewards.claimError'));
     }
+  };
+
+  const handleClaimBonus = async () => {
+    const result = await bonus.claim(token);
+    if (!result) return;
+    if ('error' in result) {
+      toast.error(t('rewards.bonusClaimError'));
+      return;
+    }
+    const parts: string[] = [];
+    if (result.chips > 0) parts.push(formatMoney(result.chips));
+    if (result.hub > 0) parts.push(result.hub + ' HUB');
+    toast.success(t('rewards.bonusClaimed', { amount: parts.join(' + ') }));
   };
 
   const progressPct = nextTier
@@ -140,6 +162,68 @@ export const Rewards = () => {
             {nextTier ? t('rewards.progressToNext', { percent: progressPct }) : t('rewards.maxLevel')}
           </div>
         </button>
+        )}
+
+        {/* Депозитный бонус с отыгрышем рейком (§10.21.9). Блок появляется только когда у игрока
+            есть бонус: пустая карточка «бонусов нет» никому ничего не сообщает. Прогресс —
+            по каждому бонусу отдельно, открывается очередью FIFO (сначала самый старый). */}
+        {bonus.enabled && bonus.bonuses.length > 0 && (
+          <div className="mb-6">
+            <div className="text-[10.5px] font-bold uppercase tracking-wider text-white/40 mb-2.5">
+              {t('rewards.depositBonus')}
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 flex flex-col gap-3">
+              <div className="text-[10.5px] text-white/40">{t('rewards.depositBonusSub')}</div>
+
+              {bonus.bonuses.map((b) => {
+                const pct = b.amount > 0 ? Math.min(100, Math.round((b.released / b.amount) * 100)) : 0;
+                return (
+                  <div key={b.id} className="flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span className="font-bold">{formatBonus(b.amount, b.currency)}</span>
+                      <span className="text-white/40 tabular-nums">{pct}%</span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-emerald-500 to-emerald-300"
+                        style={{ width: pct + '%' }}
+                      />
+                    </div>
+                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10.5px] text-white/40 tabular-nums">
+                      <span>
+                        {t('rewards.bonusRakeProgress', {
+                          done: formatMoney(b.rakeAccrued),
+                          need: formatMoney(b.rakeRequired),
+                        })}
+                      </span>
+                      <span>
+                        {t('rewards.bonusExpires', { date: new Date(b.expiresAt).toLocaleDateString() })}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+
+              <div className="flex items-center justify-between gap-3 pt-1">
+                <div className="flex flex-col">
+                  <span className="text-[10.5px] uppercase tracking-wider text-white/40">
+                    {t('rewards.bonusAvailable')}
+                  </span>
+                  <span className="text-base font-black tabular-nums text-emerald-400">
+                    {formatBonus(bonus.available, bonus.currency)}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  disabled={bonus.available <= 0}
+                  onClick={handleClaimBonus}
+                  className="min-h-[44px] px-5 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-emerald-500 to-green-600 disabled:opacity-40 disabled:cursor-default"
+                >
+                  {t('rewards.bonusClaim')}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Сундуки — шансы показываются ОТКРЫТО (ROADMAP §10.21.7): непрозрачные шансы дают

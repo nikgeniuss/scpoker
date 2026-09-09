@@ -126,3 +126,47 @@ describe('registerSocketHandlers — SEND_EMOJI анти-чит эксклюзи
     expect(roomEmit).toHaveBeenCalledWith(SOCKET_EVENTS.EMOJI_BROADCAST, { playerId: 'U1', emoji: '🦈' });
   });
 });
+
+// Кулдаун реакций хранится в module-level карте userId → время. Записи чистятся ленивым
+// проходом раз в минуту (утечка из ROADMAP §9.2: карта только росла и не чистилась никогда).
+// Здесь проверяем, что чистка не сломала сам кулдаун — ни в пределах окна, ни после него.
+describe('registerSocketHandlers — кулдаун реакций переживает чистку', () => {
+  let handlers: Record<string, Handler>;
+  let roomEmit: ReturnType<typeof vi.fn>;
+  let testTime = 1_800_000_000_000;
+
+  beforeEach(() => {
+    isEmojiOwnedMock.mockReset();
+    vi.useFakeTimers();
+    testTime += 120_000; // разносим блоки во времени: карта кулдаунов общая на весь модуль
+    vi.setSystemTime(testTime);
+    const fake = createFakeIoAndSocket();
+    handlers = fake.handlers;
+    roomEmit = fake.roomEmit;
+    const gm = createGameManagerStub();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    registerSocketHandlers(fake.io as any, gm as any);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('вторая реакция внутри кулдауна не проходит', () => {
+    handlers[SOCKET_EVENTS.SEND_EMOJI]({ roomId: 'r1', emoji: '🔥' });
+    expect(roomEmit).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(testTime + 1_000); // ещё внутри 2с
+    handlers[SOCKET_EVENTS.SEND_EMOJI]({ roomId: 'r1', emoji: '🔥' });
+    expect(roomEmit).toHaveBeenCalledTimes(1);
+  });
+
+  it('после паузы дольше интервала чистки реакция снова проходит', () => {
+    handlers[SOCKET_EVENTS.SEND_EMOJI]({ roomId: 'r1', emoji: '🔥' });
+    expect(roomEmit).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(testTime + 61_000); // чистка успела пройти, запись протухла
+    handlers[SOCKET_EVENTS.SEND_EMOJI]({ roomId: 'r1', emoji: '🔥' });
+    expect(roomEmit).toHaveBeenCalledTimes(2);
+  });
+});

@@ -128,3 +128,45 @@ describe('registerSocketHandlers — payload без data не роняет се�
     expect(gm.handlePlayerAction).toHaveBeenCalledWith('r1', 'U1', 'raise', 200);
   });
 });
+
+// Лимит на создание столов (аудит 2026-09-08): без него авторизованный игрок мог залить рум
+// столами через сокет — рост памяти, файла rooms.json и рассылок в лобби. Квота по userId.
+describe('registerSocketHandlers — лимит на создание столов', () => {
+  let handlers: Record<string, Handler>;
+  let gm: ReturnType<typeof createGameManagerStub>;
+  let socket: ReturnType<typeof createFakeIoAndSocket>['socket'];
+
+  const validRoom = {
+    name: 'Стол',
+    smallBlind: 5,
+    bigBlind: 10,
+    maxPlayers: 6,
+    turnDurationSec: 30,
+    buyInMinBb: 20,
+    buyInMaxBb: 100,
+  };
+
+  beforeEach(() => {
+    const fake = createFakeIoAndSocket();
+    handlers = fake.handlers;
+    socket = fake.socket;
+    gm = createGameManagerStub();
+    // createRoom читает глобальный turnDurationMs для legacy-клиентов — в общем стабе его нет.
+    (gm as unknown as { getSettings: () => unknown }).getSettings = () => ({ turnDurationMs: 30_000 });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    registerSocketHandlers(fake.io as any, gm as any);
+  });
+
+  it('шестая попытка подряд отклоняется, стол не создаётся', () => {
+    for (let i = 0; i < 5; i++) handlers[SOCKET_EVENTS.CREATE_ROOM]({ ...validRoom, name: 'Стол ' + i });
+    expect(gm.createRoom).toHaveBeenCalledTimes(5);
+
+    handlers[SOCKET_EVENTS.CREATE_ROOM]({ ...validRoom, name: 'Стол 6' });
+
+    expect(gm.createRoom).toHaveBeenCalledTimes(5);
+    expect(socket.emit).toHaveBeenCalledWith(
+      SOCKET_EVENTS.ERROR,
+      expect.objectContaining({ message: expect.stringContaining('Слишком много столов') }),
+    );
+  });
+});

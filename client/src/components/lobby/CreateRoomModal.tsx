@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { API_URL } from '../../config/api';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
@@ -89,7 +90,7 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
   const [buyInMaxBb, setBuyInMaxBb] = useState<number>(DEFAULT_BUYIN_MAX_BB);
   const [isPrivate, setIsPrivate] = useState(false);
   const [password, setPassword] = useState('');
-  const [rakePercent, setRakePercent] = useState(0); // 0 = рейк выключен
+  const [rakePercent, setRakePercent] = useState(0); // 0 = рейк выключен, реальный дефолт придёт с сервера
   const [rakeCapBb, setRakeCapBb] = useState(100); // 100 = «Без Cap» (в пределах валидации 0..100)
   const [ante, setAnte] = useState(0); // фишки, 0 = нет
   const [autoStartPlayers, setAutoStartPlayers] = useState(2);
@@ -123,6 +124,20 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
   useEffect(() => {
     if (token) fetchTemplates(token).then(setTemplates);
   }, [token]);
+
+  // Рейк рума по умолчанию — чтобы поле показывало реальную комиссию, а не ноль. Стол всё равно
+  // создаётся с тем, что стоит в форме: игрок волен убрать рейк или задать свой.
+  useEffect(() => {
+    fetch(API_URL + '/rake-config')
+      .then((r) => r.json())
+      .then((d: { percent?: number; capBb?: number }) => {
+        if (typeof d.percent === 'number') setRakePercent(d.percent);
+        if (typeof d.capBb === 'number' && d.capBb > 0) setRakeCapBb(d.capBb);
+      })
+      .catch(() => {
+        /* нет сети — остаётся выключенный рейк, как раньше */
+      });
+  }, []);
 
   const activePresetId = BLIND_PRESETS.find((p) => p.sb === smallBlind && p.bb === bigBlind)?.id ?? null;
   const noop = () => undefined;

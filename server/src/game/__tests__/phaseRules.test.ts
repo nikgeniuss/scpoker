@@ -4,10 +4,12 @@ import { isRoundComplete, computePhaseTransition } from '../phaseRules.js';
 // Чистый предикат закрытия круга ставок (вынесен из GameManager, ROADMAP §9.3-B).
 // Строим минимальный room-like с нужными полями.
 
-type P = { id: string; isFolded: boolean; chips: number; currentBet: number };
+type P = { id: string; isFolded: boolean; chips: number; currentBet: number; cards?: unknown[] };
 function room(players: P[], currentBet: number, acted: string[]) {
   return {
-    players: new Map(players.map((p) => [p.id, p])),
+    // По умолчанию у игрока две карты — как в реальной раздаче. Явный cards: [] означает
+    // подсевшего посреди руки (ре-энтри / поздняя рег / ребаланс MTT): он в круге не участвует.
+    players: new Map(players.map((p) => [p.id, { cards: [{}, {}], ...p }])),
     currentBet,
     actionsThisRound: new Set(acted),
   } as unknown as Parameters<typeof isRoundComplete>[0];
@@ -42,6 +44,18 @@ describe('isRoundComplete', () => {
     const r = room(
       [{ id: 'A', isFolded: false, chips: 0, currentBet: 50 }, { id: 'B', isFolded: false, chips: 100, currentBet: 80 }],
       80, ['B'],
+    );
+    expect(isRoundComplete(r)).toBe(true);
+  });
+
+  it('подсевший посреди руки (без карт) не держит круг открытым', () => {
+    const r = room(
+      [
+        { id: 'A', isFolded: false, chips: 100, currentBet: 20 },
+        { id: 'B', isFolded: false, chips: 100, currentBet: 20 },
+        { id: 'C', isFolded: false, chips: 100, currentBet: 0, cards: [] },
+      ],
+      20, ['A', 'B'],
     );
     expect(isRoundComplete(r)).toBe(true);
   });

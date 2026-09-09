@@ -83,3 +83,61 @@ describe('GameManager — рейк (POKER_RULES §6.6)', () => {
     expect(chipsOf(gm, roomId, 'A')).toBe(1005);
   });
 });
+
+
+// Рейк рума по умолчанию (включение комиссии 2026-09-08): стол, созданный без явного rake,
+// берёт настройку рума; кнопка админки переносит её на уже работающие столы.
+describe('GameManager — рейк рума по умолчанию', () => {
+  beforeEach(() => resetStorage());
+
+  function createPlainRoom(gm: GameManagerLike, name: string, rake?: { percent: number; capBb: number }) {
+    const r = gm.createRoom(
+      { name, smallBlind: 5, bigBlind: 10, maxPlayers: 6, turnDurationSec: 30, buyInMinBb: 5, buyInMaxBb: 100, ...(rake ? { rake } : {}) },
+      'system',
+    );
+    if ('error' in r) throw new Error(r.error);
+    return r.roomId;
+  }
+
+  function rakeOf(gm: GameManagerLike, roomId: string) {
+    return gm.getRoomList().find((r) => r.id === roomId)!.rake;
+  }
+
+  it('стол без явного рейка получает рейк рума по умолчанию', async () => {
+    const { gm } = await createTestGameManager();
+    gm.updateSettings({ defaultRake: { percent: 1.5, capBb: 3 } });
+
+    const roomId = createPlainRoom(gm, 'DefaultRake');
+
+    expect(rakeOf(gm, roomId)).toEqual({ percent: 1.5, capBb: 3 });
+  });
+
+  it('явно заданный нулевой рейк уважается — дефолт его не перебивает', async () => {
+    const { gm } = await createTestGameManager();
+    gm.updateSettings({ defaultRake: { percent: 1.5, capBb: 3 } });
+
+    const roomId = createPlainRoom(gm, 'NoRake', { percent: 0, capBb: 0 });
+
+    expect(rakeOf(gm, roomId)).toEqual({ percent: 0, capBb: 0 });
+  });
+
+  it('applyDefaultRakeToRooms переносит настройку на уже созданные столы', async () => {
+    const { gm } = await createTestGameManager();
+    gm.updateSettings({ defaultRake: { percent: 0, capBb: 0 } });
+    const roomId = createPlainRoom(gm, 'OldRoom');
+    expect(rakeOf(gm, roomId)).toEqual({ percent: 0, capBb: 0 });
+
+    gm.updateSettings({ defaultRake: { percent: 1.5, capBb: 3 } });
+    const result = gm.applyDefaultRakeToRooms();
+
+    expect(result.updated).toBe(1);
+    expect(rakeOf(gm, roomId)).toEqual({ percent: 1.5, capBb: 3 });
+  });
+
+  it('процент нормализуется до одного знака, cap — до целого', async () => {
+    const { gm } = await createTestGameManager();
+    const s = gm.updateSettings({ defaultRake: { percent: 1.4567, capBb: 3 } }) as { defaultRake: { percent: number } };
+
+    expect(s.defaultRake.percent).toBe(1.5);
+  });
+});

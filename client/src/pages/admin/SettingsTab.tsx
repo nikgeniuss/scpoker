@@ -8,7 +8,7 @@ import { useLobbyDesignStore } from '../../store/lobbyDesignStore';
 import { useAppThemeStore } from '../../store/appThemeStore';
 import { useAkTableStore } from '../../store/akTableStore';
 import { useDebugOverlayStore } from '../../store/debugOverlayStore';
-import type { GameSettings, TimebankSettings, BotModeSettings, ResponsibleGamblingSettings } from './types';
+import type { GameSettings, TimebankSettings, BotModeSettings, ResponsibleGamblingSettings, DefaultRakeSettings } from './types';
 
 export const SettingsTab = () => {
   const { token } = useAuthStore();
@@ -149,6 +149,21 @@ export const SettingsTab = () => {
           </div>
         );
       })}
+
+      <RakeSection
+        rake={settings.defaultRake}
+        onChange={(next) =>
+          setSettings((prev) => (prev ? { ...prev, defaultRake: next } : prev))
+        }
+        onApplyAll={async () => {
+          try {
+            const r = await api.post<{ updated: number }>('/admin/rake/apply-all');
+            toast.success('Рейк применён к столам: ' + r.updated);
+          } catch (e) {
+            toast.error((e as Error).message);
+          }
+        }}
+      />
 
       <TimebankSection
         tb={settings.timebank}
@@ -466,6 +481,88 @@ const BroadcastSection = ({ api }: BroadcastSectionProps) => {
     </div>
   );
 };
+
+// Секция рейка рума (комиссия с банка раздачи). Правило «no flop, no drop» и формула
+// min(процент от банка, cap в BB) — на сервере в rake.ts. Значения отсюда получают НОВЫЕ столы,
+// созданные без явного рейка; на уже работающие столы они переносятся кнопкой «Применить» —
+// рейк задаётся при создании стола и сам по себе не меняется.
+interface RakeSectionProps {
+  rake: DefaultRakeSettings;
+  onChange: (next: DefaultRakeSettings) => void;
+  onApplyAll: () => void;
+}
+
+const RakeSection = ({ rake, onChange, onApplyAll }: RakeSectionProps) => (
+  <div className="bg-gray-800 rounded-2xl p-4 border border-white/10 space-y-4">
+    <div>
+      <label className="block text-white font-bold mb-1">Рейк рума</label>
+      <p className="text-sm text-gray-500">
+        Комиссия с банка раздачи: процент от банка, но не больше потолка в больших блайндах.
+        Префлоп-раздачи не облагаются («no flop, no drop»). 0% — рейк выключен.
+      </p>
+    </div>
+
+    <div className="flex flex-wrap gap-4">
+      <div>
+        <label className="block text-white text-sm font-bold mb-1">Процент с банка</label>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={0}
+            max={100}
+            step={0.1}
+            value={rake.percent}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              if (!Number.isFinite(v)) return;
+              onChange({ ...rake, percent: Math.max(0, Math.min(100, Math.round(v * 10) / 10)) });
+            }}
+            className="w-28 px-3 py-2 rounded-lg bg-gray-900 border border-white/10 text-white outline-none focus:border-poker-gold"
+          />
+          <span className="text-gray-400 text-sm">%</span>
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-white text-sm font-bold mb-1">Потолок (cap)</label>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={0}
+            max={100}
+            step={1}
+            value={rake.capBb}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              if (!Number.isFinite(v)) return;
+              onChange({ ...rake, capBb: Math.max(0, Math.min(100, Math.round(v))) });
+            }}
+            className="w-28 px-3 py-2 rounded-lg bg-gray-900 border border-white/10 text-white outline-none focus:border-poker-gold"
+          />
+          <span className="text-gray-400 text-sm">BB</span>
+        </div>
+      </div>
+    </div>
+
+    {rake.percent > 0 && rake.capBb === 0 && (
+      <p className="text-xs text-amber-400">
+        Потолок 0 BB обнуляет весь рейк: комиссия = минимум из процента и потолка. Поставьте 3 BB или больше.
+      </p>
+    )}
+
+    <button
+      type="button"
+      onClick={onApplyAll}
+      className="px-4 py-2 rounded-xl text-sm font-bold text-white bg-white/10 hover:bg-white/15 border border-white/10"
+    >
+      Применить к существующим столам
+    </button>
+    <p className="text-xs text-gray-500">
+      Сохранение настроек влияет только на новые столы. Кнопка выше переносит текущие значения
+      на все уже созданные кэш-столы (турнирные столы не трогаются).
+    </p>
+  </div>
+);
 
 // Секция настроек таймбанка (см. roadmap 10.6).
 // Toggle «разрешить настройку при создании стола» открывает игроку выбор в CreateRoomModal.

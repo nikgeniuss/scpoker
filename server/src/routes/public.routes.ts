@@ -93,6 +93,12 @@ export function createPublicRouter(gameManager: GameManager): Router {
 
   // Публичный эндпоинт для CreateRoomModal — клиент не знает глобальных дефолтов и
   // разрешён ли per-table override. Возвращаем только timebank-блок без чувствительной инфы.
+  // Рейк по умолчанию — нужен окну создания стола, чтобы поле было заполнено реальным
+  // значением рума, а не нулём (сам стол всё равно создаётся с явным rake из формы).
+  router.get('/api/rake-config', (req, res) => {
+    res.json(gameManager.getSettings().defaultRake);
+  });
+
   router.get('/api/timebank-config', (req, res) => {
     const s = gameManager.getSettings();
     res.json(s.timebank);

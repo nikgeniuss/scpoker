@@ -671,24 +671,18 @@ export const GameRoom = () => {
                   zIndex: smartFocus && focusTarget ? 1 : undefined,
                 }}
               >
-                {/* Bubbles над аватаром */}
-                {(ab || eb) && (
+                {/* Над аватаром — только эмодзи. Тег действия ушёл в плашку места, на строку
+                    стека (решение пользователя 2026-09-08): так решение соперника видно там же,
+                    куда игрок и так смотрит, а не в отрыве сверху. */}
+                {eb && (
                   <div className="absolute -top-12 left-1/2 -translate-x-1/2 flex flex-col items-center gap-0.5 pointer-events-none z-20">
                     <AnimatePresence mode="popLayout">
-                      {eb && <EmojiBubble key={'e-' + eb.key} emoji={eb.emoji} />}
-                      {ab && (
-                        <ActionBubble
-                          key={'a-' + ab.key}
-                          action={ab.action}
-                          amount={ab.amount}
-                          bigBlind={state.bigBlind}
-                          displayMode={chipDisplay}
-                        />
-                      )}
+                      <EmojiBubble key={'e-' + eb.key} emoji={eb.emoji} />
                     </AnimatePresence>
                   </div>
                 )}
                 <PlayerSeat
+                  actionBubble={player.id === myId ? undefined : ab}
                   player={player}
                   isSelf={player.id === myId}
                   onShowCard={canShowCards && player.id === myId ? showCard : undefined}
