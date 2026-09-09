@@ -11,8 +11,8 @@ import { formatMoney } from '../config/chipFormat';
 import { QUALIFY_CONDITIONS } from '../config/badBeat';
 
 // Экран «Бэд-Бит Джекпот» (админ-view, экран 2 эталона) — admin-only (lazy за RequireAdmin, §0.12).
-// Пока UI: тумблер/настройки в local-state, без сервера (пул/детект/выплаты — серверной логикой позже,
-// см. ROADMAP §10.7). Форматы — только NLH + Short Deck (memory game-formats); PLO/PLO5 и «Союз» убраны.
+// Тумблер/настройки/пул — через badBeatStore на /api/admin/badbeat (детект и выплаты — на сервере,
+// badBeatService.ts). Форматы — только NLH + Short Deck (memory game-formats); PLO/PLO5 и «Союз» убраны.
 
 // Карточка-триггер формата: набор карт + подпись «Проиграть с … или старше».
 const TriggerCard = ({

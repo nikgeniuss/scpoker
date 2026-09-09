@@ -13,6 +13,9 @@ export interface ReferralInfo {
   handsThreshold: number;
   referrerReward: number;
   refereeReward: number;
+  referrerRakePercent: number; // % с рейка приглашённых (§10.21.5)
+  pendingRake: number;         // накоплено по друзьям, ещё не выполнившим условие
+  totalRakeReward: number;     // всего получено с рейка приглашённых
 }
 
 interface ReferralState extends Partial<ReferralInfo> {
@@ -22,7 +25,7 @@ interface ReferralState extends Partial<ReferralInfo> {
   loadAdmin: (token: string | null) => Promise<void>;
   saveConfig: (
     token: string | null,
-    patch: Partial<{ enabled: boolean; handsThreshold: number; referrerReward: number; refereeReward: number }>,
+    patch: Partial<{ enabled: boolean; handsThreshold: number; referrerReward: number; refereeReward: number; referrerRakePercent: number }>,
   ) => Promise<void>;
 }
 
@@ -55,6 +58,7 @@ export const useReferralStore = create<ReferralState>((set) => ({
         handsThreshold: d.handsThreshold,
         referrerReward: d.referrerReward,
         refereeReward: d.refereeReward,
+        referrerRakePercent: d.referrerRakePercent,
         loaded: true,
       });
     } catch {
@@ -71,7 +75,7 @@ export const useReferralStore = create<ReferralState>((set) => ({
       });
       if (!r.ok) return;
       const d = await r.json();
-      set({ enabled: d.enabled, handsThreshold: d.handsThreshold, referrerReward: d.referrerReward, refereeReward: d.refereeReward });
+      set({ enabled: d.enabled, handsThreshold: d.handsThreshold, referrerReward: d.referrerReward, refereeReward: d.refereeReward, referrerRakePercent: d.referrerRakePercent });
     } catch {
       /* ignore */
     }

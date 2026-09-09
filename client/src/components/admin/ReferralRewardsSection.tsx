@@ -31,6 +31,15 @@ const INFO: Record<string, { title: string; lines: string[] }> = {
       '«Награда рефереру» — сколько HUB-коинов получает пригласивший. «Приветственный бонус» — сколько получает сам приглашённый.',
     ],
   },
+  rakePercent: {
+    title: 'Доля с рейка приглашённых',
+    lines: [
+      'Сколько процентов от рейка, уплаченного приглашённым, получает пригласивший — бессрочно, с каждой раздачи друга.',
+      'Доля копится с первой же раздачи, но до выполнения условия («Раздач для награды») не выплачивается. В момент выполнения пригласивший получает разовый бонус ПЛЮС всё, что накопилось за период раскрутки, — накопленное не сгорает.',
+      'После первой выплаты процент начисляется сразу в конце каждой раздачи приглашённого, как рейкбэк.',
+      '0 — механика выключена, работают только разовые бонусы. Заблокированные анти-фармом связи долю не копят.',
+    ],
+  },
 };
 
 export const ReferralRewardsSection = () => {
@@ -43,6 +52,7 @@ export const ReferralRewardsSection = () => {
   const [handsThreshold, setHandsThreshold] = useState(100);
   const [referrerReward, setReferrerReward] = useState(100);
   const [refereeReward, setRefereeReward] = useState(30);
+  const [rakePercent, setRakePercent] = useState(5);
   const [saving, setSaving] = useState(false);
   const [infoKey, setInfoKey] = useState<string | null>(null);
   const openInfo = (k: string) => () => setInfoKey(k);
@@ -60,11 +70,12 @@ export const ReferralRewardsSection = () => {
     if (typeof s.handsThreshold === 'number') setHandsThreshold(s.handsThreshold);
     if (typeof s.referrerReward === 'number') setReferrerReward(s.referrerReward);
     if (typeof s.refereeReward === 'number') setRefereeReward(s.refereeReward);
+    if (typeof s.referrerRakePercent === 'number') setRakePercent(s.referrerRakePercent);
   }, [loaded]);
 
   const save = async () => {
     setSaving(true);
-    await saveConfig(token, { enabled, handsThreshold, referrerReward, refereeReward });
+    await saveConfig(token, { enabled, handsThreshold, referrerReward, refereeReward, referrerRakePercent: rakePercent });
     setSaving(false);
     toast.success('Настройки сохранены');
   };
@@ -103,6 +114,27 @@ export const ReferralRewardsSection = () => {
           <h3 className="text-white font-bold">Порог и суммы</h3>
           <InfoButton onClick={openInfo('threshold')} />
         </div>
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <div>
+            <div className="flex items-center gap-1 mb-1">
+              <span className="text-xs text-gray-400">Доля с рейка приглашённых (%)</span>
+              <InfoButton onClick={openInfo('rakePercent')} />
+            </div>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step={0.5}
+              value={rakePercent}
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                if (Number.isFinite(n)) setRakePercent(Math.max(0, Math.min(100, n)));
+              }}
+              className="w-full bg-white/5 border border-white/10 rounded px-2 py-1.5 text-white outline-none focus:border-emerald-400 tabular-nums"
+            />
+          </div>
+        </div>
+
         <div className="grid grid-cols-3 gap-3">
           <div>
             <div className="text-xs text-gray-400 mb-1">Раздач для награды</div>

@@ -191,10 +191,14 @@
 
 ## 💤 Потом / уточнить
 
-### 8. TG-бот: `getUpdates failed` (429 и Bad Gateway)
+### 8. ✅ TG-бот: `getUpdates failed` (429 и Bad Gateway) — закрыто 2026-09-06
 
-Разово `Too Many Requests: retry after 5`, затем три `Bad Gateway` подряд. Сторона Telegram, long
-polling переживает. Если станет регулярным — посмотреть интервал опроса и backoff.
+Разово `Too Many Requests: retry after 5`, затем три `Bad Gateway` подряд. Оказалось не только
+стороной Telegram: `retry_after` из ответа до кода не доходил, бот на любую ошибку ждал
+фиксированные 5 секунд. Теперь пауза берётся из ответа, а на обычных обрывах растёт от 1 с до
+минуты и сбрасывается на первом успехе ([pollBackoff.ts](../server/src/bot/pollBackoff.ts),
+подключён в [telegramApi.ts](../server/src/bot/telegramApi.ts)); короткие разрывы long polling
+больше не пишутся в лог как ошибки.
 
 ---
 

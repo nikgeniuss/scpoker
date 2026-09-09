@@ -70,7 +70,6 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
     doubleboard: { title: t('createRoomModal.infoDoubleBoardTitle'), lines: [t('createRoomModal.infoDoubleBoardLine')] },
     allininsurance: { title: t('createRoomModal.infoAllInInsuranceTitle'), lines: [t('createRoomModal.infoAllInInsuranceLine')] },
     autostart: { title: t('createRoomModal.infoAutoStartTitle'), lines: [t('createRoomModal.infoAutoStartLine')] },
-    vpip: { title: t('createRoomModal.infoVpipTitle'), lines: [t('createRoomModal.infoVpipLine')] },
     anticollusion: { title: t('createRoomModal.infoAntiCollusionTitle'), lines: [t('createRoomModal.infoAntiCollusionLine')] },
     sessionduration: { title: t('createRoomModal.infoSessionDurationTitle'), lines: [t('createRoomModal.infoSessionDurationLine')] },
     autoextend: { title: t('createRoomModal.infoAutoExtendTitle'), lines: [t('createRoomModal.infoAutoExtendLine')] },
@@ -660,9 +659,6 @@ export const CreateRoomModal = ({ onClose, onSubmit }: CreateRoomModalProps) => 
                 onDec={() => setAutoStartPlayers((v) => Math.max(2, v - 1))}
                 onInc={() => setAutoStartPlayers((v) => Math.min(maxPlayers, v + 1))}
               />
-            </SettingRow>
-            <SettingRow label={t('createRoomModal.requiredVpip')} soon disabled onInfo={openInfo('vpip')}>
-              <Toggle checked={false} onChange={noop} disabled />
             </SettingRow>
 
             {/* Ограничение / организация */}

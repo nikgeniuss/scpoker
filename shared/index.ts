@@ -46,6 +46,10 @@ export interface Player {
   shownCards?: (Card | null)[];
   revealedCards?: number[]; // индексы показанных карт (публично) — для UI владельца («показана»)
   hudStats?: { vpip: number; pfr: number; hands: number }; // HUD-lite: VPIP/PFR% по истории
+  // Платный HUD (§10.21.13): в режиме `paidFeatures.hudMode === 'paid'` статистика СОПЕРНИКА
+  // без подписки не отдаётся вовсе (hudStats отсутствует) — уходит только число сыгранных рук,
+  // чтобы попап показал заглушку, а не «нет данных». Свою статистику игрок видит всегда.
+  hudLockedHands?: number;
 }
 
 export type GamePhase = 

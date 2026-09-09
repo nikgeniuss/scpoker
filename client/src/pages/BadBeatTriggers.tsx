@@ -12,7 +12,7 @@ import { useBadBeatStore } from '../store/badBeatStore';
 import { useAuthStore } from '../store/authStore';
 
 // Экран «Настройки триггеров и блайндов» (админ, экран 3 эталона) — admin-only (lazy за RequireAdmin, §0.12).
-// Пока UI: выбор триггера per-format + модель дропа (ББ/%) в local-state, без сервера (см. ROADMAP §10.7).
+// Выбор триггера per-format + модель дропа (ББ/%) — через badBeatStore на /api/admin/badbeat.
 // Форматы — только NLH + Short Deck (memory game-formats).
 
 interface Preset {

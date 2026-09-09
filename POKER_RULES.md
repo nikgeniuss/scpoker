@@ -1,4 +1,4 @@
-# Правила NLH в SK Poker
+# Правила NLH в POKER HUB
 
 > Источник правды по правилам безлимитного техасского холдема (No-Limit Hold'em).
 > Базируется на стандарте, который применяют PokerStars / GGPoker / ClubGG / реальные казино (TDA — Tournament Directors Association).

@@ -140,6 +140,42 @@ export const PaidFeaturesTab = () => {
         )}
       </div>
 
+      <div className="bg-gray-800 rounded-2xl p-4 border border-white/10 space-y-4">
+        <div>
+          <h3 className="text-white font-bold text-lg mb-1">📊 HUD соперников</h3>
+          <p className="text-sm text-gray-500">
+            Краткая статистика игрока (VPIP/PFR по последним 200 раздачам) в попапе по тапу на место
+            за столом. «Бесплатно» — видна всем. «По подписке» — только тем, кто купил подписку в
+            магазине лояльности за HUB-коины; остальные видят число сыгранных рук и заглушку.
+            Свою статистику игрок видит всегда, админ — тоже всегда. Ограничение серверное:
+            без подписки цифры не уходят на клиент вовсе.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-1 p-1 rounded-2xl bg-gray-900 border border-white/10 max-w-xs">
+          {(['free', 'paid'] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() =>
+                setSettings((prev) => (prev ? { ...prev, paidFeatures: { ...prev.paidFeatures, hudMode: m } } : prev))
+              }
+              className={
+                'py-2 rounded-xl text-sm font-bold transition-all ' +
+                (settings.paidFeatures.hudMode === m ? 'bg-emerald-500 text-white' : 'text-gray-400 hover:text-white')
+              }
+            >
+              {m === 'free' ? 'Бесплатно' : 'По подписке'}
+            </button>
+          ))}
+        </div>
+
+        <p className="text-xs text-gray-500">
+          Цена и срок подписки задаются позицией каталога в админке магазина лояльности (вкладка
+          «🎁 Награды») — тип позиции «Подписка на HUD».
+        </p>
+      </div>
+
       <motion.button
         whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.98 }}

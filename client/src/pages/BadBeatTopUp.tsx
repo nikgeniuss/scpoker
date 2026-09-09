@@ -7,8 +7,7 @@ import { useBadBeatStore } from '../store/badBeatStore';
 import { formatMoney, parseMoney } from '../config/chipFormat';
 
 // Экран «Пополнить» пул бэд-бита (админ) — admin-only (lazy за RequireAdmin, §0.12).
-// UI-first: пополняет local-store (пул + история), БЕЗ сервера — сбросится при перезагрузке.
-// Реальное пополнение/персист — серверной логикой позже (ROADMAP §10.7).
+// Пополняет пул через badBeatStore → POST /api/admin/badbeat/topup (персист в badbeat.json).
 const QUICK = [10000, 50000, 100000]; // центы: $100 / $500 / $1000
 
 export const BadBeatTopUp = () => {

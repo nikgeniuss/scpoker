@@ -6,7 +6,7 @@ import { useAuthStore } from '../store/authStore';
 import { formatMoney } from '../config/chipFormat';
 
 // Экран «История пополнения» (админ) — admin-only (lazy за RequireAdmin, §0.12).
-// UI-first: читает local-store пополнений (в памяти). Персист/реальная история — серверной логикой позже.
+// Читает историю пополнений через badBeatStore с /api/admin/badbeat (персист в badbeat.json).
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const fmtTs = (ts: number) => {

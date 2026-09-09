@@ -153,7 +153,7 @@
 - `npm run dev` (из корня) — клиент + сервер через `concurrently`
 - `npm run dev:client` / `npm run dev:server` — отдельно
 - Vite: `:5173`, Express: `:3001`
-- `npm run check` (из корня) — guard контракта + typecheck (server+client) + client lint + server vitest + client vitest. `npm run check:contract` — только guard синхронности `SOCKET_EVENTS` (быстро). Прогонять после правок. Полностью зелёный с 2026-06-04 (390 серверных + 61 клиентский тест на 2026-06-14).
+- `npm run check` (из корня) — guard контракта + typecheck (server+client) + client lint + server vitest + client vitest. `npm run check:contract` — только guard синхронности `SOCKET_EVENTS` (быстро). Прогонять после правок. Полностью зелёный с 2026-06-04 (1216 серверных + 255 клиентских тестов на 2026-09-07).
 - Клиентские тесты: vitest 4 + jsdom + @testing-library/react. Конфиг — [client/vitest.config.ts](client/vitest.config.ts), setup — [client/src/test/setup.ts](client/src/test/setup.ts). Файлы — `*.test.ts(x)` рядом с исходником. `npm --prefix client run test` (или `test:watch`).
 
 Не запускать `npm install` без необходимости. Не делать `build` без запроса.
@@ -217,9 +217,9 @@ $ports=@(3001,5173,5174); foreach($p in $ports){ Get-NetTCPConnection -LocalPort
 
 ---
 
-## §11. GStack workflow
+## §11. Skill workflow
 
-В окружении установлен [GStack](https://github.com/garrytan/gstack) (`~/.claude/skills/gstack/`) — 48+ skills, использовать **проактивно**. Таблица триггеров «какой skill когда вызывать» + правила «что не делать» вынесены в [docs/GSTACK_WORKFLOW.md](docs/GSTACK_WORKFLOW.md) — прочитать при работе со skill'ами (баг → `/investigate`, UI → `/qa`, ship → `/ship`, ревью → `/review`, security → `/cso`, работа с `server/data` → `/careful`).
+**GStack из окружения удалён** (проверено 2026-09-07 — ни скиллов, ни команд `/investigate`/`/qa`/`/ship`/`/careful`). Сейчас доступны библиотека ECC (286 skills, 68 agents в `~/.claude/skills/`) и проектные skills в [.claude/skills/](.claude/skills/). Актуальный список — **в системном промпте сессии**, он и есть источник правды. Таблица «что вызывать под задачи этого проекта» + правила «что не делать» — в [docs/GSTACK_WORKFLOW.md](docs/GSTACK_WORKFLOW.md) (ревью → `/code-review`, тесты к багу → `ai-regression-testing`, UI в браузере → `browser-qa`, безопасность → `security-review`).
 
 ---
 

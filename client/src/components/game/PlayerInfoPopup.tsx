@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
@@ -18,6 +19,7 @@ interface PlayerInfoPopupProps {
 
 export const PlayerInfoPopup = ({ player, note, onNoteChange, onClose }: PlayerInfoPopupProps) => {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   // Локальный draft — синхронизируется при смене игрока, сохраняется по blur (не на каждый keystroke).
   const [draft, setDraft] = useState(note);
   useEffect(() => setDraft(note), [note, player?.id]);
@@ -75,8 +77,33 @@ export const PlayerInfoPopup = ({ player, note, onNoteChange, onClose }: PlayerI
                 )}
               </div>
 
-              {/* HUD-статистика */}
-              {player.hudStats && player.hudStats.hands >= 10 ? (
+              {/* HUD-статистика. hudLockedHands — платный режим без подписки (§10.21.13):
+                  сервер прислал только число рук, самих VPIP/PFR на клиенте нет. */}
+              {player.hudLockedHands !== undefined ? (
+                <div className="w-full bg-black/40 rounded-xl p-3 space-y-2">
+                  <div className="text-xs text-gray-400 text-center font-bold uppercase tracking-wide mb-1">
+                    HUD ({t('playerInfoPopup.hudHands', { count: player.hudLockedHands })})
+                  </div>
+                  {/* Цифры-заглушки — константы в вёрстке, не данные игрока (по ним ничего не узнать) */}
+                  <div className="grid grid-cols-2 gap-2 blur-[6px] select-none pointer-events-none" aria-hidden="true">
+                    <div className="text-center">
+                      <div className="text-poker-gold text-xl font-bold">24%</div>
+                      <div className="text-gray-500 text-xs">VPIP</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-blue-400 text-xl font-bold">18%</div>
+                      <div className="text-gray-500 text-xs">PFR</div>
+                    </div>
+                  </div>
+                  <div className="text-center text-gray-500 text-xs">{t('playerInfoPopup.hudLockedSub')}</div>
+                  <button
+                    onClick={() => navigate('/shop')}
+                    className="w-full min-h-[44px] rounded-xl bg-poker-gold/90 hover:bg-poker-gold text-black text-sm font-bold transition-colors"
+                  >
+                    🔒 {t('playerInfoPopup.hudUnlock')}
+                  </button>
+                </div>
+              ) : player.hudStats && player.hudStats.hands >= 10 ? (
                 <div className="w-full bg-black/40 rounded-xl p-3 space-y-2">
                   <div className="text-xs text-gray-400 text-center font-bold uppercase tracking-wide mb-1">
                     HUD ({t('playerInfoPopup.hudHands', { count: player.hudStats.hands })})

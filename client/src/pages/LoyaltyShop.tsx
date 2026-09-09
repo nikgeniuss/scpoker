@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
-import { ChevronLeft, Ticket, Coins, Sparkles } from 'lucide-react';
+import { ChevronLeft, Ticket, Coins, Sparkles, BarChart3 } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { useShopStore, type ShopItem } from '../store/shopStore';
+import { useHudSubscriptionStore } from '../store/hudSubscriptionStore';
+import { apiErrorMessage } from '../config/apiErrors';
 import { useInventoryStore, type CosmeticItem } from '../store/inventoryStore';
 import { useRewardsWalletStore } from '../store/rewardsWalletStore';
 import { useTournamentStore } from '../store/tournamentStore';
@@ -63,18 +65,27 @@ export const LoyaltyShop = () => {
     equip: equipCosmetic,
   } = useInventoryStore();
   const { balance, loadMine } = useRewardsWalletStore();
+  const {
+    mode: hudMode,
+    active: hudActive,
+    expiresAt: hudExpiresAt,
+    load: loadHudSubscription,
+    subscribe: subscribeHud,
+  } = useHudSubscriptionStore();
   const { tournaments, fetchTournaments } = useTournamentStore();
   const [redeemingId, setRedeemingId] = useState<string | null>(null);
   const [selectedTournament, setSelectedTournament] = useState<Record<string, string>>({});
   const [pendingCosmeticId, setPendingCosmeticId] = useState<string | null>(null);
+  const [subscribingId, setSubscribingId] = useState<string | null>(null);
 
   useEffect(() => {
     loadPublic();
     loadMine(token);
     loadCosmeticsPublic();
     loadCosmeticsMine(token);
+    loadHudSubscription(token);
     if (token) fetchTournaments(token);
-  }, [loadPublic, loadMine, loadCosmeticsPublic, loadCosmeticsMine, fetchTournaments, token]);
+  }, [loadPublic, loadMine, loadCosmeticsPublic, loadCosmeticsMine, loadHudSubscription, fetchTournaments, token]);
 
   const handleBuyCosmetic = async (item: CosmeticItem) => {
     setPendingCosmeticId(item.id);
@@ -101,6 +112,24 @@ export const LoyaltyShop = () => {
 
   const matchingTournaments = (item: ShopItem) =>
     tournaments.filter((tour) => tour.buyIn === item.ticketBuyIn && tour.status === 'registering');
+
+  // Тикеты и подписки лежат в одном каталоге, но покупаются по-разному (тикету нужен турнир).
+  const ticketItems = catalog.filter((item) => item.kind !== 'hudSub');
+  // Подписка на HUD (§10.21.13) полезна только когда рум включил платный режим — иначе
+  // статистика и так видна всем, и продавать её значило бы продавать пустоту.
+  const hudSubItems = hudMode === 'paid' ? catalog.filter((item) => item.kind === 'hudSub') : [];
+
+  const handleSubscribe = async (item: ShopItem) => {
+    setSubscribingId(item.id);
+    const result = await subscribeHud(token, item.id);
+    setSubscribingId(null);
+    if ('error' in result) {
+      toast.error(apiErrorMessage(result.error, t));
+      return;
+    }
+    toast.success(t('shop.hudSub.bought'));
+    loadMine(token);
+  };
 
   const handleRedeem = async (item: ShopItem) => {
     const tournamentId = selectedTournament[item.id];
@@ -145,13 +174,13 @@ export const LoyaltyShop = () => {
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-gray-400">
             {t('shop.disabled')}
           </div>
-        ) : catalog.length === 0 ? (
+        ) : ticketItems.length === 0 ? (
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-gray-400">
             {t('shop.empty')}
           </div>
         ) : (
           <div className="flex flex-col gap-3">
-            {catalog.map((item) => {
+            {ticketItems.map((item) => {
               const options = matchingTournaments(item);
               const canAfford = balance >= item.cost;
               return (
@@ -195,6 +224,46 @@ export const LoyaltyShop = () => {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {enabled && hudSubItems.length > 0 && (
+          <div className="mt-8">
+            <h2 className="text-sm font-bold text-gray-400 mb-3">{t('shop.hudSub.title')}</h2>
+            <div className="flex flex-col gap-3">
+              {hudSubItems.map((item) => {
+                const canAfford = balance >= item.cost;
+                const pending = subscribingId === item.id;
+                return (
+                  <div key={item.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-sky-500/15 border border-sky-400/30 flex items-center justify-center flex-shrink-0">
+                        <BarChart3 size={18} className="text-sky-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-bold truncate">{item.title}</div>
+                        <div className="text-xs text-gray-500">{t('shop.hudSub.days', { count: item.subDays })}</div>
+                      </div>
+                      <button
+                        onClick={() => handleSubscribe(item)}
+                        disabled={!canAfford || pending}
+                        className="flex-shrink-0 min-h-[44px] px-4 py-2 rounded-lg bg-gradient-to-r from-sky-500 to-blue-600 text-sm font-bold disabled:opacity-40"
+                      >
+                        {pending
+                          ? t('shop.hudSub.buying')
+                          : `${hudActive ? t('shop.hudSub.extend') : t('shop.hudSub.buy')} · ${item.cost} HUB`}
+                      </button>
+                    </div>
+                    <div className="text-xs text-gray-500 mt-3">{t('shop.hudSub.desc')}</div>
+                    {hudActive && hudExpiresAt && (
+                      <div className="text-xs text-sky-300 mt-1">
+                        {t('shop.hudSub.activeUntil', { date: new Date(hudExpiresAt).toLocaleDateString() })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 

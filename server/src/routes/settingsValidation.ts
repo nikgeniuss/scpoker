@@ -124,6 +124,7 @@ export function validateSettingsPatch(
       return { error: 'paidFeatures: object' };
     }
     const pf = paidFeatures as Record<string, unknown>;
+    const pfPatch: Record<string, unknown> = {};
     if (pf.rabbitHunt !== undefined) {
       if (!pf.rabbitHunt || typeof pf.rabbitHunt !== 'object') {
         return { error: 'paidFeatures.rabbitHunt: object' };
@@ -154,8 +155,16 @@ export function validateSettingsPatch(
         }
         rhPatch.percent = rh.percent;
       }
-      patch.paidFeatures = { rabbitHunt: rhPatch };
+      pfPatch.rabbitHunt = rhPatch;
     }
+    // Режим HUD (§10.21.13): free — статистика соперников видна всем, paid — только по подписке.
+    if (pf.hudMode !== undefined) {
+      if (pf.hudMode !== 'free' && pf.hudMode !== 'paid') {
+        return { error: 'paidFeatures.hudMode: "free" | "paid"' };
+      }
+      pfPatch.hudMode = pf.hudMode;
+    }
+    if (Object.keys(pfPatch).length > 0) patch.paidFeatures = pfPatch;
   }
   if (payments !== undefined) {
     if (!payments || typeof payments !== 'object') {

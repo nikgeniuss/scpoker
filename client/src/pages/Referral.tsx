@@ -13,7 +13,7 @@ export const Referral = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const token = useAuthStore((s) => s.token);
-  const { enabled, code, invitedCount, rewardedCount, pendingCount, handsThreshold, referrerReward, refereeReward, loadMine } =
+  const { enabled, code, invitedCount, rewardedCount, pendingCount, handsThreshold, referrerReward, refereeReward, referrerRakePercent, pendingRake, totalRakeReward, loadMine } =
     useReferralStore();
 
   useEffect(() => {
@@ -83,6 +83,27 @@ export const Referral = () => {
                 <div className="text-[10px] text-white/40 mt-0.5">{t('referral.rewarded')}</div>
               </div>
             </div>
+
+            {!!referrerRakePercent && (
+              <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/5 p-3 mb-3">
+                <div className="text-xs font-bold text-emerald-300 mb-1">
+                  {t('referral.rakeShareTitle', { percent: referrerRakePercent })}
+                </div>
+                <p className="text-[10.5px] text-white/50 leading-relaxed mb-2">
+                  {t('referral.rakeShareExplain', { percent: referrerRakePercent, count: handsThreshold ?? 0 })}
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="rounded-xl bg-black/30 px-3 py-2">
+                    <div className="text-sm font-black tabular-nums text-amber-400">{pendingRake ?? 0} HUB</div>
+                    <div className="text-[10px] text-white/40 mt-0.5">{t('referral.rakePending')}</div>
+                  </div>
+                  <div className="rounded-xl bg-black/30 px-3 py-2">
+                    <div className="text-sm font-black tabular-nums text-emerald-400">{totalRakeReward ?? 0} HUB</div>
+                    <div className="text-[10px] text-white/40 mt-0.5">{t('referral.rakeEarned')}</div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <p className="text-[10.5px] text-white/30 leading-relaxed">{t('referral.footnote')}</p>
           </>

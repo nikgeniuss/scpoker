@@ -10,6 +10,7 @@
 import { readJSON, writeJSON } from '../auth/storage.js';
 import { hasNetworkCollision, type NetworkInfo } from './antiCollusion.js';
 import { debit as debitWallet, credit as creditWallet } from './rewardsWalletService.js';
+import { grant as grantHudSubscription, getExpiresAt as getHudExpiresAt } from './hudSubscriptionService.js';
 import type { TournamentManager } from './tournament/TournamentManager.js';
 import type { TournamentInfo } from '@poker-room/shared';
 
@@ -20,7 +21,10 @@ export interface ShopItem {
   id: string;
   title: string;
   cost: number;        // HUB-коины
-  ticketBuyIn: number;  // фишки — бай-ин турнира, который покрывает тикет
+  ticketBuyIn: number;  // фишки — бай-ин турнира, который покрывает тикет (только kind='ticket')
+  // Тип позиции: тикет в турнир (как было) либо подписка на HUD соперников (§10.21.13).
+  kind: 'ticket' | 'hudSub';
+  subDays: number;      // срок подписки в днях (только kind='hudSub')
 }
 
 interface NetworkClaim extends NetworkInfo {
@@ -35,8 +39,9 @@ interface ShopState {
 }
 
 const DEFAULT_CATALOG: ShopItem[] = [
-  { id: 'ticket-100', title: 'Тикет на турнир (бай-ин 100)', cost: 300, ticketBuyIn: 100 },
-  { id: 'ticket-500', title: 'Тикет на турнир (бай-ин 500)', cost: 1200, ticketBuyIn: 500 },
+  { id: 'ticket-100', title: 'Тикет на турнир (бай-ин 100)', cost: 300, ticketBuyIn: 100, kind: 'ticket', subDays: 0 },
+  { id: 'ticket-500', title: 'Тикет на турнир (бай-ин 500)', cost: 1200, ticketBuyIn: 500, kind: 'ticket', subDays: 0 },
+  { id: 'hud-sub-30', title: 'HUD соперников — 30 дней', cost: 500, ticketBuyIn: 0, kind: 'hudSub', subDays: 30 },
 ];
 
 function defaults(): ShopState {
@@ -49,11 +54,15 @@ function sanitizeItem(raw: unknown): ShopItem | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Partial<ShopItem>;
   if (typeof r.id !== 'string' || !r.id.trim()) return null;
+  // Старые записи каталога (до §10.21.13) поля kind/subDays не имеют — это тикеты.
+  const kind: ShopItem['kind'] = r.kind === 'hudSub' ? 'hudSub' : 'ticket';
   return {
     id: r.id.trim(),
     title: typeof r.title === 'string' && r.title.trim() ? r.title.trim() : 'Тикет',
     cost: Math.max(0, num(r.cost, 0)),
     ticketBuyIn: Math.max(0, num(r.ticketBuyIn, 0)),
+    kind,
+    subDays: kind === 'hudSub' ? Math.max(0, num(r.subDays, 0)) : 0,
   };
 }
 
@@ -154,6 +163,7 @@ export function redeemShopItem(
 ): RedeemResult {
   const item = getShopItem(itemId);
   if (!item) return { error: 'item-not-found' };
+  if (item.kind !== 'ticket') return { error: 'not-a-ticket' };
 
   const tournament = tournamentManager.get(tournamentId);
   if (!tournament) return { error: 'tournament-not-found' };
@@ -179,4 +189,35 @@ export function redeemShopItem(
 
   recordRedemption(userId, network);
   return { ok: true, tournament: result };
+}
+
+export type SubscribeResult = { ok: true; expiresAt: number } | { error: string };
+
+// Покупка подписки на HUD соперников (§10.21.13) за HUB-коины. Анти-фарм по сети здесь НЕ нужен:
+// в отличие от тикета, подписка не оплачивается румом (не трогает призовой фонд) — игрок тратит
+// свои HUB на персональную фичу. Проверка баланса и списание — на сервере (§0.13).
+export function redeemSubscription(userId: string, itemId: string, now = Date.now()): SubscribeResult {
+  const item = getShopItem(itemId);
+  if (!item) return { error: 'item-not-found' };
+  if (item.kind !== 'hudSub') return { error: 'not-a-subscription' };
+  if (item.subDays <= 0) return { error: 'invalid-item' };
+
+  const balance = debitWallet(userId, item.cost, 'shop', itemId);
+  if (balance === null) return { error: 'insufficient-balance' };
+
+  try {
+    // Продление считается от текущей даты окончания (см. hudSubscriptionService.extend) —
+    // покупка за день до конца не сжигает остаток.
+    const expiresAt = grantHudSubscription(userId, item.subDays, now);
+    return { ok: true, expiresAt };
+  } catch {
+    creditWallet(userId, item.cost, 'shop', itemId + ':refund'); // откат — подписка не выдана
+    return { error: 'subscription-failed' };
+  }
+}
+
+// Статус подписки для клиента (магазин и попап за столом).
+export function getSubscriptionStatus(userId: string, now = Date.now()): { expiresAt: number | null; active: boolean } {
+  const expiresAt = getHudExpiresAt(userId);
+  return { expiresAt: expiresAt ?? null, active: typeof expiresAt === 'number' && expiresAt > now };
 }

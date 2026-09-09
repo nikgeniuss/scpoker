@@ -10,6 +10,7 @@ function makeRoom(opts?: { phase?: string; tbEnabled?: boolean }) {
     id, username: name, chips: 1000, cards: cards(hole),
     isActive: true, isFolded: false, currentBet: 0, position: pos, avatar: '',
     disconnected: false, timebank: 30,
+    hudStats: { vpip: 24, pfr: 18, hands: 137 },
   });
   const players = new Map([
     ['A', mkPlayer('A', 'Alice', 'As Ad', 0)],
@@ -258,5 +259,51 @@ describe('activeTableModes — бейджи режимов стола', () => {
 
   it('сериализатор не кладёт поле в state, когда режимов нет (не раздуваем broadcast)', () => {
     expect(serializeGameState(makeRoom()).tableModes).toBeUndefined();
+  });
+});
+
+// §10.21.13 — платный HUD. Тот же класс утечки, что был с картами: спрятать VPIP/PFR только в
+// интерфейсе бесполезно, их видно в DevTools. Гейт — здесь, fail-closed.
+describe('serializeGameState — гейт HUD соперников (§10.21.13)', () => {
+  const hudOf = (s: ReturnType<typeof serializeGameState>, id: string) =>
+    s.players.find((p) => p.id === id)!;
+
+  it('без разрешения чужой HUD НЕ уходит клиенту — только число рук', () => {
+    const s = serializeGameState(makeRoom(), 'A'); // showOpponentHud по умолчанию false
+    expect(hudOf(s, 'B').hudStats).toBeUndefined();
+    expect(hudOf(s, 'B').hudLockedHands).toBe(137);
+  });
+
+  it('свой HUD виден владельцу всегда, даже без разрешения', () => {
+    const s = serializeGameState(makeRoom(), 'A');
+    expect(hudOf(s, 'A').hudStats).toEqual({ vpip: 24, pfr: 18, hands: 137 });
+    expect(hudOf(s, 'A').hudLockedHands).toBeUndefined();
+  });
+
+  it('с разрешением (бесплатный режим / подписка / админ) — чужой HUD виден', () => {
+    const s = serializeGameState(makeRoom(), 'A', false, true);
+    expect(hudOf(s, 'B').hudStats).toEqual({ vpip: 24, pfr: 18, hands: 137 });
+    expect(hudOf(s, 'B').hudLockedHands).toBeUndefined();
+  });
+
+  it('showdown не раскрывает HUD — вскрытие про карты, а не про статистику', () => {
+    const s = serializeGameState(makeRoom({ phase: 'showdown' }), 'A');
+    expect(cardsOf(s, 'B')).toHaveLength(2); // карты вскрылись
+    expect(hudOf(s, 'B').hudStats).toBeUndefined(); // а HUD — нет
+  });
+
+  it('наблюдателю (без viewerId) без разрешения не уходит ничей HUD', () => {
+    const s = serializeGameState(makeRoom());
+    expect(hudOf(s, 'A').hudStats).toBeUndefined();
+    expect(hudOf(s, 'B').hudStats).toBeUndefined();
+  });
+
+  it('у игрока без истории рук нет и заглушки — hudLockedHands не выдумывается', () => {
+    const room = makeRoom();
+    const players = (room as unknown as { players: Map<string, { hudStats?: unknown }> }).players;
+    delete players.get('B')!.hudStats;
+    const s = serializeGameState(room, 'A');
+    expect(hudOf(s, 'B').hudStats).toBeUndefined();
+    expect(hudOf(s, 'B').hudLockedHands).toBeUndefined();
   });
 });

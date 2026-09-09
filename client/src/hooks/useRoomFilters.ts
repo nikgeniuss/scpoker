@@ -18,7 +18,7 @@ export function useRoomFilters(rooms: RoomInfo[], myId: string | null) {
   const [myOnly, setMyOnly] = useState(false);
   const [hideUnavailable, setHideUnavailable] = useState(false);
   const [waitingOnly, setWaitingOnly] = useState(false);
-  // Таб формата игры. Активен NLH; Шорт-дэк — disabled «скоро».
+  // Таб формата игры: все три (все / NLH / Шорт-дэк) рабочие.
   const [formatTab, setFormatTab] = useState<FormatTab>('all');
   const [blindPreset, setBlindPreset] = useState<BlindPreset>('all');
 

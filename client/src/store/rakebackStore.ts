@@ -15,8 +15,11 @@ export interface RakebackHistoryEntry {
 
 interface RakebackState {
   enabled: boolean;
+  windowDays: number; // окно расчёта уровня в днях (§10.20, скользящее окно)
   tiers: RakebackTier[];
   // Личный кабинет (loadMine)
+  windowRake: number;        // рейк за окно — по нему считается уровень
+  dropsOutTomorrow: number;  // сколько выпадет из окна завтра
   lifetimeRake: number;
   totalPaid: number;
   weeklyPaid: number; // кэшбэк за текущее недельное окно (карточка «Кэшбэк недели» на /rewards)
@@ -27,7 +30,7 @@ interface RakebackState {
   loadPublic: () => Promise<void>;
   loadMine: (token: string | null) => Promise<void>;
   loadAdmin: (token: string | null) => Promise<void>;
-  saveConfig: (token: string | null, patch: { enabled?: boolean; tiers?: RakebackTier[] }) => Promise<void>;
+  saveConfig: (token: string | null, patch: { enabled?: boolean; tiers?: RakebackTier[]; windowDays?: number }) => Promise<void>;
 }
 
 const authHeaders = (token: string | null): Record<string, string> =>
@@ -35,7 +38,10 @@ const authHeaders = (token: string | null): Record<string, string> =>
 
 export const useRakebackStore = create<RakebackState>((set) => ({
   enabled: false,
+  windowDays: 30,
   tiers: [],
+  windowRake: 0,
+  dropsOutTomorrow: 0,
   lifetimeRake: 0,
   totalPaid: 0,
   weeklyPaid: 0,
@@ -49,7 +55,7 @@ export const useRakebackStore = create<RakebackState>((set) => ({
       const r = await fetch(API_URL + '/rakeback');
       if (!r.ok) return;
       const d = await r.json();
-      set({ enabled: d.enabled, tiers: d.tiers, loaded: true });
+      set({ enabled: d.enabled, tiers: d.tiers, windowDays: d.windowDays ?? 30, loaded: true });
     } catch {
       /* сеть — оставляем дефолты */
     }
@@ -64,6 +70,9 @@ export const useRakebackStore = create<RakebackState>((set) => ({
       set({
         enabled: d.enabled,
         tiers: d.tiers,
+        windowDays: d.windowDays ?? 30,
+        windowRake: d.windowRake ?? 0,
+        dropsOutTomorrow: d.dropsOutTomorrow ?? 0,
         lifetimeRake: d.lifetimeRake,
         totalPaid: d.totalPaid,
         weeklyPaid: d.weeklyPaid ?? 0,
@@ -82,7 +91,7 @@ export const useRakebackStore = create<RakebackState>((set) => ({
       const r = await fetch(API_URL + '/admin/rakeback', { headers: authHeaders(token) });
       if (!r.ok) return;
       const d = await r.json();
-      set({ enabled: d.enabled, tiers: d.tiers, loaded: true });
+      set({ enabled: d.enabled, tiers: d.tiers, windowDays: d.windowDays ?? 30, loaded: true });
     } catch {
       /* ignore */
     }
@@ -97,7 +106,7 @@ export const useRakebackStore = create<RakebackState>((set) => ({
       });
       if (!r.ok) return;
       const d = await r.json();
-      set({ enabled: d.enabled, tiers: d.tiers });
+      set({ enabled: d.enabled, tiers: d.tiers, windowDays: d.windowDays ?? 30 });
     } catch {
       /* ignore */
     }

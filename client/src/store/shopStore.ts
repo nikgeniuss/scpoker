@@ -10,6 +10,8 @@ export interface ShopItem {
   title: string;
   cost: number;
   ticketBuyIn: number;
+  kind: 'ticket' | 'hudSub';
+  subDays: number;
 }
 
 interface ShopState {

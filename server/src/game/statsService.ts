@@ -16,7 +16,7 @@ export interface HandStatRecord {
   roomId: string;
   userId: string;
   delta: number;   // изменение стека за раздачу (PnL)
-  rake: number;    // рейк (пока всегда 0 — комиссии в игре ещё нет)
+  rake: number;    // рейк, удержанный с банка раздачи (rake.ts, per-table настройка стола)
   format?: 'nlh' | 'shortdeck'; // формат стола; отсутствие = nlh (старые записи)
 }
 
@@ -160,7 +160,7 @@ export function getChartData(userId: string): { t: number; cumPnL: number }[] {
 export interface OverviewStats {
   games: number;        // число раздач (уникальные roomId+t; одна раздача = N записей игроков)
   pnl: number;          // суммарный PnL игроков-людей за период
-  rake: number;         // суммарный рейк за период (пока 0)
+  rake: number;         // суммарный рейк за период
   tablesActive: number; // столов, на которых были раздачи с людьми
 }
 

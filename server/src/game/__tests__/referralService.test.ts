@@ -11,6 +11,7 @@ import {
   processMilestoneTick,
   getReferralConfig,
   updateReferralSettings,
+  accrueFromRake,
 } from '../referralService.js';
 import { getBalance } from '../rewardsWalletService.js';
 import { getNotifications } from '../inboxService.js';
@@ -169,5 +170,99 @@ describe('referralService — getUserReferralInfo и настройки', () => 
     setStorage('referrals.json', { config: {}, codes: 'garbage', codeOwners: null, links: 'x', networkClaims: 'y' });
     expect(() => getReferralConfig()).not.toThrow();
     expect(getStorage('referrals.json')).toBeDefined();
+  });
+});
+
+// §10.21.5 — доля пригласившего с рейка приглашённого. Копится с момента привязки, но
+// выплачивается только после выполнения условия: первая выплата отдаёт всё накопленное,
+// дальше процент капает сразу с каждой раздачи (решение пользователя 2026-09-07).
+describe('referralService — процент с рейка приглашённого', () => {
+  const netRef = { ip: '5.5.5.5', deviceId: 'dev-referrer' };
+  const netNew = { ip: '6.6.6.6', deviceId: 'dev-new' };
+
+  beforeEach(() => clearStorage());
+
+  function seedWithPercent(percent: number, handsThreshold = 10): void {
+    setStorage('referrals.json', {
+      config: { enabled: true, handsThreshold, referrerReward: 100, refereeReward: 30, referrerRakePercent: percent },
+      codes: {},
+      codeOwners: {},
+      links: {},
+      networkClaims: [],
+    });
+  }
+
+  it('до выполнения условия процент копится, а не выплачивается', () => {
+    seedWithPercent(10);
+    linkReferral('N', 'R', netNew, netRef);
+
+    expect(accrueFromRake('N', 1000)).toBe(0); // 10% = 100, но условие ещё не выполнено
+    expect(getBalance('R')).toBe(0);
+    expect(getUserReferralInfo('R').pendingRake).toBe(100);
+  });
+
+  it('первая выплата отдаёт разовый бонус ПЛЮС всё накопленное за период', () => {
+    seedWithPercent(10, 10);
+    linkReferral('N', 'R', netNew, netRef);
+    accrueFromRake('N', 1000); // +100 в накопление
+    accrueFromRake('N', 500);  // +50
+    seedHandsLifetime('N', 10); // условие выполнено
+
+    expect(processMilestoneTick()).toHaveLength(1);
+    expect(getBalance('R')).toBe(250); // 100 разовый + 150 накопленных
+    expect(getBalance('N')).toBe(30);  // welcome-бонус приглашённому
+    const info = getUserReferralInfo('R');
+    expect(info.pendingRake).toBe(0);
+    expect(info.totalRakeReward).toBe(150);
+  });
+
+  it('после первой выплаты процент начисляется сразу с каждой раздачи', () => {
+    seedWithPercent(10, 10);
+    linkReferral('N', 'R', netNew, netRef);
+    seedHandsLifetime('N', 10);
+    processMilestoneTick();
+    const afterMilestone = getBalance('R');
+
+    expect(accrueFromRake('N', 2000)).toBe(200); // начислено немедленно
+    expect(getBalance('R')).toBe(afterMilestone + 200);
+    expect(getUserReferralInfo('R').totalRakeReward).toBe(200);
+  });
+
+  it('процент 0 — механика выключена, ничего не копится', () => {
+    seedWithPercent(0);
+    linkReferral('N', 'R', netNew, netRef);
+    expect(accrueFromRake('N', 5000)).toBe(0);
+    expect(getUserReferralInfo('R').pendingRake).toBe(0);
+  });
+
+  it('заблокированная анти-фармом связь не копит и не платит', () => {
+    seedWithPercent(10);
+    linkReferral('N', 'R', netRef, netRef); // приглашённый с той же сети, что и реферер
+    accrueFromRake('N', 1000);
+    expect(getUserReferralInfo('R').pendingRake).toBe(0);
+    expect(getBalance('R')).toBe(0);
+  });
+
+  it('игрок без пригласившего ничего не генерирует', () => {
+    seedWithPercent(10);
+    expect(accrueFromRake('nobody', 1000)).toBe(0);
+  });
+
+  it('выключенная рефералка не начисляет', () => {
+    setStorage('referrals.json', {
+      config: { enabled: false, handsThreshold: 10, referrerReward: 100, refereeReward: 30, referrerRakePercent: 10 },
+      codes: {}, codeOwners: {}, links: {}, networkClaims: [],
+    });
+    linkReferral('N', 'R', netNew, netRef);
+    expect(accrueFromRake('N', 1000)).toBe(0);
+  });
+
+  it('процент задаётся админом и зажимается сверху сотней', () => {
+    seedWithPercent(10);
+    expect(updateReferralSettings({ referrerRakePercent: 25 }).referrerRakePercent).toBe(25);
+    expect(updateReferralSettings({ referrerRakePercent: 500 }).referrerRakePercent).toBe(100);
+    // Отрицательное значение — невалидный ввод: санитайзер оставляет прежнее (как у остальных полей).
+    expect(updateReferralSettings({ referrerRakePercent: -5 }).referrerRakePercent).toBe(100);
+    expect(updateReferralSettings({ referrerRakePercent: 0 }).referrerRakePercent).toBe(0);
   });
 });

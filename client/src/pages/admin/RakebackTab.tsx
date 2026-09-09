@@ -7,8 +7,9 @@ import { formatMoney, parseMoney } from '../../config/chipFormat';
 import { TIER_DEFAULTS } from '../../config/rakeback';
 import type { RakebackTier } from '../../config/rakeback';
 
-// Вкладка «Рейкбэк» — VIP-кэшбэк % от уплаченного рейка по накопительным уровням (ROADMAP «Рейкбэк»).
-// Уровень определяется lifetime-рейком игрока (не сбрасывается). Читает/пишет /admin/rakeback.
+// Вкладка «Рейкбэк» — VIP-кэшбэк % от уплаченного рейка по уровням (ROADMAP §10.20).
+// Уровень определяется рейком за скользящее окно последних N дней и потому умеет понижаться.
+// Читает/пишет /admin/rakeback.
 export const RakebackTab = () => {
   const token = useAuthStore((s) => s.token);
   const loadAdmin = useRakebackStore((s) => s.loadAdmin);
@@ -16,6 +17,7 @@ export const RakebackTab = () => {
   const loaded = useRakebackStore((s) => s.loaded);
 
   const [enabled, setEnabled] = useState(false);
+  const [windowDays, setWindowDays] = useState(30);
   const [tiers, setTiers] = useState<RakebackTier[]>(TIER_DEFAULTS);
   const [saving, setSaving] = useState(false);
   const seeded = useRef(false);
@@ -29,6 +31,7 @@ export const RakebackTab = () => {
     seeded.current = true;
     const s = useRakebackStore.getState();
     setEnabled(s.enabled);
+    setWindowDays(s.windowDays);
     if (s.tiers.length) setTiers(s.tiers);
   }, [loaded]);
 
@@ -66,7 +69,7 @@ export const RakebackTab = () => {
       return;
     }
     setSaving(true);
-    await saveConfig(token, { enabled, tiers });
+    await saveConfig(token, { enabled, tiers, windowDays });
     setSaving(false);
     toast.success('Настройки сохранены');
   };
@@ -79,9 +82,12 @@ export const RakebackTab = () => {
         <div>
           <h3 className="text-white font-bold text-lg mb-1">VIP-кэшбэк по уровням</h3>
           <p className="text-sm text-gray-500">
-            Игрок копит lifetime-рейк (накопительно, без сброса) и автоматически переходит на уровень
-            выше при достижении порога. С каждой раздачи % от уплаченного рейка тут же начисляется на
-            стек игрока за столом.
+            Уровень игрока считается по рейку за <b>скользящее окно</b> последних N дней и
+            пересчитывается каждый день: играет стабильно — уровень держится, сбавил — счёт
+            съезжает вниз понемногу (каждый день из окна выпадает рейк того дня, что был N дней
+            назад), бросил — за окно доходит до нижнего уровня. Разово поднять статус рывком и
+            дальше бездействовать на высоком проценте нельзя. С каждой раздачи % от уплаченного
+            рейка начисляется игроку HUB-коинами.
           </p>
         </div>
 
@@ -94,11 +100,35 @@ export const RakebackTab = () => {
           />
           <span className="text-white font-bold">Включить рейкбэк</span>
         </label>
+
+        <div>
+          <label className="block text-white text-sm font-bold mb-1">Окно расчёта уровня (дней)</label>
+          <p className="text-xs text-gray-500 mb-2">
+            1–365. Чем короче окно, тем быстрее падает уровень при паузе в игре. 30 дней — как
+            месячные уровни у partypoker/888, только без обрыва на границе месяца.
+          </p>
+          <input
+            type="number"
+            min={1}
+            max={365}
+            value={windowDays}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              if (Number.isFinite(v)) setWindowDays(Math.max(1, Math.min(365, Math.round(v))));
+            }}
+            className="w-28 px-3 py-2 rounded-lg bg-gray-900 border border-white/10 text-white outline-none focus:border-poker-gold tabular-nums"
+          />
+        </div>
       </div>
 
       <div className="bg-gray-800 rounded-2xl p-4 border border-white/10">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-white font-bold">Уровни</h3>
+          <div>
+            <h3 className="text-white font-bold">Уровни</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Порог — рейк за окно ({windowDays} дн.), а не за всё время.
+            </p>
+          </div>
           <button
             type="button"
             onClick={addTier}
@@ -111,7 +141,7 @@ export const RakebackTab = () => {
         <div className="rounded-xl border border-white/10 overflow-hidden text-sm">
           <div className="grid grid-cols-[1fr_1fr_0.7fr_2rem] gap-2 px-3 py-2 bg-gray-900 font-bold text-gray-400 text-xs">
             <span>Название</span>
-            <span>Порог рейка ($)</span>
+            <span>Порог рейка за окно ($)</span>
             <span>Кэшбэк (%)</span>
             <span />
           </div>

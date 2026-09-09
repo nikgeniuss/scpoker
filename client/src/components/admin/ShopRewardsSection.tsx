@@ -7,13 +7,14 @@ import { useShopStore, type ShopItem } from '../../store/shopStore';
 import { formatMoney, parseMoney } from '../../config/chipFormat';
 import { InfoButton, InfoSheet } from '../lobby/createControls';
 
-// Секция «Магазин лояльности» вкладки «🎁 Награды» (ROADMAP §10.21.6). Каталог — только
-// турнирные тикеты (house-funded вход, см. loyaltyShopService.ts) — без реальных чипсов и без
-// косметики (под неё нет ни арт-пака, ни системы фреймов в проекте).
+// Секция «Магазин лояльности» вкладки «🎁 Награды» (ROADMAP §10.21.6). Каталог — турнирные
+// тикеты (house-funded вход, см. loyaltyShopService.ts) и подписки на HUD соперников (§10.21.13).
+// Без реальных чипсов и без косметики (у неё своя секция).
 
 const DEFAULT_CATALOG: ShopItem[] = [
-  { id: 'ticket-100', title: 'Тикет на турнир (бай-ин 100)', cost: 300, ticketBuyIn: 100 },
-  { id: 'ticket-500', title: 'Тикет на турнир (бай-ин 500)', cost: 1200, ticketBuyIn: 500 },
+  { id: 'ticket-100', title: 'Тикет на турнир (бай-ин 100)', cost: 300, ticketBuyIn: 100, kind: 'ticket', subDays: 0 },
+  { id: 'ticket-500', title: 'Тикет на турнир (бай-ин 500)', cost: 1200, ticketBuyIn: 500, kind: 'ticket', subDays: 0 },
+  { id: 'hud-sub-30', title: 'HUD соперников — 30 дней', cost: 500, ticketBuyIn: 0, kind: 'hudSub', subDays: 30 },
 ];
 
 const INFO: Record<string, { title: string; lines: string[] }> = {
@@ -30,6 +31,15 @@ const INFO: Record<string, { title: string; lines: string[] }> = {
     lines: [
       'Тикет сработает ТОЛЬКО на турнире с бай-ином, который совпадает с этим значением — сервер перепроверяет совпадение при обмене.',
       'Если сейчас нет открытых турниров с таким бай-ином — игрок увидит это в магазине и не сможет обменять.',
+    ],
+  },
+  hudSub: {
+    title: 'Подписка на HUD',
+    lines: [
+      'Позиция типа «Подписка на HUD» продаёт доступ к статистике соперников (VPIP/PFR) на указанный срок в днях.',
+      'Работает только когда во вкладке «Платные фичи» режим HUD переключён на «По подписке» — иначе статистика и так видна всем, и такая позиция игроку в магазине не показывается.',
+      'Покупка продлевает подписку от текущей даты окончания, а не от сегодня: покупка за день до конца не сжигает остаток.',
+      'Ограничение серверное — без активной подписки цифры не уходят на клиент вовсе (прятать их только в интерфейсе было бы обходимо через DevTools).',
     ],
   },
   antiFarm: {
@@ -74,6 +84,16 @@ export const ShopRewardsSection = () => {
           const n = Number(value);
           return Number.isFinite(n) ? { ...it, cost: Math.max(0, Math.round(n)) } : it;
         }
+        if (field === 'kind') {
+          const kind: ShopItem['kind'] = value === 'hudSub' ? 'hudSub' : 'ticket';
+          // Подписке бай-ин не нужен, тикету — срок: чистим лишнее, чтобы в каталоге не оставались
+          // значения, которые ни на что не влияют, но выглядят как настройка.
+          return { ...it, kind, ticketBuyIn: kind === 'ticket' ? it.ticketBuyIn : 0, subDays: kind === 'hudSub' ? it.subDays : 0 };
+        }
+        if (field === 'subDays') {
+          const n = Number(value);
+          return Number.isFinite(n) ? { ...it, subDays: Math.max(0, Math.round(n)) } : it;
+        }
         // ticketBuyIn — ввод в долларах через parseMoney (та же денежная единица, что бай-ин турнира)
         return { ...it, ticketBuyIn: value === '' ? 0 : parseMoney(value) };
       }),
@@ -81,7 +101,10 @@ export const ShopRewardsSection = () => {
   };
 
   const addItem = () => {
-    setCatalog((items) => [...items, { id: 'ticket-' + Math.random().toString(36).slice(2, 8), title: 'Новый тикет', cost: 0, ticketBuyIn: 0 }]);
+    setCatalog((items) => [
+      ...items,
+      { id: 'ticket-' + Math.random().toString(36).slice(2, 8), title: 'Новый тикет', cost: 0, ticketBuyIn: 0, kind: 'ticket', subDays: 0 },
+    ]);
   };
 
   const removeItem = (i: number) => setCatalog((items) => items.filter((_, j) => j !== i));
@@ -92,7 +115,12 @@ export const ShopRewardsSection = () => {
 
   const save = async () => {
     if (!catalog.length) {
-      toast.error('Нужен хотя бы один тикет в каталоге');
+      toast.error('Нужна хотя бы одна позиция в каталоге');
+      return;
+    }
+    const badSub = catalog.find((i) => i.kind === 'hudSub' && i.subDays <= 0);
+    if (badSub) {
+      toast.error('У подписки «' + badSub.title + '» срок должен быть больше 0 дней');
       return;
     }
     setSaving(true);
@@ -133,8 +161,9 @@ export const ShopRewardsSection = () => {
       <div className="bg-gray-800 rounded-2xl p-4 border border-white/10">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <h3 className="text-white font-bold">Каталог тикетов</h3>
+            <h3 className="text-white font-bold">Каталог</h3>
             <InfoButton onClick={openInfo('ticketBuyIn')} />
+            <InfoButton onClick={openInfo('hudSub')} />
           </div>
           <button
             type="button"
@@ -146,14 +175,15 @@ export const ShopRewardsSection = () => {
         </div>
 
         <div className="rounded-xl border border-white/10 overflow-hidden text-sm overflow-x-auto">
-          <div className="grid grid-cols-[1.3fr_0.8fr_0.9fr_2rem] gap-2 px-3 py-2 bg-gray-900 font-bold text-gray-400 text-xs min-w-[500px]">
+          <div className="grid grid-cols-[1.2fr_0.8fr_0.7fr_0.9fr_2rem] gap-2 px-3 py-2 bg-gray-900 font-bold text-gray-400 text-xs min-w-[560px]">
             <span>Название</span>
             <span>Цена (HUB)</span>
-            <span>Бай-ин турнира ($)</span>
+            <span>Тип</span>
+            <span>Бай-ин ($) / срок (дн.)</span>
             <span />
           </div>
           {catalog.map((item, i) => (
-            <div key={item.id} className="grid grid-cols-[1.3fr_0.8fr_0.9fr_2rem] gap-2 px-3 py-2 border-t border-white/5 items-center min-w-[500px]">
+            <div key={item.id} className="grid grid-cols-[1.2fr_0.8fr_0.7fr_0.9fr_2rem] gap-2 px-3 py-2 border-t border-white/5 items-center min-w-[560px]">
               <input
                 type="text"
                 value={item.title}
@@ -167,15 +197,34 @@ export const ShopRewardsSection = () => {
                 onChange={(e) => editItem(i, 'cost', e.target.value)}
                 className="bg-white/5 border border-white/10 rounded px-2 py-1 text-white outline-none focus:border-emerald-400 tabular-nums"
               />
-              <input
-                type="number"
-                min={0}
-                step={0.01}
-                value={item.ticketBuyIn / 100}
-                onChange={(e) => editItem(i, 'ticketBuyIn', e.target.value)}
-                title={formatMoney(item.ticketBuyIn)}
-                className="bg-white/5 border border-white/10 rounded px-2 py-1 text-white outline-none focus:border-emerald-400 tabular-nums"
-              />
+              <select
+                value={item.kind}
+                onChange={(e) => editItem(i, 'kind', e.target.value)}
+                className="bg-white/5 border border-white/10 rounded px-2 py-1 text-white outline-none focus:border-emerald-400"
+              >
+                <option value="ticket" className="bg-gray-800">Тикет</option>
+                <option value="hudSub" className="bg-gray-800">Подписка на HUD</option>
+              </select>
+              {item.kind === 'hudSub' ? (
+                <input
+                  type="number"
+                  min={0}
+                  value={item.subDays}
+                  onChange={(e) => editItem(i, 'subDays', e.target.value)}
+                  title="Срок подписки в днях"
+                  className="bg-white/5 border border-white/10 rounded px-2 py-1 text-white outline-none focus:border-emerald-400 tabular-nums"
+                />
+              ) : (
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={item.ticketBuyIn / 100}
+                  onChange={(e) => editItem(i, 'ticketBuyIn', e.target.value)}
+                  title={formatMoney(item.ticketBuyIn)}
+                  className="bg-white/5 border border-white/10 rounded px-2 py-1 text-white outline-none focus:border-emerald-400 tabular-nums"
+                />
+              )}
               <button
                 type="button"
                 onClick={() => removeItem(i)}

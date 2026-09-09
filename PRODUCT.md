@@ -22,7 +22,7 @@ POKER HUB (домен poker-hub.city) — полнофункциональный
 
 ## Design Principles
 
-- Performance-first: анимации на `transform`/`opacity`, не layout-свойствах; лишние ре-рендеры и полные broadcast там, где хватит diff — избегать (CLAUDE.md §0.10)
+- Performance-first: анимации на `transform`/`opacity`, не layout-свойствах; лишние ре-рендеры и полные broadcast там, где хватит diff — избегать (CLAUDE.md §0.9)
 - Mobile/Telegram Mini App — обязательная цель наравне с десктопом, не afterthought (100dvh/svh, touch-target ≥44×44px, hover не единственный канал информации)
 - Приватность карт соперников до showdown — абсолютный инвариант, не обсуждается ни при каком UI-решении
 - Следовать уже установленным GG-style паттернам (ActionPanel, showdown card-glow/dim, фишки-номиналы, роль-маркеры D/SB/BB) вместо переизобретения с нуля
@@ -30,4 +30,4 @@ POKER HUB (домен poker-hub.city) — полнофункциональный
 
 ## Accessibility & Inclusion
 
-Явный WCAG-уровень не зафиксирован пользователем. Жёсткое требование проекта — touch target ≥44×44px на всех интерактивных элементах (docs/BRAND.md §5); hover не должен быть единственным каналом передачи информации (учитывая touch-устройства/TWA).
+Явный WCAG-уровень не зафиксирован пользователем. Жёсткое требование проекта — touch target ≥44×44px на всех интерактивных элементах (CLAUDE.md §5); hover не должен быть единственным каналом передачи информации (учитывая touch-устройства/TWA).

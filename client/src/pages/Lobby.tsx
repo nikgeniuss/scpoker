@@ -105,28 +105,23 @@ export const Lobby = () => {
       {/* Табы по форматам: NLH + Шорт-дэк (memory game_formats). */}
       <div className="flex flex-wrap items-center gap-1 mb-3 overflow-x-auto">
         {([
-          { id: 'all', label: t('lobby.formatAll'), enabled: true },
-          { id: 'nlh', label: 'NLH', enabled: true },
-          { id: 'shortdeck', label: t('lobby.formatShortdeck'), enabled: true },
+          { id: 'all', label: t('lobby.formatAll') },
+          { id: 'nlh', label: 'NLH' },
+          { id: 'shortdeck', label: t('lobby.formatShortdeck') },
         ] as const).map((tab) => {
           const active = formatTab === tab.id;
           return (
             <button
               key={tab.id}
-              onClick={() => tab.enabled && setFormatTab(tab.id)}
-              disabled={!tab.enabled}
-              title={!tab.enabled ? t('lobby.soon') : ''}
+              onClick={() => setFormatTab(tab.id)}
               className={
                 'px-3 py-1.5 rounded-lg text-sm font-bold transition-all whitespace-nowrap backdrop-blur-md ' +
                 (active
                   ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30'
-                  : tab.enabled
-                  ? 'bg-gray-900/55 text-gray-300 hover:bg-white/10 hover:text-white'
-                  : 'bg-gray-900/55 text-gray-600 cursor-not-allowed')
+                  : 'bg-gray-900/55 text-gray-300 hover:bg-white/10 hover:text-white')
               }
             >
               {tab.label}
-              {!tab.enabled && <span className="ml-1 text-[10px] opacity-60">{t('lobby.soon')}</span>}
             </button>
           );
         })}

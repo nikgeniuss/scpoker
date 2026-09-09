@@ -31,6 +31,7 @@ export interface PlayerView {
   shownCards?: (CardData | null)[]; // добровольно показанные карты соперника (тап после раздачи)
   revealedCards?: number[];         // индексы показанных карт (для своего UI)
   hudStats?: { vpip: number; pfr: number; hands: number }; // HUD-lite
+  hudLockedHands?: number; // платный режим без подписки: пришло только число рук (§10.21.13)
 }
 
 interface PlayerSeatProps {

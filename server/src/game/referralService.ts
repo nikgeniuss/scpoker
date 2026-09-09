@@ -17,9 +17,10 @@ const CODE_LENGTH = 6;
 
 export interface ReferralConfig {
   enabled: boolean;
-  handsThreshold: number; // сколько раздач должен наиграть приглашённый для выплаты
-  referrerReward: number; // HUB-коины рефереру
-  refereeReward: number;  // HUB-коины приглашённому (welcome-бонус)
+  handsThreshold: number;      // сколько раздач должен наиграть приглашённый для первой выплаты
+  referrerReward: number;      // разовый бонус рефереру при выполнении условия
+  refereeReward: number;       // разовый welcome-бонус приглашённому
+  referrerRakePercent: number; // % от рейка приглашённого рефереру, бессрочно (0 — выключено)
 }
 
 interface ReferralLink {
@@ -27,6 +28,11 @@ interface ReferralLink {
   t: number;
   rewarded: boolean;
   blocked: boolean; // анти-фарм заблокировал выплату (связь сохранена, награды не будет)
+  // Доля с рейка копится С МОМЕНТА ПРИВЯЗКИ, но выплачивается только после выполнения условия
+  // (решение пользователя 2026-09-07): первая выплата отдаёт всё, что накопилось за период
+  // раскрутки, дальше процент капает рефереру сразу с каждой раздачи приглашённого.
+  pendingRake: number;     // накоплено до первой выплаты
+  totalRakeReward: number; // всего выплачено рефереру с рейка этой связи
 }
 
 interface NetworkClaim extends NetworkInfo {
@@ -44,7 +50,7 @@ interface ReferralState {
 
 function defaults(): ReferralState {
   return {
-    config: { enabled: false, handsThreshold: 100, referrerReward: 100, refereeReward: 30 },
+    config: { enabled: false, handsThreshold: 100, referrerReward: 100, refereeReward: 30, referrerRakePercent: 5 },
     codes: {},
     codeOwners: {},
     links: {},
@@ -62,6 +68,7 @@ function sanitizeConfig(v: unknown, fallback: ReferralConfig): ReferralConfig {
     handsThreshold: Math.round(num(r.handsThreshold, fallback.handsThreshold)),
     referrerReward: Math.round(num(r.referrerReward, fallback.referrerReward)),
     refereeReward: Math.round(num(r.refereeReward, fallback.refereeReward)),
+    referrerRakePercent: Math.max(0, Math.min(100, num(r.referrerRakePercent, fallback.referrerRakePercent))),
   };
 }
 
@@ -84,6 +91,8 @@ function sanitizeLinks(v: unknown): Record<string, ReferralLink> {
       t: num(raw.t, Date.now()),
       rewarded: raw.rewarded === true,
       blocked: raw.blocked === true,
+      pendingRake: num(raw.pendingRake, 0),       // связи до §10.21.5-percent — с нуля
+      totalRakeReward: num(raw.totalRakeReward, 0),
     };
   }
   return out;
@@ -176,7 +185,7 @@ export function linkReferral(
   const priorNetworks: NetworkClaim[] = [...s.networkClaims, { ...referrerNetwork, userId: referrerId, t: 0 }];
   const blocked = hasNetworkCollision(priorNetworks, newUserNetwork);
 
-  s.links[newUserId] = { referrerId, t: Date.now(), rewarded: false, blocked };
+  s.links[newUserId] = { referrerId, t: Date.now(), rewarded: false, blocked, pendingRake: 0, totalRakeReward: 0 };
   s.networkClaims = [...s.networkClaims, { ...newUserNetwork, userId: newUserId, t: Date.now() }].slice(-NETWORK_CAP);
   save(s);
   return { linked: true, blocked };
@@ -191,6 +200,9 @@ export interface UserReferralInfo {
   handsThreshold: number;
   referrerReward: number;
   refereeReward: number;
+  referrerRakePercent: number; // % с рейка приглашённых
+  pendingRake: number;         // накоплено по друзьям, ещё не выполнившим условие
+  totalRakeReward: number;     // всего получено с рейка приглашённых
 }
 
 export function getUserReferralInfo(userId: string): UserReferralInfo {
@@ -206,7 +218,36 @@ export function getUserReferralInfo(userId: string): UserReferralInfo {
     handsThreshold: s.config.handsThreshold,
     referrerReward: s.config.referrerReward,
     refereeReward: s.config.refereeReward,
+    referrerRakePercent: s.config.referrerRakePercent,
+    pendingRake: invited.reduce((sum, l) => sum + (l.blocked ? 0 : l.pendingRake), 0),
+    totalRakeReward: invited.reduce((sum, l) => sum + l.totalRakeReward, 0),
   };
+}
+
+// Доля реферера с одной раздачи приглашённого. Вызывается из GameManager.cleanupHand рядом с
+// рейкбэком — на том же уже посчитанном персональном рейке игрока.
+// До выполнения условия (handsThreshold) сумма КОПИТСЯ в связи, после — начисляется сразу.
+// Возвращает начисленную сейчас сумму (0 — скопилось или не положено).
+export function accrueFromRake(refereeUserId: string, rakeCents: number): number {
+  if (rakeCents <= 0) return 0;
+  const s = load();
+  if (!s.config.enabled || s.config.referrerRakePercent <= 0) return 0;
+  const link = s.links[refereeUserId];
+  if (!link || link.blocked) return 0;
+
+  const amount = Math.floor((rakeCents * s.config.referrerRakePercent) / 100);
+  if (amount <= 0) return 0;
+
+  if (link.rewarded) {
+    creditRewardsWallet(link.referrerId, amount, 'referral');
+    link.totalRakeReward += amount;
+    save(s);
+    return amount;
+  }
+
+  link.pendingRake += amount; // условие ещё не выполнено — копим, выплатим одной суммой
+  save(s);
+  return 0;
 }
 
 export interface MilestoneResult {
@@ -228,13 +269,19 @@ export function processMilestoneTick(): MilestoneResult[] {
     const hands = aggregateUserStats(newUserId, null, null).hands;
     if (hands < s.config.handsThreshold) continue;
 
-    creditRewardsWallet(link.referrerId, s.config.referrerReward, 'referral');
+    // Первая выплата = разовый бонус + ВСЁ, что накопилось процентом с рейка за период раскрутки.
+    const accrued = link.pendingRake;
+    const referrerTotal = s.config.referrerReward + accrued;
+    creditRewardsWallet(link.referrerId, referrerTotal, 'referral');
     creditRewardsWallet(newUserId, s.config.refereeReward, 'referral');
-    sendNotification(link.referrerId, 'reward', `Приглашённый друг сыграл ${s.config.handsThreshold} раздач: +${s.config.referrerReward} HUB`);
+    const accruedNote = accrued > 0 ? ` (в т.ч. ${accrued} с рейка друга)` : '';
+    sendNotification(link.referrerId, 'reward', `Приглашённый друг сыграл ${s.config.handsThreshold} раздач: +${referrerTotal} HUB${accruedNote}`);
     sendNotification(newUserId, 'reward', `Приветственный бонус: +${s.config.refereeReward} HUB`);
 
     link.rewarded = true;
-    results.push({ newUserId, referrerId: link.referrerId, referrerReward: s.config.referrerReward, refereeReward: s.config.refereeReward });
+    link.totalRakeReward += accrued;
+    link.pendingRake = 0;
+    results.push({ newUserId, referrerId: link.referrerId, referrerReward: referrerTotal, refereeReward: s.config.refereeReward });
   }
 
   if (results.length) save(s);

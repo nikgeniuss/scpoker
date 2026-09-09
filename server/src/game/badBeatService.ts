@@ -1,4 +1,5 @@
-// Bad Beat Jackpot — состояние и конфиг (Фаза 1: пул + настройки, без детекта/выплат).
+// Bad Beat Jackpot — состояние, конфиг, пул, детект и выплаты (addToPool/payoutFromPool ниже,
+// подключены в showdown-пути GameManager.ts).
 // Источник правды — server/data/badbeat.json (атомарно через writeJSON, §0.4). Файл в data/,
 // nodemon его не watch'ит (§0.3) — записи не рестартят сервер.
 // Значения-дефолты зеркалят client/src/config/badBeat.ts (типы дублируются как и прочий shared, см. ARCHITECTURE).

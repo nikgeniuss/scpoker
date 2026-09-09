@@ -141,7 +141,7 @@ startReferralScheduler(15 * 60_000); // батч-проверка порога �
 // заодно уборка брошенных временных файлов storage.ts. Пишет в server/backups (вне nodemon-watch,
 // рестарт не триггерит). Раз в 15 минут — данные меняются каждой раздачей, но снимок дешёвый.
 startBackups(15 * 60_000);
-app.use('/api/shop', createShopRouter(tournamentManager));
+app.use('/api/shop', createShopRouter(tournamentManager, () => gameManager.getSettings().paidFeatures.hudMode));
 app.use('/api/inventory', createInventoryRouter());
 app.use('/api/rewards-wallet', createRewardsWalletRouter());
 app.use('/api/responsible-gambling', createResponsibleGamblingRouter(gameManager));

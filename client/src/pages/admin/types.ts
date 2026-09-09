@@ -84,6 +84,7 @@ export interface PaidFeaturesSettings {
     fixedAmount: number;
     percent: number;
   };
+  hudMode: 'free' | 'paid'; // HUD соперников: всем бесплатно либо по подписке (§10.21.13)
 }
 
 export type PaymentChain = 'tron' | 'ethereum' | 'bsc';

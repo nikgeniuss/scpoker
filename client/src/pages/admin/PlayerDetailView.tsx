@@ -299,7 +299,7 @@ export const PlayerDetailView = ({ user, meId, api, onBack, onChanged, onDeleted
             </div>
           </div>
         )}
-        <p className="text-xs text-gray-600">Рейк пока всегда 0 — комиссия в игре ещё не реализована.</p>
+        <p className="text-xs text-gray-600">Рейк — комиссия, удержанная с банков этого игрока (per-table настройка стола).</p>
         <button
           onClick={() => setHistoryOpen(true)}
           className="w-full min-h-[40px] rounded-lg bg-gray-700 hover:bg-gray-600 text-white text-sm font-semibold"

@@ -13,8 +13,12 @@ import {
   isRedemptionBlocked,
   recordRedemption,
   redeemShopItem,
+  redeemSubscription,
+  getSubscriptionStatus,
+  type ShopItem,
 } from '../loyaltyShopService.js';
 import { getBalance, credit as creditWallet } from '../rewardsWalletService.js';
+import { hasActive as hasActiveHudSubscription, resetCache as resetHudCache } from '../hudSubscriptionService.js';
 
 const netA = { ip: '1.1.1.1', deviceId: 'dA' };
 const netB = { ip: '2.2.2.2', deviceId: 'dB' };
@@ -29,8 +33,16 @@ describe('loyaltyShopService — каталог и настройки', () => {
   });
 
   it('updateShopSettings патчит enabled/catalog', () => {
-    const updated = updateShopSettings({ enabled: true, catalog: [{ id: 'x', title: 'X', cost: 100, ticketBuyIn: 50 }] });
-    expect(updated).toEqual({ enabled: true, catalog: [{ id: 'x', title: 'X', cost: 100, ticketBuyIn: 50 }] });
+    const updated = updateShopSettings({ enabled: true, catalog: [{ id: 'x', title: 'X', cost: 100, ticketBuyIn: 50, kind: 'ticket', subDays: 0 }] });
+    expect(updated).toEqual({ enabled: true, catalog: [{ id: 'x', title: 'X', cost: 100, ticketBuyIn: 50, kind: 'ticket', subDays: 0 }] });
+  });
+
+  // Старые записи каталога (сохранённые до §10.21.13) полей kind/subDays не имеют — они тикеты.
+  it('позиция без kind/subDays нормализуется в тикет', () => {
+    const updated = updateShopSettings({
+      catalog: [{ id: 'old', title: 'Old', cost: 10, ticketBuyIn: 5 } as unknown as ShopItem],
+    });
+    expect(updated.catalog[0]).toEqual({ id: 'old', title: 'Old', cost: 10, ticketBuyIn: 5, kind: 'ticket', subDays: 0 });
   });
 
   it('дубли id в каталоге отбрасываются', () => {
@@ -162,5 +174,82 @@ describe('loyaltyShopService — redeemShopItem (интеграция с реа�
     expect(result).toEqual({ error: 'registration-closed' });
     expect(getBalance('A')).toBe(300); // возвращено
     expect(tm.get(tournamentId)!.entries.some((e) => e.userId === 'A')).toBe(false);
+  });
+
+  // §10.21.13: подписка на HUD лежит в том же каталоге, но покупается своим путём.
+  it('подписку нельзя купить через тикетный путь — отказ до списания', async () => {
+    updateShopSettings({ catalog: [{ id: 'hud-30', title: 'HUD 30 дней', cost: 500, ticketBuyIn: 0, kind: 'hudSub', subDays: 30 }] });
+    creditWallet('A', 500, 'streak');
+    const { tm, tournamentId } = await setupTournament(0, 4);
+
+    expect(redeemShopItem(tm, 'A', 'Alice', 'hud-30', tournamentId, net)).toEqual({ error: 'not-a-ticket' });
+    expect(getBalance('A')).toBe(500);
+  });
+});
+
+// Подписка на HUD соперников (§10.21.13) — вторая позиция каталога рядом с тикетами.
+describe('loyaltyShopService — подписка на HUD', () => {
+  const DAY = 86_400_000;
+  const NOW = 1_800_000_000_000;
+  const subItem: ShopItem = { id: 'hud-30', title: 'HUD 30 дней', cost: 500, ticketBuyIn: 0, kind: 'hudSub', subDays: 30 };
+
+  beforeEach(() => {
+    clearStorage();
+    resetHudCache();
+  });
+
+  it('покупка списывает HUB и включает подписку', () => {
+    updateShopSettings({ catalog: [subItem] });
+    creditWallet('A', 700, 'streak');
+
+    const result = redeemSubscription('A', 'hud-30', NOW);
+    expect(result).toEqual({ ok: true, expiresAt: NOW + 30 * DAY });
+    expect(getBalance('A')).toBe(200);
+    expect(hasActiveHudSubscription('A', NOW + DAY)).toBe(true);
+  });
+
+  it('не хватает HUB — подписки нет, баланс не тронут', () => {
+    updateShopSettings({ catalog: [subItem] });
+    creditWallet('A', 100, 'streak');
+
+    expect(redeemSubscription('A', 'hud-30', NOW)).toEqual({ error: 'insufficient-balance' });
+    expect(getBalance('A')).toBe(100);
+    expect(hasActiveHudSubscription('A', NOW)).toBe(false);
+  });
+
+  it('через подписочный путь нельзя купить тикет', () => {
+    updateShopSettings({ catalog: [{ id: 'ticket-1', title: 'T', cost: 10, ticketBuyIn: 100, kind: 'ticket', subDays: 0 }] });
+    creditWallet('A', 500, 'streak');
+
+    expect(redeemSubscription('A', 'ticket-1', NOW)).toEqual({ error: 'not-a-subscription' });
+    expect(getBalance('A')).toBe(500); // проверка ДО списания
+  });
+
+  it('повторная покупка продлевает от даты окончания — остаток не сгорает', () => {
+    updateShopSettings({ catalog: [subItem] });
+    creditWallet('A', 1000, 'streak');
+
+    redeemSubscription('A', 'hud-30', NOW);
+    const second = redeemSubscription('A', 'hud-30', NOW + DAY); // продлил на следующий день
+    expect(second).toEqual({ ok: true, expiresAt: NOW + 60 * DAY });
+    expect(getBalance('A')).toBe(0);
+  });
+
+  it('позиция с нулевым сроком отбивается до списания', () => {
+    updateShopSettings({ catalog: [{ ...subItem, subDays: 0 }] });
+    creditWallet('A', 500, 'streak');
+
+    expect(redeemSubscription('A', 'hud-30', NOW)).toEqual({ error: 'invalid-item' });
+    expect(getBalance('A')).toBe(500);
+  });
+
+  it('getSubscriptionStatus: без покупки — неактивна, после покупки — с датой', () => {
+    updateShopSettings({ catalog: [subItem] });
+    creditWallet('A', 500, 'streak');
+    expect(getSubscriptionStatus('A', NOW)).toEqual({ expiresAt: null, active: false });
+
+    redeemSubscription('A', 'hud-30', NOW);
+    expect(getSubscriptionStatus('A', NOW)).toEqual({ expiresAt: NOW + 30 * DAY, active: true });
+    expect(getSubscriptionStatus('A', NOW + 40 * DAY)).toEqual({ expiresAt: NOW + 30 * DAY, active: false });
   });
 });

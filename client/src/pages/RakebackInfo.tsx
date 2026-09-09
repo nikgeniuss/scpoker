@@ -22,15 +22,16 @@ export const RakebackInfo = () => {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const token = useAuthStore((s) => s.token);
-  const { enabled, lifetimeRake, totalPaid, tier, nextTier, history, loadMine } = useRakebackStore();
+  const { enabled, windowDays, windowRake, lifetimeRake, totalPaid, tier, nextTier, history, loadMine } = useRakebackStore();
   const tiers = useRakebackStore((s) => (s.tiers.length ? s.tiers : TIER_DEFAULTS));
 
   useEffect(() => {
     loadMine(token);
   }, [loadMine, token]);
 
+  // Прогресс и уровень считаются по рейку ЗА ОКНО, а не за всё время (§10.20).
   const progressPct = nextTier
-    ? Math.min(100, Math.round((lifetimeRake / nextTier.minRakeCents) * 100))
+    ? Math.min(100, Math.round((windowRake / nextTier.minRakeCents) * 100))
     : 100;
 
   return (
@@ -79,7 +80,7 @@ export const RakebackInfo = () => {
                 />
               </div>
               <div className="text-xs text-gray-400">
-                {formatMoney(lifetimeRake)} / {formatMoney(nextTier.minRakeCents)} {t('rakebackInfo.toLevel')}{' '}
+                {formatMoney(windowRake)} / {formatMoney(nextTier.minRakeCents)} {t('rakebackInfo.toLevel')}{' '}
                 <span className="text-white font-semibold">{nextTier.name}</span> ({nextTier.percent}%)
               </div>
             </>
@@ -87,14 +88,21 @@ export const RakebackInfo = () => {
           {!nextTier && tier && (
             <div className="text-xs text-emerald-400">{t('rakebackInfo.maxLevelReached')}</div>
           )}
+          <div className="text-[11px] text-gray-500 mt-2">{t('rakebackInfo.windowHint', { count: windowDays })}</div>
         </div>
 
         {/* Сводка */}
-        <div className="grid grid-cols-2 gap-3 mb-6">
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/5 p-3">
+            <div className="text-xs text-gray-400 mb-1">{t('rakebackInfo.windowRake', { count: windowDays })}</div>
+            <div className="text-lg font-bold tabular-nums text-emerald-300">{formatMoney(windowRake)}</div>
+          </div>
           <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
             <div className="text-xs text-gray-400 mb-1">{t('rakebackInfo.totalRakePaid')}</div>
             <div className="text-lg font-bold tabular-nums">{formatMoney(lifetimeRake)}</div>
           </div>
+        </div>
+        <div className="grid grid-cols-1 gap-3 mb-6">
           <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
             <div className="text-xs text-gray-400 mb-1">{t('rakebackInfo.totalCashbackReceived')}</div>
             <div className="text-lg font-bold tabular-nums text-emerald-400">{totalPaid.toLocaleString()} HUB</div>

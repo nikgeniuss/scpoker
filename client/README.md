@@ -1,73 +1,60 @@
-# React + TypeScript + Vite
+# POKER HUB — клиент
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React-приложение покерного рума: лобби, игровой стол, турниры, кошелёк, награды, админ-панель.
+Работает в браузере (десктоп и мобильный) и внутри Telegram Mini App.
 
-Currently, two official plugins are available:
+> До 2026-09-07 здесь лежал дефолтный README шаблона Vite — он не имел отношения к проекту.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Стек
 
-## React Compiler
+React 19 · Vite · TypeScript · Tailwind v4 (`@tailwindcss/vite`) · Zustand · Framer Motion ·
+react-router-dom · socket.io-client · react-i18next (ru/en) · lucide-react · `@twa-dev/sdk`.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Запуск
 
-## Expanding the ESLint configuration
+Из **корня репозитория** (поднимает клиент и сервер разом):
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run dev          # Vite :5173 + Express :3001
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Только клиент — `npm run dev:client` из корня либо `npm run dev` здесь. Сервер на `:3001` нужен
+в любом случае: без него не будет ни авторизации, ни сокетов.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Проверки
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run lint         # ESLint
+npm run typecheck    # tsc -b --noEmit
+npm run test         # vitest + jsdom + @testing-library/react
+npm run test:watch   # то же в watch-режиме
 ```
+
+Из корня всё разом (плюс серверная часть и guard контракта событий) — `npm run check`.
+
+## Как устроено
+
+| Папка | Что внутри |
+| --- | --- |
+| `src/pages/` | экраны-роуты (`GameRoom`, лобби, турниры, кошелёк, награды, `admin/*`) |
+| `src/components/` | компоненты по доменам: `game/`, `lobby/`, `layout/`, `admin/`, `auth/` |
+| `src/store/` | Zustand-сторы (auth, комнаты, турниры, кошелёк, награды, подписки) |
+| `src/config/` | чистые модули без React: адрес API, формат денег, пресеты ставок, коды ошибок |
+| `src/hooks/` | хуки, включая `useTelegram` и хуки экранов |
+| `src/i18n/locales/` | словари `ru.ts` / `en.ts` — оба обязаны покрывать одинаковый набор ключей |
+
+Тесты лежат рядом с исходником: `*.test.ts(x)`.
+
+## Правила, которые легко нарушить
+
+- Адрес API — только из `src/config/api.ts`, `localhost` не хардкодить: клиент открывают и с
+  публичного IP, и из Telegram.
+- Socket-события — только через `SOCKET_EVENTS` из `@poker-room/shared`; синхронность клиента и
+  сервера проверяет `npm run check:contract`.
+- Вёрстка обязана жить на трёх целях: десктоп ≥1024, мобильный от 360, окно Telegram Mini App.
+  Полная высота — `100dvh`/`100svh`, тач-цель ≥44×44px, hover не должен быть единственным
+  каналом информации.
+- Админ-код — только lazy-чанком за `RequireAdmin` или под `{isAdmin && …}`; настоящая защита
+  всегда серверная.
+
+Остальное — в [CLAUDE.md](../CLAUDE.md) и [docs/](../docs/).

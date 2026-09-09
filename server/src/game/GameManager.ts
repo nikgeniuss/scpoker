@@ -23,9 +23,11 @@ import { readClubs } from './clubsStorage.js';
 import type { HandStatRecord } from './statsService.js';
 import type { RoomEventRecord } from './roomEvents.js';
 import { getHudStats, type HandHistoryRecord, type HandAction } from './handHistory.js';
+import { hasActive as hasActiveHudSubscription } from './hudSubscriptionService.js';
 import { computeRake, normalizeRake, type RakeConfig } from './rake.js';
 import { getBadBeatState, addToPool, payoutFromPool } from './badBeatService.js';
 import { applyRakeback } from './rakebackService.js';
+import { accrueFromRake as accrueReferralFromRake } from './referralService.js';
 import { requiredBuyIn as ratholeRequiredBuyIn, recordLeave, getLeaveRecord, clearLeaveRecord, clearRoom as clearRatholeRoom } from './ratholeService.js';
 import { addProgress as addMissionProgress } from './missionsService.js';
 import { getResolvedEquipped } from './inventoryService.js';
@@ -219,7 +221,7 @@ interface GameSettings {
   responsibleGambling: ResponsibleGamblingSettings;
 }
 
-// Платные фичи (ROADMAP §10.12, новая админ-вкладка «Платные фичи»). Сейчас одна — Rabbit Hunting.
+// Платные фичи (ROADMAP §10.12, админ-вкладка «Платные фичи»): Rabbit Hunting и режим HUD.
 export interface PaidFeaturesSettings {
   rabbitHunt: {
     enabled: boolean;
@@ -227,6 +229,10 @@ export interface PaidFeaturesSettings {
     fixedAmount: number;       // фишки (центы), режим fixed
     percent: number;           // 0..100, режим percent
   };
+  // HUD соперников (§10.21.13): free — VPIP/PFR видны всем (как было), paid — только по подписке
+  // из магазина лояльности. Дефолт free: включение платного режима должно быть осознанным
+  // действием админа, а не следствием обновления.
+  hudMode: 'free' | 'paid';
 }
 
 
@@ -250,6 +256,7 @@ const DEFAULT_BOT_MODE: BotModeSettings = {
 
 const DEFAULT_PAID_FEATURES: PaidFeaturesSettings = {
   rabbitHunt: { enabled: false, mode: 'percent', fixedAmount: 100, percent: 5 },
+  hudMode: 'free',
 };
 
 // Защита игрока — opt-out, не opt-in: по умолчанию все пункты доступны, админ может отключить.
@@ -283,7 +290,7 @@ const DEFAULT_SETTINGS: GameSettings = {
   defaultPlayerChips: 1000,
   timebank: { ...DEFAULT_TIMEBANK },
   botMode: { ...DEFAULT_BOT_MODE },
-  paidFeatures: { rabbitHunt: { ...DEFAULT_PAID_FEATURES.rabbitHunt } },
+  paidFeatures: { rabbitHunt: { ...DEFAULT_PAID_FEATURES.rabbitHunt }, hudMode: DEFAULT_PAID_FEATURES.hudMode },
   payments: { ...DEFAULT_PAYMENTS, chains: { ...DEFAULT_PAYMENTS.chains } },
   responsibleGambling: { ...DEFAULT_RESPONSIBLE_GAMBLING },
 };
@@ -738,6 +745,7 @@ export class GameManager implements GameManagerForBots {
       const tb: TimebankSettings = { ...DEFAULT_TIMEBANK, ...(data.timebank ?? {}) };
       const pf: PaidFeaturesSettings = {
         rabbitHunt: { ...DEFAULT_PAID_FEATURES.rabbitHunt, ...(data.paidFeatures?.rabbitHunt ?? {}) },
+        hudMode: data.paidFeatures?.hudMode === 'paid' ? 'paid' : DEFAULT_PAID_FEATURES.hudMode,
       };
       const pm: PaymentsSettings = {
         ...DEFAULT_PAYMENTS,
@@ -750,7 +758,7 @@ export class GameManager implements GameManagerForBots {
       return {
         ...DEFAULT_SETTINGS,
         timebank: { ...DEFAULT_TIMEBANK },
-        paidFeatures: { rabbitHunt: { ...DEFAULT_PAID_FEATURES.rabbitHunt } },
+        paidFeatures: { rabbitHunt: { ...DEFAULT_PAID_FEATURES.rabbitHunt }, hudMode: DEFAULT_PAID_FEATURES.hudMode },
         payments: { ...DEFAULT_PAYMENTS, chains: { ...DEFAULT_PAYMENTS.chains } },
         responsibleGambling: { ...DEFAULT_RESPONSIBLE_GAMBLING },
       };
@@ -2447,6 +2455,9 @@ export class GameManager implements GameManagerForBots {
         if (rb && rb.payout > 0) {
           creditRewardsWallet(p.id, rb.payout, 'rakeback');
         }
+        // Доля пригласившего с рейка этого игрока (§10.21.5). До выполнения условия копится
+        // внутри связи, после — начисляется рефереру сразу; кошелёк трогает сам сервис.
+        accrueReferralFromRake(p.id, playerRake);
       }
 
       // Лимит на потери (ROADMAP §11.2) — только предупреждение, раздача не блокируется.
@@ -2729,29 +2740,45 @@ export class GameManager implements GameManagerForBots {
 
     const isShowdown = room.phase === 'showdown';
 
+    // Платный HUD (§10.21.13): в 'paid' чужие VPIP/PFR не уходят без подписки. Базовых
+    // state'ов тогда два — без HUD (общий) и с HUD (для подписчиков/админов), второй строим
+    // лениво и ОДИН раз на весь broadcast, а не на каждый сокет (§0.9).
+    const hudPaid = this.settings.paidFeatures.hudMode === 'paid';
     // Базовый state — без карт ни у кого (canSeeCards=false для всех в getGameState).
-    const baseState = this.getGameState(roomId);
+    const baseState = this.getGameState(roomId, undefined, false, !hudPaid);
     if (!baseState) return;
+    let baseHudState: SharedGameState | null | undefined;
 
     roomSockets.forEach((sid) => {
       const sock = this.io.sockets.sockets.get(sid);
       if (!sock) return;
       const viewer = sock.data?.user as { id: string; role?: string } | undefined;
       const withPeek = !!viewer && this.adminPeekUsers.has(viewer.id);
+      // Доступ к чужому HUD: бесплатный режим, либо активная подписка, либо админ — роль берём
+      // из подписанного JWT (sock.data.user), не из клиентского флага (§0.12).
+      const hudAccess =
+        !hudPaid || viewer?.role === 'admin' || (!!viewer && hasActiveHudSubscription(viewer.id));
 
       if (withPeek || isShowdown) {
         // Peek (карты всех + futureBoard) ИЛИ showdown — полный пересбор per-socket: каждый видит
         // свои карты + на showdown карты только дошедших до вскрытия (не сфолдивших, §0.1) + добровольно
         // показанные. Редкий путь (peek — только админ; showdown — раз за раздачу).
-        const fullState = this.getGameState(roomId, viewer?.id, withPeek);
+        const fullState = this.getGameState(roomId, viewer?.id, withPeek, hudAccess);
         if (fullState) sock.emit(SOCKET_EVENTS.GAME_UPDATE, fullState);
         return;
+      }
+
+      // Подписчику (и админу) в платном режиме нужен вариант base'а с HUD — строим один раз.
+      let source = baseState;
+      if (hudPaid && hudAccess) {
+        if (baseHudState === undefined) baseHudState = this.getGameState(roomId, undefined, false, true);
+        source = baseHudState ?? baseState;
       }
 
       const myPlayer = viewer ? room.players.get(viewer.id) : undefined;
       if (!myPlayer) {
         // Наблюдатель / не игрок — отдаём base без карт.
-        sock.emit(SOCKET_EVENTS.GAME_UPDATE, baseState);
+        sock.emit(SOCKET_EVENTS.GAME_UPDATE, source);
         return;
       }
 
@@ -2768,10 +2795,20 @@ export class GameManager implements GameManagerForBots {
       const myWillWin = viewer!.role === 'admin' ? computeWillWin(room, viewer!.id) : undefined;
       // Shallow clone + override карт/подсказок только для своего игрока.
       const personalized = {
-        ...baseState,
-        players: baseState.players.map((p) =>
+        ...source,
+        players: source.players.map((p) =>
           p.id === viewer!.id
-            ? { ...p, cards: myPlayer.cards, handHint: myHint, handRank: myRank, winChance: myWin, willWin: myWillWin }
+            ? {
+                ...p,
+                cards: myPlayer.cards,
+                handHint: myHint,
+                handRank: myRank,
+                winChance: myWin,
+                willWin: myWillWin,
+                // Свой HUD виден владельцу всегда — даже в платном режиме без подписки (§10.21.13).
+                hudStats: myPlayer.hudStats,
+                hudLockedHands: undefined,
+              }
             : p,
         ),
       };
@@ -2783,11 +2820,13 @@ export class GameManager implements GameManagerForBots {
   // - viewerId: получит свои карты (если у него есть). На showdown все карты раскрываются всем.
   // - withPeek: режим «глаз админа» — все карты + futureBoard. Caller обязан проверить роль.
   // Без аргументов (legacy) — карт нет ни у кого вне showdown. Это безопасный дефолт.
-  getGameState(roomId: string, viewerId?: string, withPeek = false): SharedGameState | null {
+  // showOpponentHud — см. §10.21.13: гейт платного HUD, fail-closed (по умолчанию чужой
+  // HUD не отдаётся). Решение принимает caller — broadcastGameState ниже.
+  getGameState(roomId: string, viewerId?: string, withPeek = false, showOpponentHud = false): SharedGameState | null {
     const room = this.rooms.get(roomId);
     if (!room) return null;
     // §0.1 защита карт — в чистом gameStateSerializer (см. там).
-    return serializeGameState(room, viewerId, withPeek);
+    return serializeGameState(room, viewerId, withPeek, showOpponentHud);
   }
 
   // Текущее время окончания countdown (для запрашивающего)
@@ -2813,7 +2852,10 @@ export class GameManager implements GameManagerForBots {
       ? { ...this.settings.botMode, ...partial.botMode }
       : this.settings.botMode;
     const nextPf: PaidFeaturesSettings = partial.paidFeatures
-      ? { rabbitHunt: { ...this.settings.paidFeatures.rabbitHunt, ...(partial.paidFeatures.rabbitHunt ?? {}) } }
+      ? {
+          rabbitHunt: { ...this.settings.paidFeatures.rabbitHunt, ...(partial.paidFeatures.rabbitHunt ?? {}) },
+          hudMode: partial.paidFeatures.hudMode ?? this.settings.paidFeatures.hudMode,
+        }
       : this.settings.paidFeatures;
     const nextPm: PaymentsSettings = partial.payments
       ? {

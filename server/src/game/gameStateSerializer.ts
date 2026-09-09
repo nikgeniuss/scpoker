@@ -47,7 +47,16 @@ export function activeTableModes(room: Pick<Room,
   return modes;
 }
 
-export function serializeGameState(room: Room, viewerId?: string, withPeek = false): GameState {
+// showOpponentHud — можно ли этому зрителю видеть HUD (VPIP/PFR) СОПЕРНИКОВ (§10.21.13).
+// Fail-closed, как и карты: без явного разрешения чужой HUD не уходит. Решение принимает caller
+// (GameManager.broadcastGameState: бесплатный режим / активная подписка / роль admin из JWT) —
+// эта функция остаётся чистой и в файл подписок не ходит. Свой HUD виден владельцу всегда.
+export function serializeGameState(
+  room: Room,
+  viewerId?: string,
+  withPeek = false,
+  showOpponentHud = false,
+): GameState {
   const tbOn = room.timebank.enabled;
   const modes = activeTableModes(room);
   const isShowdown = room.phase === 'showdown';
@@ -67,6 +76,8 @@ export function serializeGameState(room: Room, viewerId?: string, withPeek = fal
     // §0.1: при реальном вскрытии карты видны ТОЛЬКО дошедшим до showdown (не сфолдившим — они
     // боролись за банк). Сфолдившие мак'ают: их карты не видны соперникам (но виден own — p.id===viewerId).
     const canSeeCards = withPeek || (contestedShowdown && !p.isFolded) || (viewerId !== undefined && p.id === viewerId);
+    // §10.21.13: свой HUD виден владельцу всегда, чужой — только по разрешению caller'а.
+    const hudVisible = showOpponentHud || (viewerId !== undefined && p.id === viewerId);
     // Название комбинации — только тем, кому видны карты (§0.1), и только если зритель включил подсказку.
     let handHint: string | undefined;
     let handRank: number | undefined;
@@ -114,7 +125,10 @@ export function serializeGameState(room: Room, viewerId?: string, withPeek = fal
       willWin,
       shownCards,
       revealedCards: p.revealedCards,
-      hudStats: p.hudStats,
+      hudStats: hudVisible ? p.hudStats : undefined,
+      // Заблокированный HUD: число рук отдаём (решение пользователя — оно показывает опыт, а не
+      // стиль игры), сами VPIP/PFR не уходят на клиент вообще.
+      hudLockedHands: !hudVisible && p.hudStats ? p.hudStats.hands : undefined,
     };
   });
   return {
