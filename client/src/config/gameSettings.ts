@@ -14,23 +14,33 @@ export interface AutoTopUpSettings {
 // против случайных рук, учитывает борд и число соперников). См. handHint выше.
 export type HandStrengthMode = 'category' | 'equity';
 
+// Ориентация экрана за столом (§10.16): 'auto' — как решит система, иначе просим браузер
+// зафиксировать. Работает не везде — см. useOrientationLock.
+export type OrientationLock = 'auto' | 'portrait' | 'landscape';
+
 export interface GameSettings {
   soundEnabled: boolean;
+  // Зеркальная раскладка кнопок действий: Fold уезжает вправо, агрессивные действия — под
+  // большой палец правой руки (§10.2). Только порядок, состав кнопок не меняется.
+  mirroredActions: boolean;
   vibrationEnabled: boolean;
   smartFocusEnabled: boolean;
   // Подсказка: моя текущая комбинация + шанс на выигрыш; у админа — итоговая своя комбинация
   // и текущая комбинация каждого игрока. Шанс считает сервер (против случайных рук, без утечки).
   handHintEnabled: boolean;
   handStrengthMode: HandStrengthMode;
+  orientationLock: OrientationLock;
   autoTopUp: AutoTopUpSettings;
 }
 
 export const DEFAULT_GAME_SETTINGS: GameSettings = {
   soundEnabled: true,
+  mirroredActions: false,
   vibrationEnabled: true,
   smartFocusEnabled: true,
   handHintEnabled: true,
   handStrengthMode: 'category',
+  orientationLock: 'auto',
   autoTopUp: { enabled: false, thresholdBB: 50, targetBB: 100 },
 };
 
@@ -44,6 +54,8 @@ export function loadGameSettings(): GameSettings {
     const p = JSON.parse(raw) as Partial<GameSettings>;
     return {
       soundEnabled: typeof p.soundEnabled === 'boolean' ? p.soundEnabled : DEFAULT_GAME_SETTINGS.soundEnabled,
+      mirroredActions:
+        typeof p.mirroredActions === 'boolean' ? p.mirroredActions : DEFAULT_GAME_SETTINGS.mirroredActions,
       vibrationEnabled:
         typeof p.vibrationEnabled === 'boolean' ? p.vibrationEnabled : DEFAULT_GAME_SETTINGS.vibrationEnabled,
       smartFocusEnabled:
@@ -54,6 +66,10 @@ export function loadGameSettings(): GameSettings {
         p.handStrengthMode === 'equity' || p.handStrengthMode === 'category'
           ? p.handStrengthMode
           : DEFAULT_GAME_SETTINGS.handStrengthMode,
+      orientationLock:
+        p.orientationLock === 'portrait' || p.orientationLock === 'landscape' || p.orientationLock === 'auto'
+          ? p.orientationLock
+          : DEFAULT_GAME_SETTINGS.orientationLock,
       autoTopUp: {
         enabled:
           typeof p.autoTopUp?.enabled === 'boolean'

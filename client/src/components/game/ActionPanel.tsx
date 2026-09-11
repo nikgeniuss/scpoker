@@ -23,6 +23,8 @@ interface ActionPanelProps {
   displayMode: ChipDisplay;
   onAction: (action: 'fold' | 'check' | 'call' | 'raise' | 'all-in', amount?: number) => void;
   onRaiseOpenChange?: (open: boolean) => void; // раскрыт ли блок рейза — чтобы прятать кнопку меню под ним
+  // Зеркальная раскладка (настройка игрока): Fold справа, All-In слева (§10.2)
+  mirrored?: boolean;
   // AK-стол (admin-тоггл) — тёмная карточка-контейнер под референс (только max-md, десктоп
   // не меняется). Кнопки действий остаются цветными (fold/check/call/raise) — это полезный
   // UX-сигнал, референс это состояние не описывает (там всегда статичный 3-кнопочный бар).
@@ -44,6 +46,7 @@ export const ActionPanel = ({
   onAction,
   onRaiseOpenChange,
   akSkin,
+  mirrored,
 }: ActionPanelProps) => {
   const fmt = (n: number) => formatChips(n, bigBlind, displayMode);
   const actionStart = useDebugStore((s) => s.actionStart);
@@ -319,7 +322,7 @@ export const ActionPanel = ({
             )}
           </AnimatePresence>
 
-          <div className="flex gap-1.5 sm:gap-2">
+          <div className={'flex gap-1.5 sm:gap-2' + (mirrored ? ' flex-row-reverse' : '')}>
             <motion.button
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.97 }}

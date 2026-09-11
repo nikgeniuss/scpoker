@@ -6,6 +6,7 @@ import { useAuthStore } from '../store/authStore';
 import { useTelegram } from '../hooks/useTelegram';
 import { tgAppDeepLink } from '../lib/telegram';
 import { TelegramButton } from '../components/auth/TelegramButton';
+import { AgeGate } from '../components/auth/AgeGate';
 import { getDeviceId } from '../lib/deviceId';
 
 import { API_URL } from '../config/api';
@@ -20,6 +21,8 @@ export const Login = () => {
   const [error, setError] = useState('');
   const [pendingToken, setPendingToken] = useState<string | null>(null);
   const [twoFactorCode, setTwoFactorCode] = useState('');
+  // Возрастной гейт 18+ (§11.2): аккаунт без даты рождения дозаполняет её при входе.
+  const [dobPendingToken, setDobPendingToken] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,6 +37,10 @@ export const Login = () => {
     const data = await res.json();
     if (res.ok && data.twoFactorRequired) {
       setPendingToken(data.pendingToken);
+      return;
+    }
+    if (res.ok && data.dobRequired) {
+      setDobPendingToken(data.pendingToken);
       return;
     }
     if (res.ok) {
@@ -55,6 +62,12 @@ export const Login = () => {
     });
 
     const data = await res.json();
+    if (res.ok && data.dobRequired) {
+      setPendingToken(null);
+      setTwoFactorCode('');
+      setDobPendingToken(data.pendingToken);
+      return;
+    }
     if (res.ok) {
       login(data.token, data.user);
       navigate('/');
@@ -84,7 +97,13 @@ export const Login = () => {
 
         {error && <p className="text-red-500 text-sm text-center mb-4">{error}</p>}
 
-        {pendingToken ? (
+        {dobPendingToken ? (
+          <AgeGate
+            pendingToken={dobPendingToken}
+            onCancel={() => { setDobPendingToken(null); setError(''); }}
+            onDone={() => navigate('/')}
+          />
+        ) : pendingToken ? (
           <form onSubmit={handleTwoFactorSubmit} className="space-y-5">
             <p className="text-gray-300 text-sm text-center">{t('auth.login.twoFactorHint')}</p>
             <input

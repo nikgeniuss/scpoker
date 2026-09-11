@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import { InfoButton } from '../../components/lobby/createControls';
+import { useAdminInfo } from '../../components/admin/useAdminInfo';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
 import { useAdminApi } from '../../hooks/useAdminApi';
@@ -7,6 +9,7 @@ import { formatMoney, parseMoney } from '../../config/chipFormat';
 import type { BotMetaView } from './types';
 
 export const BotsTab = () => {
+  const { openInfo, infoSheet } = useAdminInfo();
   const { token } = useAuthStore();
   const api = useAdminApi(token);
   const [bots, setBots] = useState<BotMetaView[]>([]);
@@ -83,6 +86,7 @@ export const BotsTab = () => {
 
   return (
     <div className="space-y-4 pb-10">
+      {infoSheet}
       <div>
         <h2 className="text-2xl font-bold text-white mb-1">Боты</h2>
         <p className="text-sm text-gray-500">
@@ -93,7 +97,10 @@ export const BotsTab = () => {
 
       <div className="bg-gray-800 rounded-2xl p-4 border border-white/10 flex flex-wrap items-end gap-3">
         <div>
-          <label className="block text-white text-sm font-bold mb-1">Сумма пополнения</label>
+          <div className="flex items-center gap-2 mb-1">
+            <label className="block text-white text-sm font-bold">Сумма пополнения</label>
+            <InfoButton onClick={openInfo('bots.topUp')} />
+          </div>
           <input
             type="number"
             min={0}
@@ -159,6 +166,7 @@ export const BotsTab = () => {
               </div>
               <div>
                 <div className="text-gray-500">PnL (total)</div>
+                    <InfoButton onClick={openInfo('bots.pnl')} />
                 <div className={'font-bold ' + (b.totalPnL >= 0 ? 'text-emerald-400' : 'text-rose-400')}>
                   {b.totalPnL >= 0 ? '+' : ''}
                   {formatMoney(b.totalPnL)}

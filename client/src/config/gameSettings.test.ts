@@ -23,3 +23,35 @@ describe('loadGameSettings / saveGameSettings — handStrengthMode', () => {
     expect(loadGameSettings().handStrengthMode).toBe('category');
   });
 });
+
+describe('loadGameSettings — раскладка кнопок и ориентация (§10.2, §10.16)', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('дефолты — обычная раскладка и системная ориентация', () => {
+    const s = loadGameSettings();
+    expect(s.mirroredActions).toBe(false);
+    expect(s.orientationLock).toBe('auto');
+  });
+
+  it('сохраняет и читает зеркальную раскладку', () => {
+    saveGameSettings({ ...DEFAULT_GAME_SETTINGS, mirroredActions: true });
+    expect(loadGameSettings().mirroredActions).toBe(true);
+  });
+
+  it('сохраняет и читает выбранную ориентацию', () => {
+    saveGameSettings({ ...DEFAULT_GAME_SETTINGS, orientationLock: 'landscape' });
+    expect(loadGameSettings().orientationLock).toBe('landscape');
+  });
+
+  it('старая запись без новых полей — откат на дефолты, ничего не падает', () => {
+    localStorage.setItem('sk:gameSettings:v1', JSON.stringify({ soundEnabled: false }));
+    const s = loadGameSettings();
+    expect(s.mirroredActions).toBe(false);
+    expect(s.orientationLock).toBe('auto');
+  });
+
+  it('мусорная ориентация в хранилище — откат на auto', () => {
+    localStorage.setItem('sk:gameSettings:v1', JSON.stringify({ orientationLock: 'diagonal' }));
+    expect(loadGameSettings().orientationLock).toBe('auto');
+  });
+});

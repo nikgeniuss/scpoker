@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import { InfoButton } from '../../components/lobby/createControls';
+import { useAdminInfo } from '../../components/admin/useAdminInfo';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
@@ -21,6 +23,7 @@ const STATUS_LABEL: Record<WithdrawalRequestView['status'], string> = {
 // Вкладка «Платежи» (ROADMAP §11.1) — конфиг депозит/вывод по сетям, очередь выводов
 // с approve (запускает авто-отправку через бота) / reject, баланс хот-кошельков для мониторинга.
 export const PaymentsTab = () => {
+  const { openInfo, infoSheet } = useAdminInfo();
   const { token } = useAuthStore();
   const api = useAdminApi(token);
   const [settings, setSettings] = useState<GameSettings | null>(null);
@@ -111,7 +114,11 @@ export const PaymentsTab = () => {
 
   return (
     <div className="space-y-6 pb-10 max-w-3xl">
-      <h2 className="text-2xl font-bold text-white mb-4">Платежи (USDT)</h2>
+      {infoSheet}
+      <div className="flex items-center gap-2 mb-4">
+        <h2 className="text-2xl font-bold text-white">Платежи (USDT)</h2>
+        <InfoButton onClick={openInfo('payments.chains')} />
+      </div>
 
       <div className="bg-gray-800 rounded-2xl p-4 border border-white/10 space-y-4">
         <label className="flex items-center gap-3 cursor-pointer">
@@ -122,11 +129,15 @@ export const PaymentsTab = () => {
             className="accent-emerald-500 w-4 h-4"
           />
           <span className="text-white font-bold">Включить депозиты и выводы</span>
+                <InfoButton onClick={openInfo('payments.enabled')} />
         </label>
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-white text-sm font-bold mb-1">Курс (центов за 1 USDT)</label>
+            <div className="flex items-center gap-2 mb-1">
+              <label className="block text-white text-sm font-bold">Курс (центов за 1 USDT)</label>
+              <InfoButton onClick={openInfo('payments.rate')} />
+            </div>
             <input
               type="number"
               min={1}
@@ -137,7 +148,10 @@ export const PaymentsTab = () => {
           </div>
           <div />
           <div>
-            <label className="block text-white text-sm font-bold mb-1">Мин. депозит (USDT)</label>
+            <div className="flex items-center gap-2 mb-1">
+              <label className="block text-white text-sm font-bold">Мин. депозит (USDT)</label>
+              <InfoButton onClick={openInfo('payments.minDeposit')} />
+            </div>
             <input
               type="number"
               min={0}
@@ -147,7 +161,10 @@ export const PaymentsTab = () => {
             />
           </div>
           <div>
-            <label className="block text-white text-sm font-bold mb-1">Макс. депозит (USDT)</label>
+            <div className="flex items-center gap-2 mb-1">
+              <label className="block text-white text-sm font-bold">Макс. депозит (USDT)</label>
+              <InfoButton onClick={openInfo('payments.maxDeposit')} />
+            </div>
             <input
               type="number"
               min={0}
@@ -157,7 +174,10 @@ export const PaymentsTab = () => {
             />
           </div>
           <div>
-            <label className="block text-white text-sm font-bold mb-1">Мин. вывод (USDT)</label>
+            <div className="flex items-center gap-2 mb-1">
+              <label className="block text-white text-sm font-bold">Мин. вывод (USDT)</label>
+              <InfoButton onClick={openInfo('payments.minWithdrawal')} />
+            </div>
             <input
               type="number"
               min={0}
@@ -167,7 +187,10 @@ export const PaymentsTab = () => {
             />
           </div>
           <div>
-            <label className="block text-white text-sm font-bold mb-1">Макс. вывод (USDT)</label>
+            <div className="flex items-center gap-2 mb-1">
+              <label className="block text-white text-sm font-bold">Макс. вывод (USDT)</label>
+              <InfoButton onClick={openInfo('payments.maxWithdrawal')} />
+            </div>
             <input
               type="number"
               min={0}

@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import { InfoButton } from '../../components/lobby/createControls';
+import { useAdminInfo } from '../../components/admin/useAdminInfo';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
 import { useAdminApi } from '../../hooks/useAdminApi';
@@ -9,6 +11,7 @@ import type { PromoCode } from '@poker-room/shared';
 // код валиден по совпадению buyIn для ЛЮБОГО турнира (напр. подарки в Telegram-группе). Тумблер
 // в CreateTournamentModal — ярлык «создать код под ЭТОТ турнир»; здесь — тот же реестр, но вручную.
 export const PromoCodesTab = () => {
+  const { openInfo, infoSheet } = useAdminInfo();
   const { token } = useAuthStore();
   const api = useAdminApi(token);
   const [codes, setCodes] = useState<PromoCode[]>([]);
@@ -55,6 +58,7 @@ export const PromoCodesTab = () => {
 
   return (
     <div className="space-y-3 pb-10">
+      {infoSheet}
       <h2 className="text-2xl font-bold text-white mb-4">Промокоды на бесплатный вход</h2>
 
       <div className="rounded-2xl p-4 bg-gray-800 border border-white/10">
@@ -62,6 +66,7 @@ export const PromoCodesTab = () => {
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1">
             <span className="text-xs text-gray-400">Номинал (бай-ин турниров, где сработает)</span>
+            <InfoButton onClick={openInfo('promo.buyIn')} />
             <input
               type="number"
               min="0"
@@ -73,6 +78,7 @@ export const PromoCodesTab = () => {
           </label>
           <label className="flex flex-col gap-1">
             <span className="text-xs text-gray-400">Лимит активаций</span>
+            <InfoButton onClick={openInfo('promo.limit')} />
             <input
               type="number"
               min="1"

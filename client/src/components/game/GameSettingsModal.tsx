@@ -12,7 +12,7 @@ import {
 import type { BetPresets, OpenPreset, PostflopPreset } from '../../config/betPresets';
 import type { ChipDisplay } from '../../config/chipFormat';
 import type { CardDeck } from '../../config/cardDeck';
-import type { AutoTopUpSettings, GameSettings, HandStrengthMode } from '../../config/gameSettings';
+import type { AutoTopUpSettings, GameSettings, HandStrengthMode, OrientationLock } from '../../config/gameSettings';
 import { Card } from './Card';
 import type { CardData } from './Card';
 
@@ -168,6 +168,24 @@ export const GameSettingsModal = ({
                     on={chipDisplay === 'bb'}
                     onChange={(v) => setChipDisplay(v ? 'bb' : 'chips')}
                   />
+                  <ToggleRow
+                    label={t('gameSettingsModal.mirroredActions')}
+                    on={settings.mirroredActions}
+                    onChange={(v) => setSettings({ ...settings, mirroredActions: v })}
+                  />
+                  <div className="py-3 flex items-center justify-between gap-3">
+                    <span className="text-white/70 text-sm">{t('gameSettingsModal.orientationLabel')}</span>
+                    <SegmentedControl
+                      options={[
+                        { value: 'auto', label: t('gameSettingsModal.orientationAuto') },
+                        { value: 'portrait', label: t('gameSettingsModal.orientationPortrait') },
+                        { value: 'landscape', label: t('gameSettingsModal.orientationLandscape') },
+                      ]}
+                      value={settings.orientationLock}
+                      onChange={(v) => setSettings({ ...settings, orientationLock: v as OrientationLock })}
+                    />
+                  </div>
+                  <p className="text-white/35 text-[11px] -mt-2 pb-2">{t('gameSettingsModal.orientationNote')}</p>
                   <ToggleRow
                     label={t('gameSettingsModal.smartFocus')}
                     on={settings.smartFocusEnabled}

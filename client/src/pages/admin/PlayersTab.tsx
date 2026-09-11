@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { InfoButton } from '../../components/lobby/createControls';
+import { useAdminInfo } from '../../components/admin/useAdminInfo';
 import { Search, ChevronDown, ArrowDownUp } from 'lucide-react';
 import ReactNiceAvatar from 'react-nice-avatar';
 import toast from 'react-hot-toast';
@@ -29,6 +31,7 @@ const ROLE_PILLS: Array<{ id: RoleFilter; label: string }> = [
 ];
 
 export const PlayersTab = () => {
+  const { openInfo, infoSheet } = useAdminInfo();
   const { token, user: me } = useAuthStore();
   const api = useAdminApi(token);
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -103,6 +106,7 @@ export const PlayersTab = () => {
 
   return (
     <div className="space-y-4 pb-10 max-w-3xl mx-auto">
+      {infoSheet}
       {/* Поиск */}
       <div className="relative">
         <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" />
@@ -164,6 +168,7 @@ export const PlayersTab = () => {
             className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
           />
         </div>
+        <InfoButton onClick={openInfo('players.sort')} />
       </div>
 
       {filtered.length === 0 && (

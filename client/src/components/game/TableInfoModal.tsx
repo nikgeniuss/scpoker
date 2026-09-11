@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
-import { X, Coins, Clock, Users, Lock, Info, Hash, Trophy } from 'lucide-react';
+import { X, Coins, Clock, Users, Lock, Info, Hash, Trophy, Layers } from 'lucide-react';
 import { API_URL } from '../../config/api';
 import { formatChips, formatMoney } from '../../config/chipFormat';
 import type { ChipDisplay } from '../../config/chipFormat';
@@ -39,6 +39,10 @@ interface Props {
   displayMode: ChipDisplay;
   tournamentId?: string;
   myId?: string | null;
+  // Турнирный HUD стола (§10.19): когда поднимутся блайнды и до какого BB — те же значения, что
+  // в плашке под общими картами, здесь рядом с остальной турнирной сводкой.
+  tournamentNextLevelAt?: number;
+  tournamentNextBigBlind?: number;
   onClose: () => void;
 }
 
@@ -54,6 +58,8 @@ export const TableInfoModal = ({
   displayMode,
   tournamentId,
   myId,
+  tournamentNextLevelAt,
+  tournamentNextBigBlind,
   onClose,
 }: Props) => {
   const { t, i18n } = useTranslation();
@@ -98,6 +104,7 @@ export const TableInfoModal = ({
   const lateRegLeft = useBlindLevelCountdown(
     isFutureTimestamp(standings?.lateRegClosesAt) ? standings.lateRegClosesAt : undefined,
   );
+  const blindsRiseIn = useBlindLevelCountdown(tournamentNextLevelAt);
   const myPlace = myId ? standings?.entries.find((e) => e.userId === myId)?.place : undefined;
 
   return (
@@ -232,6 +239,27 @@ export const TableInfoModal = ({
                         icon={<Coins size={12} className="text-amber-400" />}
                       />
                       <Row label={t('tableInfoModal.tournamentPaidPlaces')} value={String(standings.paidPlaces)} />
+                      {standings.playersRemaining > 0 && (
+                        <Row
+                          label={t('tableInfoModal.tournamentAvgStack')}
+                          value={formatMoney(
+                            Math.round(
+                              standings.entries.reduce((sum, e) => sum + e.chips, 0) / standings.playersRemaining,
+                            ),
+                          )}
+                          icon={<Layers size={12} className="text-amber-400" />}
+                        />
+                      )}
+                      {blindsRiseIn && tournamentNextBigBlind !== undefined && (
+                        <Row
+                          label={t('tableInfoModal.tournamentNextLevel')}
+                          value={t('tableInfoModal.tournamentNextLevelValue', {
+                            time: blindsRiseIn,
+                            bb: formatMoney(tournamentNextBigBlind),
+                          })}
+                          icon={<Clock size={12} className="text-amber-400" />}
+                        />
+                      )}
                       {lateRegLeft && (
                         <Row
                           label={t('tableInfoModal.tournamentLateReg')}

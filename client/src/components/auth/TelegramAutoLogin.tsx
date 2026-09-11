@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
@@ -6,6 +6,7 @@ import { useAuthStore } from '../../store/authStore';
 import { API_URL } from '../../config/api';
 import { getTelegramInitData, getTelegramStartParam } from '../../lib/telegram';
 import { getDeviceId } from '../../lib/deviceId';
+import { AgeGate } from './AgeGate';
 
 // Внутри Telegram Mini App автоматически логинит юзера через initData → JWT.
 // Если уже есть token в localStorage — ничего не делает.
@@ -18,6 +19,9 @@ export function TelegramAutoLogin() {
   const navigate = useNavigate();
   const location = useLocation();
   const triedRef = useRef(false);
+  // Возрастной гейт 18+ (§11.2): у TG-входа без подтверждённого возраста аккаунта ещё нет —
+  // сервер отдаёт pendingToken, а форму даты рождения показываем поверх экрана.
+  const [dobPendingToken, setDobPendingToken] = useState<string | null>(null);
 
   useEffect(() => {
     if (triedRef.current) return;
@@ -75,6 +79,10 @@ export function TelegramAutoLogin() {
           return;
         }
         const data = await res.json();
+        if (data.dobRequired) {
+          setDobPendingToken(data.pendingToken);
+          return;
+        }
         login(data.token, data.user);
         toast.success(t('telegramAutoLogin.loggedIn'));
         // Если юзер на /login или /register — после auto-login сразу в лобби.
@@ -86,6 +94,17 @@ export function TelegramAutoLogin() {
       }
     })();
   }, [token, login, navigate, location.pathname]);
+
+  if (dobPendingToken) {
+    return (
+      <AgeGate
+        pendingToken={dobPendingToken}
+        variant="modal"
+        onCancel={() => setDobPendingToken(null)}
+        onDone={() => { setDobPendingToken(null); navigate('/lobby', { replace: true }); }}
+      />
+    );
+  }
 
   return null;
 }

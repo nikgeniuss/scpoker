@@ -165,6 +165,31 @@ function loginBlockReason(
   return null;
 }
 
+// Возрастной гейт 18+ (§11.2). Токен шага «укажите дату рождения» носит либо id существующего
+// аккаунта (заведён до появления гейта — дозаполняет дату при следующем входе), либо TG-личность,
+// для которой аккаунт ЕЩЁ НЕ создан: без подтверждённого возраста юзер не заводится вообще.
+type DobPendingPayload = { dobPending: true; id?: string; tg?: TelegramUserPayload };
+
+function issueDobPendingToken(subject: { id: string } | { tg: TelegramUserPayload }): string {
+  return jwt.sign({ dobPending: true, ...subject }, JWT_SECRET, { expiresIn: '15m' });
+}
+
+// Завершение входа — единая точка для всех путей (пароль/2FA/Telegram/возрастной гейт):
+// lastLogin + визит-бонус + запись users.json + сессия + JWT на 7 дней. Вызывающий передаёт
+// массив users, из которого взят user (writeJSON пишет именно его).
+function finishLogin(user: User, users: User[], device: DeviceInfo): string {
+  user.lastLogin = new Date().toISOString();
+  applyLoginStreak(user, device);
+  writeJSON('users.json', users);
+
+  const sid = createSession(user.id, device.userAgent ?? '', device.ip ?? '');
+  return jwt.sign(
+    { id: user.id, username: user.username, role: user.role, sid },
+    JWT_SECRET,
+    { expiresIn: '7d' },
+  );
+}
+
 // Визит-бонус/стрик (§10.21.2) — единая точка для всех 3 мест реального завершения входа
 // (loginUser/completeTwoFactorLogin/loginOrRegisterTelegramUser). Мутирует user.lastLoginDate/
 // streakDays — вызывающий обязан writeJSON после (как и с user.lastLogin рядом). Награда — в
@@ -303,6 +328,7 @@ export function loginUser(
 ): (
   | { token: string }
   | { twoFactorRequired: true; pendingToken: string }
+  | { dobRequired: true; pendingToken: string }
   | { error: 'invalid' }
   | { error: 'banned' }
   | { error: 'self-excluded'; until: string }
@@ -324,19 +350,13 @@ export function loginUser(
     return { twoFactorRequired: true, pendingToken };
   }
 
-  // Фиксируем время входа (для админ-карточки игрока)
-  user.lastLogin = new Date().toISOString();
-  applyLoginStreak(user, device);
-  writeJSON('users.json', users);
+  // Возрастной гейт 18+ (§11.2): аккаунты, заведённые до его появления, дозаполняют дату
+  // рождения при следующем входе — токен выдаётся только после этого (см. completeDobGate).
+  if (!user.dateOfBirth) {
+    return { dobRequired: true, pendingToken: issueDobPendingToken({ id: user.id }) };
+  }
 
-  const sid = createSession(user.id, device.userAgent ?? '', device.ip ?? '');
-  const token = jwt.sign(
-    { id: user.id, username: user.username, role: user.role, sid },
-    JWT_SECRET,
-    { expiresIn: '7d' }
-  );
-
-  return { token };
+  return { token: finishLogin(user, users, device) };
 }
 
 // === 2FA (TOTP, ROADMAP §10.15) ===
@@ -440,7 +460,11 @@ export function completeTwoFactorLogin(
   pendingToken: string,
   code: string,
   device: DeviceInfo = {},
-): { token: string } | { error: 'invalid-token' | 'invalid-code' } {
+): (
+  | { token: string }
+  | { dobRequired: true; pendingToken: string }
+  | { error: 'invalid-token' | 'invalid-code' }
+) {
   let decoded: { id: string; twoFactorPending?: boolean };
   try {
     decoded = jwt.verify(pendingToken, JWT_SECRET, { algorithms: ['HS256'] }) as typeof decoded;
@@ -454,17 +478,12 @@ export function completeTwoFactorLogin(
   if (!user || !user.twoFactorEnabled) return { error: 'invalid-token' };
   if (!verifyTwoFactorCode(user, code)) return { error: 'invalid-code' };
 
-  user.lastLogin = new Date().toISOString();
-  applyLoginStreak(user, device);
-  writeJSON('users.json', users);
+  // Возрастной гейт 18+ (§11.2) — после полной аутентификации: сначала код, потом дата рождения.
+  if (!user.dateOfBirth) {
+    return { dobRequired: true, pendingToken: issueDobPendingToken({ id: user.id }) };
+  }
 
-  const sid = createSession(user.id, device.userAgent ?? '', device.ip ?? '');
-  const token = jwt.sign(
-    { id: user.id, username: user.username, role: user.role, sid },
-    JWT_SECRET,
-    { expiresIn: '7d' },
-  );
-  return { token };
+  return { token: finishLogin(user, users, device) };
 }
 
 // Шаблоны создания стола конкретного юзера (для /api/templates).
@@ -705,61 +724,108 @@ export function validateTelegramInitData(
   }
 }
 
-// Найти/создать юзера по TG payload, выдать JWT.
-// Возвращает null если юзер найден, но забанен.
+// Создание TG-юзера. Отдельно от входа, потому что заводится он ТОЛЬКО после подтверждения
+// возраста (§11.2) — вызывается из completeDobGate, не из автологина. Мутирует users (push),
+// вызывающий обязан writeJSON после.
+function createTelegramUser(tg: TelegramUserPayload, users: User[], dateOfBirth: string): User {
+  // Подобрать username: предпочитаем @username из TG, иначе "tg<id>".
+  // Если username уже занят локально — добавляем суффикс.
+  const baseName = (tg.username && /^[A-Za-z0-9_]{3,32}$/.test(tg.username))
+    ? tg.username
+    : `tg${tg.id}`;
+  let username = baseName;
+  let suffix = 1;
+  while (users.find((u) => u.username === username)) {
+    username = `${baseName}${suffix++}`;
+  }
+
+  const existingPublicIds = new Set<string>();
+  for (const u of users) if (u.publicId) existingPublicIds.add(u.publicId);
+
+  const user: User = {
+    id: uuid(),
+    username,
+    email: `tg-${tg.id}@telegram.local`, // синтетический email — TG-юзеры email не дают
+    passwordHash: '', // вход только через TG; passwordHash='' bcrypt.compareSync вернёт false
+    role: users.length === 0 ? 'admin' : 'player',
+    chips: getInitialChips(),
+    createdAt: new Date().toISOString(),
+    publicId: generatePublicId(existingPublicIds),
+    telegramId: tg.id,
+    dateOfBirth,
+  };
+
+  users.push(user);
+  return user;
+}
+
+// Найти юзера по TG payload и выдать JWT.
+// Возвращает null если юзер найден, но забанен; { dobRequired } — если возраст ещё не подтверждён
+// (нового юзера здесь БОЛЬШЕ НЕ создаём: аккаунт заводится только в completeDobGate, §11.2 —
+// иначе автологин через Telegram обходил бы возрастной гейт 18+).
 export function loginOrRegisterTelegramUser(
   tg: TelegramUserPayload,
   device: DeviceInfo = {},
-): { token: string; user: User } | null {
+): { token: string; user: User } | { dobRequired: true; pendingToken: string } | null {
   const users = readJSON('users.json') as User[];
 
-  let user = users.find((u) => u.telegramId === tg.id);
-  if (user) {
-    if (loginBlockReason(user)) return null;
-  } else {
-    // Подобрать username: предпочитаем @username из TG, иначе "tg<id>".
-    // Если username уже занят локально — добавляем суффикс.
-    const baseName = (tg.username && /^[A-Za-z0-9_]{3,32}$/.test(tg.username))
-      ? tg.username
-      : `tg${tg.id}`;
-    let username = baseName;
-    let suffix = 1;
-    while (users.find((u) => u.username === username)) {
-      username = `${baseName}${suffix++}`;
-    }
-
-    const existingPublicIds = new Set<string>();
-    for (const u of users) if (u.publicId) existingPublicIds.add(u.publicId);
-
-    user = {
-      id: uuid(),
-      username,
-      email: `tg-${tg.id}@telegram.local`, // синтетический email — TG-юзеры email не дают
-      passwordHash: '', // вход только через TG; passwordHash='' bcrypt.compareSync вернёт false
-      role: users.length === 0 ? 'admin' : 'player',
-      chips: getInitialChips(),
-      createdAt: new Date().toISOString(),
-      publicId: generatePublicId(existingPublicIds),
-      telegramId: tg.id,
-    };
-
-    users.push(user);
+  const user = users.find((u) => u.telegramId === tg.id);
+  if (!user) {
+    return { dobRequired: true, pendingToken: issueDobPendingToken({ tg }) };
+  }
+  if (loginBlockReason(user)) return null;
+  if (!user.dateOfBirth) {
+    return { dobRequired: true, pendingToken: issueDobPendingToken({ id: user.id }) };
   }
 
   // Имя из Telegram — обновляем при каждом входе (могло измениться), показывается за столом.
   user.displayName = tgDisplayName(tg);
-  // Фиксируем время входа (новый или существующий TG-юзер)
-  user.lastLogin = new Date().toISOString();
-  applyLoginStreak(user, device);
-  writeJSON('users.json', users);
+  return { token: finishLogin(user, users, device), user };
+}
 
-  const sid = createSession(user.id, device.userAgent ?? '', device.ip ?? '');
-  const token = jwt.sign(
-    { id: user.id, username: user.username, role: user.role, sid },
-    JWT_SECRET,
-    { expiresIn: '7d' },
-  );
-  return { token, user };
+// Шаг 2 возрастного гейта (§11.2): pendingToken из любой точки входа + дата рождения.
+// Для TG-личности без аккаунта — создаёт его здесь (только после проверки 18+), для
+// существующего юзера — дозаполняет дату. В обоих случаях завершает вход и выдаёт JWT.
+export function completeDobGate(
+  pendingToken: string,
+  dateOfBirth: string,
+  device: DeviceInfo = {},
+): (
+  | { token: string; user: User }
+  | { error: 'invalid-token' | 'invalid-dob' | 'underage' | 'banned' }
+  | { error: 'self-excluded' | 'timeout'; until: string }
+) {
+  let decoded: DobPendingPayload;
+  try {
+    decoded = jwt.verify(pendingToken, JWT_SECRET, { algorithms: ['HS256'] }) as DobPendingPayload;
+  } catch {
+    return { error: 'invalid-token' };
+  }
+  if (!decoded.dobPending) return { error: 'invalid-token' };
+
+  if (!isValidDateOfBirth(dateOfBirth)) return { error: 'invalid-dob' };
+  if (!isAdult(dateOfBirth)) return { error: 'underage' };
+
+  const users = readJSON('users.json') as User[];
+
+  // Ветка TG: аккаунта ещё нет (мог появиться параллельно — тогда просто дозаполняем дату).
+  if (decoded.tg) {
+    const tg = decoded.tg;
+    const existing = users.find((u) => u.telegramId === tg.id);
+    const user = existing ?? createTelegramUser(tg, users, dateOfBirth);
+    const blocked = loginBlockReason(user);
+    if (blocked) return blocked;
+    if (!user.dateOfBirth) user.dateOfBirth = dateOfBirth;
+    user.displayName = tgDisplayName(tg);
+    return { token: finishLogin(user, users, device), user };
+  }
+
+  const user = users.find((u) => u.id === decoded.id);
+  if (!user) return { error: 'invalid-token' };
+  const blocked = loginBlockReason(user);
+  if (blocked) return blocked;
+  user.dateOfBirth = dateOfBirth;
+  return { token: finishLogin(user, users, device), user };
 }
 
 // === Привязка Telegram к существующему аккаунту (browser → код → подтверждение в Mini App) ===

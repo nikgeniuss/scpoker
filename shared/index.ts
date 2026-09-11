@@ -588,6 +588,16 @@ export interface TournamentStandings {
   lateRegClosesAt: number | null; // timestamp конца поздней рег.; null — MTT-условие не выполнено (см. TournamentManager.getStandings)
 }
 
+// Структура турнира для карточки в лобби (§10.19): предпросмотр выплат по местам ДО старта и во
+// время игры. В отличие от TournamentStandings доступна при любом статусе — standings считает
+// стеки за столами и существует только у running-турнира.
+export interface TournamentStructure {
+  prizePool: number;               // собрано на текущий момент (бай-ины + ре-энтри, без гарантии)
+  guaranteedPrizePool?: number;    // объявленная гарантия, если задана (MTT)
+  paidPlaces: number;              // сколько мест платят при текущей конфигурации
+  payout: Record<number, number>;  // предпросмотр выплат по местам (без guarantee-оверлея)
+}
+
 export type JoinDeniedReason =
   | 'not-found'
   | 'wrong-password'

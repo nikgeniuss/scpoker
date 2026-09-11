@@ -10,6 +10,7 @@ import { useRoomFilters } from '../hooks/useRoomFilters';
 import { useClubStore } from '../store/clubStore';
 import { RoomCard } from '../components/lobby/RoomCard';
 import { CreateRoomModal } from '../components/lobby/CreateRoomModal';
+import { LobbyFab } from '../components/lobby/LobbyFab';
 import { PasswordModal } from '../components/lobby/PasswordModal';
 import { BuyInModal } from '../components/lobby/BuyInModal';
 import { BadBeatBanner } from '../components/lobby/BadBeatBanner';
@@ -213,6 +214,8 @@ export const Lobby = () => {
           ))}
         </div>
       )}
+
+      <LobbyFab onCreateRoom={() => setShowCreate(true)} />
 
       <AnimatePresence>
         {showCreate && (

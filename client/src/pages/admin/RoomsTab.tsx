@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import { InfoButton } from '../../components/lobby/createControls';
+import { useAdminInfo } from '../../components/admin/useAdminInfo';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
 import { useAdminApi } from '../../hooks/useAdminApi';
@@ -7,6 +9,7 @@ import { formatMoney } from '../../config/chipFormat';
 import type { AdminRoom, FrozenTableRecordView } from './types';
 
 export const RoomsTab = () => {
+  const { openInfo, infoSheet } = useAdminInfo();
   const { token } = useAuthStore();
   const api = useAdminApi(token);
   const [rooms, setRooms] = useState<AdminRoom[]>([]);
@@ -70,6 +73,7 @@ export const RoomsTab = () => {
 
   return (
     <div className="space-y-3 pb-10">
+      {infoSheet}
       <div className="flex items-center gap-3 mb-4">
         <h2 className="text-2xl font-bold text-white">Активные комнаты ({rooms.length})</h2>
         <button
@@ -79,6 +83,7 @@ export const RoomsTab = () => {
           ↻ Обновить
         </button>
         <span className="text-xs text-gray-500">авто-обновление каждые 3 сек</span>
+        <InfoButton onClick={openInfo('rooms.close')} />
       </div>
 
       {/* Журнал watchdog'а зависших столов (ROADMAP) — диагностика, не live-состояние. */}
@@ -90,6 +95,7 @@ export const RoomsTab = () => {
           <span className="text-white font-bold">
             ⚠️ Зависшие столы — журнал восстановлений ({frozenEvents.length})
           </span>
+          <InfoButton onClick={openInfo('rooms.watchdog')} />
           <span className="text-xs text-gray-500 ml-auto">{showFrozenLog ? '▲ свернуть' : '▼ развернуть'}</span>
         </button>
         {showFrozenLog && (

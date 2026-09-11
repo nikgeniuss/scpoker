@@ -1,7 +1,7 @@
 import { nanoid } from 'nanoid';
 import type {
   TournamentInfo, TournamentEntry, CreateTournamentOptions, BlindLevel, MttItmPercent, MttPayoutMode, BountyType,
-  TournamentStandings, PromoCode,
+  TournamentStandings, TournamentStructure, PromoCode,
 } from '@poker-room/shared';
 import type { GameManager } from '../GameManager.js';
 import type { Card } from '../types.js';
@@ -976,6 +976,20 @@ export class TournamentManager {
   // Живой рэнкинг + сводка для турнирного HUD за столом (TableInfoModal, ROADMAP §10.19). Только
   // пока турнир running — до старта и после финиша живых стеков нет. place — ТЕКУЩАЯ позиция по
   // фишкам прямо сейчас (не путать с entry.finishPlace — окончательное место при выбывании/финише).
+  // Структура турнира для карточки в лобби (§10.19): предпросмотр выплат при ЛЮБОМ статусе —
+  // игрок должен видеть, как делится банк, ДО регистрации, а не только когда турнир уже идёт.
+  getStructure(id: string): TournamentStructure | null {
+    const t = this.tournaments.get(id);
+    if (!t) return null;
+    const payout = this.previewPayout(t.info);
+    return {
+      prizePool: t.info.prizePool,
+      guaranteedPrizePool: t.info.guaranteedPrizePool,
+      paidPlaces: Object.keys(payout).length,
+      payout,
+    };
+  }
+
   getStandings(id: string): TournamentStandings | null {
     const t = this.tournaments.get(id);
     if (!t || t.info.status !== 'running') return null;

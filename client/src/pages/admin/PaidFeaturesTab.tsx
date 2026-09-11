@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import { InfoButton } from '../../components/lobby/createControls';
+import { useAdminInfo } from '../../components/admin/useAdminInfo';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/authStore';
@@ -10,6 +12,7 @@ import type { GameSettings, PaidFeaturesSettings } from './types';
 // Rabbit Hunting (за плату увидеть карты, которые пришли бы, если рука кончилась раньше ривера).
 // Читает/пишет тот же /admin/settings, что и SettingsTab (paidFeatures — отдельный блок).
 export const PaidFeaturesTab = () => {
+  const { openInfo, infoSheet } = useAdminInfo();
   const { token } = useAuthStore();
   const api = useAdminApi(token);
   const [settings, setSettings] = useState<GameSettings | null>(null);
@@ -54,11 +57,15 @@ export const PaidFeaturesTab = () => {
 
   return (
     <div className="space-y-6 pb-10 max-w-2xl">
+      {infoSheet}
       <h2 className="text-2xl font-bold text-white mb-4">Платные фичи</h2>
 
       <div className="bg-gray-800 rounded-2xl p-4 border border-white/10 space-y-4">
         <div>
-          <h3 className="text-white font-bold text-lg mb-1">🐇 Rabbit Hunting</h3>
+          <div className="flex items-center gap-2 mb-1">
+            <h3 className="text-white font-bold text-lg">🐇 Rabbit Hunting</h3>
+            <InfoButton onClick={openInfo('paid.rabbitHunt')} />
+          </div>
           <p className="text-sm text-gray-500">
             Если раздача закончилась раньше ривера (все сфолдили), игрок за столом может за плату
             увидеть карты, которые пришли бы. Платит тот, кто запрашивает; оплата учитывается как
@@ -95,7 +102,10 @@ export const PaidFeaturesTab = () => {
 
         {rh.mode === 'fixed' ? (
           <div>
-            <label className="block text-white text-sm font-bold mb-1">Цена раскрытия</label>
+            <div className="flex items-center gap-2 mb-1">
+              <label className="block text-white text-sm font-bold">Цена раскрытия</label>
+              <InfoButton onClick={openInfo('paid.rabbitPrice')} />
+            </div>
             <p className="text-xs text-gray-500 mb-2">Списывается со стека игрока за один запрос.</p>
             <div className="flex items-center gap-2">
               <input
@@ -117,7 +127,10 @@ export const PaidFeaturesTab = () => {
           </div>
         ) : (
           <div>
-            <label className="block text-white text-sm font-bold mb-1">Процент от банка раздачи</label>
+            <div className="flex items-center gap-2 mb-1">
+              <label className="block text-white text-sm font-bold">Процент от банка раздачи</label>
+              <InfoButton onClick={openInfo('paid.rabbitPercent')} />
+            </div>
             <p className="text-xs text-gray-500 mb-2">Минимум 1 фишка, если процент даёт 0 при маленьком банке.</p>
             <div className="flex items-center gap-2">
               <input
@@ -142,7 +155,10 @@ export const PaidFeaturesTab = () => {
 
       <div className="bg-gray-800 rounded-2xl p-4 border border-white/10 space-y-4">
         <div>
-          <h3 className="text-white font-bold text-lg mb-1">📊 HUD соперников</h3>
+          <div className="flex items-center gap-2 mb-1">
+            <h3 className="text-white font-bold text-lg">📊 HUD соперников</h3>
+            <InfoButton onClick={openInfo('paid.hudMode')} />
+          </div>
           <p className="text-sm text-gray-500">
             Краткая статистика игрока (VPIP/PFR по последним 200 раздачам) в попапе по тапу на место
             за столом. «Бесплатно» — видна всем. «По подписке» — только тем, кто купил подписку в

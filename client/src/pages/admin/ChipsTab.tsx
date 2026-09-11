@@ -1,4 +1,6 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
+import { InfoButton } from '../../components/lobby/createControls';
+import { useAdminInfo } from '../../components/admin/useAdminInfo';
 import { toast } from 'react-hot-toast';
 import { Search, CheckSquare, Square, Plus, Minus } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
@@ -16,6 +18,7 @@ const fmtTs = (ts: number) => {
 };
 
 export const ChipsTab = () => {
+  const { openInfo, infoSheet } = useAdminInfo();
   const { token } = useAuthStore();
   const api = useAdminApi(token);
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -110,9 +113,11 @@ export const ChipsTab = () => {
 
   return (
     <div className="space-y-4 pb-28 max-w-3xl mx-auto">
+      {infoSheet}
       {/* Сводка */}
       <div className="rounded-2xl bg-gray-800/70 border border-white/10 p-4 flex items-center justify-between">
         <span className="text-gray-400 text-sm">Фишки в системе (все игроки)</span>
+          <InfoButton onClick={openInfo('chips.total')} />
         <span className="text-emerald-400 font-bold text-lg tabular-nums">{formatMoney(totalChips)}</span>
       </div>
 
@@ -186,7 +191,10 @@ export const ChipsTab = () => {
 
       {/* История операций */}
       <div className="pt-2">
-        <h3 className="text-sm font-bold text-gray-400 px-1 mb-2">История операций</h3>
+        <div className="flex items-center gap-2 px-1 mb-2">
+            <h3 className="text-sm font-bold text-gray-400">История операций</h3>
+            <InfoButton onClick={openInfo('chips.history')} />
+          </div>
         {ops.length === 0 ? (
           <div className="text-center text-gray-600 py-6 text-sm">Операций пока не было.</div>
         ) : (

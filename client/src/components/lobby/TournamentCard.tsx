@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
-import { Coins, Users, Zap, Trophy, Ticket, Copy } from 'lucide-react';
+import { Coins, Users, Zap, Trophy, Ticket, Copy, Info } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { formatMoney } from '../../config/chipFormat';
 import { TournamentDetailsModal } from './TournamentDetailsModal';
+import { TournamentInfoModal } from './TournamentInfoModal';
 import type { TournamentInfo } from '@poker-room/shared';
 
 function isLateRegOpen(t: TournamentInfo): boolean {
@@ -47,6 +48,8 @@ export const TournamentCard = ({
   // Клик по завершённой/отменённой карточке — полная сводка (итоги/участники), пока она ещё
   // в списке (автоудаление через 30 минут, см. TournamentManager.scheduleAutoRemove).
   const [detailsOpen, setDetailsOpen] = useState(false);
+  // Структура турнира (§10.19) — доступна при любом статусе, в отличие от итогов ниже.
+  const [infoOpen, setInfoOpen] = useState(false);
   const isArchived = trn.status === 'finished' || trn.status === 'cancelled';
   const SPEED_LABEL: Record<TournamentInfo['blindSpeed'], string> = {
     slow: t('tournamentCard.speedSlow'),
@@ -144,6 +147,15 @@ export const TournamentCard = ({
           />
           {trn.status === 'registering' ? t('tournamentCard.statusRegistering') : trn.status === 'running' ? t('tournamentCard.statusRunning') : trn.status === 'finished' ? t('tournamentCard.statusFinished') : t('tournamentCard.statusCancelled')}
         </span>
+        <button
+          type="button"
+          aria-label={t('tournamentCard.infoAria')}
+          title={t('tournamentCard.infoAria')}
+          onClick={(e) => { e.stopPropagation(); setInfoOpen(true); }}
+          className="shrink-0 -mt-0.5 p-2 rounded-lg text-white/50 hover:text-white hover:bg-white/10"
+        >
+          <Info size={16} />
+        </button>
       </div>
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-400 mb-3">
@@ -359,6 +371,9 @@ export const TournamentCard = ({
 
       {detailsOpen && (
         <TournamentDetailsModal tournament={trn} onClose={() => setDetailsOpen(false)} />
+      )}
+      {infoOpen && (
+        <TournamentInfoModal tournament={trn} onClose={() => setInfoOpen(false)} />
       )}
     </motion.div>
   );

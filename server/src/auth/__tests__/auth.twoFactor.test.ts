@@ -34,6 +34,9 @@ function seedUser(overrides: Partial<StoredUser> = {}): StoredUser {
     username: 'alice',
     email: 'a@a.com',
     passwordHash: bcrypt.hashSync('secret123', 10),
+    // Возрастной гейт 18+ (§11.2): без даты рождения вход уходит на её доввод, а здесь
+    // проверяется 2FA — юзер должен быть уже с подтверждённым возрастом.
+    dateOfBirth: '1990-01-01',
     ...overrides,
   };
   setStorage('users.json', [user]);

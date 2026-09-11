@@ -39,6 +39,16 @@ export function createTournamentsRouter(tournamentManager: TournamentManager): R
     res.json(stripPromoCode(t, user.role === 'admin'));
   });
 
+  // Структура выплат — доступна и до старта турнира (standings ниже — только для running).
+  router.get('/:id/structure', (req, res) => {
+    const structure = tournamentManager.getStructure(req.params.id);
+    if (!structure) {
+      res.status(404).json({ error: 'not-found' });
+      return;
+    }
+    res.json(structure);
+  });
+
   router.get('/:id/standings', (req, res) => {
     const standings = tournamentManager.getStandings(req.params.id);
     if (!standings) {

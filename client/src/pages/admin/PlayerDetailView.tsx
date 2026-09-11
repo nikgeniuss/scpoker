@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { InfoButton } from '../../components/lobby/createControls';
+import { useAdminInfo } from '../../components/admin/useAdminInfo';
 import { ChevronLeft, Trash2 } from 'lucide-react';
 import ReactNiceAvatar from 'react-nice-avatar';
 import toast from 'react-hot-toast';
@@ -38,6 +40,7 @@ interface PlayerDetailViewProps {
 }
 
 export const PlayerDetailView = ({ user, meId, api, onBack, onChanged, onDeleted }: PlayerDetailViewProps) => {
+  const { openInfo, infoSheet } = useAdminInfo();
   const isMe = meId === user.id;
   const [historyOpen, setHistoryOpen] = useState(false);
   const [aliasDraft, setAliasDraft] = useState(user.alias ?? '');
@@ -132,6 +135,7 @@ export const PlayerDetailView = ({ user, meId, api, onBack, onChanged, onDeleted
 
   return (
     <div className="space-y-5 pb-10 max-w-3xl mx-auto">
+      {infoSheet}
       {/* Заголовок */}
       <div className="flex items-center gap-2">
         <button
@@ -190,7 +194,10 @@ export const PlayerDetailView = ({ user, meId, api, onBack, onChanged, onDeleted
       {/* Псевдоним + примечание */}
       <div className="space-y-3">
         <div>
-          <label className="block text-xs text-gray-400 mb-1">Псевдоним</label>
+          <div className="flex items-center gap-2 mb-1">
+            <label className="block text-xs text-gray-400">Псевдоним</label>
+            <InfoButton onClick={openInfo('player.alias')} />
+          </div>
           <input
             value={aliasDraft}
             maxLength={40}
@@ -200,7 +207,10 @@ export const PlayerDetailView = ({ user, meId, api, onBack, onChanged, onDeleted
           />
         </div>
         <div>
-          <label className="block text-xs text-gray-400 mb-1">Примечание</label>
+          <div className="flex items-center gap-2 mb-1">
+            <label className="block text-xs text-gray-400">Примечание</label>
+            <InfoButton onClick={openInfo('player.note')} />
+          </div>
           <textarea
             value={noteDraft}
             maxLength={500}
@@ -221,7 +231,10 @@ export const PlayerDetailView = ({ user, meId, api, onBack, onChanged, onDeleted
 
       {/* Роль */}
       <div className="flex items-center justify-between gap-3">
-        <label className="text-sm text-white font-semibold">Роль игрока</label>
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-white font-semibold">Роль игрока</label>
+          <InfoButton onClick={openInfo('player.role')} />
+        </div>
         <select
           value={user.role}
           disabled={isMe}
@@ -322,7 +335,10 @@ export const PlayerDetailView = ({ user, meId, api, onBack, onChanged, onDeleted
 
       {/* Управление банкроллом / баном / страной */}
       <div className="rounded-2xl bg-gray-800/70 border border-white/10 p-4 space-y-3">
-        <h3 className="text-white font-bold">Управление</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-white font-bold">Управление</h3>
+          <InfoButton onClick={openInfo('player.chips')} />
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm text-gray-300 mr-1">Фишки:</span>
           <button

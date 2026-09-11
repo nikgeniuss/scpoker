@@ -17,6 +17,7 @@ interface MinimalUser {
   id: string;
   username: string;
   passwordHash: string;
+  dateOfBirth?: string;
   banned?: boolean;
   responsibleGambling?: Record<string, unknown>;
 }
@@ -28,6 +29,9 @@ function seedUser(overrides: Partial<MinimalUser> = {}): MinimalUser {
     id: 'u1',
     username: 'alice',
     passwordHash: bcrypt.hashSync('pw12345', 4),
+    // Возрастной гейт 18+ (§11.2): без даты рождения вход уходит на её доввод, а здесь
+    // проверяются блокировки — юзер должен быть уже с подтверждённым возрастом.
+    dateOfBirth: '1990-01-01',
     ...overrides,
   };
   setStorage('users.json', [u]);

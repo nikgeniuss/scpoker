@@ -18,6 +18,8 @@ function seedUser(overrides: Partial<User> = {}): User {
     username: 'alice',
     email: 'alice@test.local',
     passwordHash: bcrypt.hashSync('pw12345', 4),
+    // Возрастной гейт 18+ (§11.2): без даты рождения вход уходит на её доввод.
+    dateOfBirth: '1990-01-01',
     role: 'player',
     chips: 1000,
     createdAt: new Date().toISOString(),
@@ -70,8 +72,8 @@ describe('auth — визит-бонус/стрик при логине', () => 
 
     // Второй юзер с тем же device/ip
     setStorage('users.json', [
-      { id: 'u1', username: 'alice', email: 'a@t.local', passwordHash: bcrypt.hashSync('pw12345', 4), role: 'player', chips: 1000, createdAt: new Date().toISOString() },
-      { id: 'u2', username: 'bob', email: 'b@t.local', passwordHash: bcrypt.hashSync('pw12345', 4), role: 'player', chips: 1000, createdAt: new Date().toISOString() },
+      { id: 'u1', username: 'alice', email: 'a@t.local', passwordHash: bcrypt.hashSync('pw12345', 4), dateOfBirth: '1990-01-01', role: 'player', chips: 1000, createdAt: new Date().toISOString() },
+      { id: 'u2', username: 'bob', email: 'b@t.local', passwordHash: bcrypt.hashSync('pw12345', 4), dateOfBirth: '1990-01-01', role: 'player', chips: 1000, createdAt: new Date().toISOString() },
     ] as User[]);
     loginUser('bob', 'pw12345', { ip: '9.9.9.9', deviceId: 'shared' });
 

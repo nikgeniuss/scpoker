@@ -6,6 +6,7 @@ import {
   loginUser,
   validateTelegramInitData,
   loginOrRegisterTelegramUser,
+  completeDobGate,
   createTelegramLinkCode,
   linkTelegramToAccount,
   setAvatarSeed,
@@ -105,6 +106,11 @@ export function createAuthRouter(gameManager: GameManager): Router {
       res.json({ twoFactorRequired: true, pendingToken: result.pendingToken });
       return;
     }
+    // Возрастной гейт 18+ (§11.2): аккаунт заведён до его появления — просим дату рождения.
+    if ('dobRequired' in result) {
+      res.json({ dobRequired: true, pendingToken: result.pendingToken });
+      return;
+    }
     if ('error' in result) {
       if (result.error === 'self-excluded') {
         res.status(403).json({ error: `Вы включили самоисключение до ${result.until}`, until: result.until });
@@ -132,6 +138,10 @@ export function createAuthRouter(gameManager: GameManager): Router {
       return;
     }
     const result = completeTwoFactorLogin(pendingToken, code, deviceInfoFrom(req));
+    if ('dobRequired' in result) {
+      res.json({ dobRequired: true, pendingToken: result.pendingToken });
+      return;
+    }
     if ('error' in result) {
       const status = result.error === 'invalid-token' ? 401 : 400;
       const error = result.error === 'invalid-token' ? 'Сессия входа истекла, войдите заново' : 'Неверный код';
@@ -141,6 +151,49 @@ export function createAuthRouter(gameManager: GameManager): Router {
     const token = result.token;
     const decoded = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
     res.json({ token, user: { id: decoded.id, username: decoded.username, role: decoded.role } });
+  });
+
+  // Шаг 2 возрастного гейта 18+ (§11.2): pendingToken из /login, /login/2fa или /telegram +
+  // дата рождения. Для TG-личности без аккаунта аккаунт создаётся именно здесь — после проверки.
+  router.post('/dob', loginLimiter, (req, res) => {
+    const { pendingToken, dateOfBirth } = req.body as { pendingToken?: string; dateOfBirth?: string };
+    if (typeof pendingToken !== 'string' || typeof dateOfBirth !== 'string') {
+      res.status(400).json({ error: 'pendingToken и dateOfBirth обязательны' });
+      return;
+    }
+    const result = completeDobGate(pendingToken, dateOfBirth, deviceInfoFrom(req));
+    if ('error' in result) {
+      if (result.error === 'self-excluded') {
+        res.status(403).json({ error: `Вы включили самоисключение до ${result.until}`, until: result.until });
+        return;
+      }
+      if (result.error === 'timeout') {
+        res.status(403).json({ error: `Вы включили тайм-аут до ${result.until}`, until: result.until });
+        return;
+      }
+      const messages: Record<'invalid-token' | 'invalid-dob' | 'underage' | 'banned', string> = {
+        'invalid-token': 'Сессия входа истекла, войдите заново',
+        'invalid-dob': 'Некорректная дата рождения',
+        underage: 'Вход доступен только для лиц старше 18 лет',
+        banned: 'Аккаунт заблокирован',
+      };
+      const status = result.error === 'invalid-token' ? 401 : result.error === 'invalid-dob' ? 400 : 403;
+      res.status(status).json({ error: messages[result.error] });
+      return;
+    }
+    const { token, user } = result;
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        username: user.username,
+        displayName: user.displayName,
+        role: user.role,
+        chips: user.chips,
+        publicId: user.publicId,
+        country: user.country,
+      },
+    });
   });
 
   // Авторизация через Telegram Mini App initData.
@@ -164,6 +217,12 @@ export function createAuthRouter(gameManager: GameManager): Router {
     const result = loginOrRegisterTelegramUser(tgUser, deviceInfoFrom(req));
     if (!result) {
       res.status(403).json({ error: 'Аккаунт заблокирован' });
+      return;
+    }
+    // Возрастного подтверждения ещё нет — аккаунт НЕ создан (§11.2), клиент показывает форму
+    // даты рождения и присылает её на /auth/dob вместе с этим pendingToken.
+    if ('dobRequired' in result) {
+      res.json({ dobRequired: true, pendingToken: result.pendingToken });
       return;
     }
     const { token, user } = result;

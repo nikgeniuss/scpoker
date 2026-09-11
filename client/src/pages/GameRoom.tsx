@@ -44,6 +44,7 @@ import type { ChipDisplay } from '../config/chipFormat';
 import { loadCardDeck, saveCardDeck } from '../config/cardDeck';
 import type { CardDeck } from '../config/cardDeck';
 import { loadGameSettings, saveGameSettings } from '../config/gameSettings';
+import { useOrientationLock } from '../hooks/useOrientationLock';
 import type { GameSettings } from '../config/gameSettings';
 import { playSound } from '../lib/sound';
 import { triggerHaptic } from '../lib/haptic';
@@ -156,6 +157,8 @@ export const GameRoom = () => {
     useTableClock(state, countdownEndsAt);
   // Турнирный HUD под общими картами: через сколько вырастут блайнды и на сколько.
   const blindsRiseIn = useBlindLevelCountdown(state?.tournamentNextLevelAt);
+  // Ориентация экрана — только пока игрок за столом (§10.16), вне стола не навязываем.
+  useOrientationLock(gameSettings.orientationLock);
 
   const myId = userId;
   const me = useMemo(() => state?.players.find((p) => p.id === myId) ?? null, [state, myId]);
@@ -1214,6 +1217,7 @@ export const GameRoom = () => {
           onAction={sendAction}
           onRaiseOpenChange={setRaiseOpen}
           akSkin={akTableEnabled}
+          mirrored={gameSettings.mirroredActions}
         />
       )}
 
@@ -1239,6 +1243,8 @@ export const GameRoom = () => {
           displayMode={chipDisplay}
           tournamentId={state.tournamentId}
           myId={myId}
+          tournamentNextLevelAt={state.tournamentNextLevelAt}
+          tournamentNextBigBlind={state.tournamentNextBigBlind}
           onClose={() => setInfoModalOpen(false)}
         />
       )}

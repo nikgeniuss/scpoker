@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
+import { InfoButton } from '../../components/lobby/createControls';
+import { useAdminInfo } from '../../components/admin/useAdminInfo';
 import toast from 'react-hot-toast';
 import { Plus, Trash2 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
@@ -11,6 +13,7 @@ import type { RakebackTier } from '../../config/rakeback';
 // Уровень определяется рейком за скользящее окно последних N дней и потому умеет понижаться.
 // Читает/пишет /admin/rakeback.
 export const RakebackTab = () => {
+  const { openInfo, infoSheet } = useAdminInfo();
   const token = useAuthStore((s) => s.token);
   const loadAdmin = useRakebackStore((s) => s.loadAdmin);
   const saveConfig = useRakebackStore((s) => s.saveConfig);
@@ -76,11 +79,15 @@ export const RakebackTab = () => {
 
   return (
     <div className="space-y-6 pb-10 max-w-2xl">
+      {infoSheet}
       <h2 className="text-2xl font-bold text-white mb-4">💸 Рейкбэк</h2>
 
       <div className="bg-gray-800 rounded-2xl p-4 border border-white/10 space-y-4">
         <div>
-          <h3 className="text-white font-bold text-lg mb-1">VIP-кэшбэк по уровням</h3>
+          <div className="flex items-center gap-2 mb-1">
+            <h3 className="text-white font-bold text-lg">VIP-кэшбэк по уровням</h3>
+            <InfoButton onClick={openInfo('rakeback.enabled')} />
+          </div>
           <p className="text-sm text-gray-500">
             Уровень игрока считается по рейку за <b>скользящее окно</b> последних N дней и
             пересчитывается каждый день: играет стабильно — уровень держится, сбавил — счёт
@@ -102,7 +109,10 @@ export const RakebackTab = () => {
         </label>
 
         <div>
-          <label className="block text-white text-sm font-bold mb-1">Окно расчёта уровня (дней)</label>
+          <div className="flex items-center gap-2 mb-1">
+              <label className="block text-white text-sm font-bold">Окно расчёта уровня (дней)</label>
+              <InfoButton onClick={openInfo('rakeback.window')} />
+            </div>
           <p className="text-xs text-gray-500 mb-2">
             1–365. Чем короче окно, тем быстрее падает уровень при паузе в игре. 30 дней — как
             месячные уровни у partypoker/888, только без обрыва на границе месяца.
@@ -141,8 +151,8 @@ export const RakebackTab = () => {
         <div className="rounded-xl border border-white/10 overflow-hidden text-sm">
           <div className="grid grid-cols-[1fr_1fr_0.7fr_2rem] gap-2 px-3 py-2 bg-gray-900 font-bold text-gray-400 text-xs">
             <span>Название</span>
-            <span>Порог рейка за окно ($)</span>
-            <span>Кэшбэк (%)</span>
+            <span className="flex items-center gap-1.5">Порог рейка за окно ($)<InfoButton onClick={openInfo('rakeback.tierThreshold')} /></span>
+            <span className="flex items-center gap-1.5">Кэшбэк (%)<InfoButton onClick={openInfo('rakeback.tierPercent')} /></span>
             <span />
           </div>
           {tiers.map((t, i) => (

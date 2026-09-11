@@ -8,6 +8,8 @@ import { useLobbyDesignStore } from '../../store/lobbyDesignStore';
 import { useAppThemeStore } from '../../store/appThemeStore';
 import { useAkTableStore } from '../../store/akTableStore';
 import { useDebugOverlayStore } from '../../store/debugOverlayStore';
+import { InfoButton } from '../../components/lobby/createControls';
+import { useAdminInfo } from '../../components/admin/useAdminInfo';
 import type { GameSettings, TimebankSettings, BotModeSettings, ResponsibleGamblingSettings, DefaultRakeSettings } from './types';
 
 export const SettingsTab = () => {
@@ -216,6 +218,7 @@ export const SettingsTab = () => {
 // Переключатель «какую версию /lobby видят все игроки» — классика или редизайн.
 // Своя независимая персистентность (server/data/lobbyDesign.json), сохраняется сразу по клику.
 const LobbyDesignSection = () => {
+  const { openInfo, infoSheet } = useAdminInfo();
   const { token } = useAuthStore();
   const design = useLobbyDesignStore((s) => s.design);
   const loadAdmin = useLobbyDesignStore((s) => s.loadAdmin);
@@ -227,8 +230,12 @@ const LobbyDesignSection = () => {
 
   return (
     <div className="bg-gray-800 rounded-2xl p-4 border border-white/10 space-y-3">
+      {infoSheet}
       <div>
-        <h3 className="text-white font-bold text-lg mb-1">Дизайн лобби</h3>
+        <div className="flex items-center gap-2 mb-1">
+          <h3 className="text-white font-bold text-lg">Дизайн лобби</h3>
+          <InfoButton onClick={openInfo('settings.lobbySkin')} />
+        </div>
         <p className="text-sm text-gray-500">Какую версию страницы /lobby видят все игроки.</p>
       </div>
       <div className="flex gap-2">
@@ -259,6 +266,7 @@ const LobbyDesignSection = () => {
 // (по образцу AK Poker). Своя независимая персистентность (server/data/appTheme.json), сохраняется
 // сразу по клику. НЕ путать с «Дизайн лобби» выше — тот только про структуру /lobby.
 const AppThemeSection = () => {
+  const { openInfo, infoSheet } = useAdminInfo();
   const { token } = useAuthStore();
   const theme = useAppThemeStore((s) => s.theme);
   const loadAdmin = useAppThemeStore((s) => s.loadAdmin);
@@ -270,8 +278,12 @@ const AppThemeSection = () => {
 
   return (
     <div className="bg-gray-800 rounded-2xl p-4 border border-white/10 space-y-3">
+      {infoSheet}
       <div>
-        <h3 className="text-white font-bold text-lg mb-1">Визуальный скин приложения</h3>
+        <div className="flex items-center gap-2 mb-1">
+          <h3 className="text-white font-bold text-lg">Визуальный скин приложения</h3>
+          <InfoButton onClick={openInfo('settings.appSkin')} />
+        </div>
         <p className="text-sm text-gray-500">Какой общий дизайн (chrome, лобби, кошелёк, профиль) видят все игроки.</p>
       </div>
       <div className="flex gap-2">
@@ -302,6 +314,7 @@ const AppThemeSection = () => {
 // выше (тот про chrome/лобби/кошелёк/профиль, этот — только про GameRoom на мобиле).
 // Своя персистентность (server/data/akTable.json), сохраняется сразу по клику.
 const AkTableSection = () => {
+  const { openInfo, infoSheet } = useAdminInfo();
   const { token } = useAuthStore();
   const enabled = useAkTableStore((s) => s.enabled);
   const loadAdmin = useAkTableStore((s) => s.loadAdmin);
@@ -313,8 +326,12 @@ const AkTableSection = () => {
 
   return (
     <div className="bg-gray-800 rounded-2xl p-4 border border-white/10 space-y-3">
+      {infoSheet}
       <div>
-        <h3 className="text-white font-bold text-lg mb-1">AK-стол (мобайл)</h3>
+        <div className="flex items-center gap-2 mb-1">
+          <h3 className="text-white font-bold text-lg">AK-стол (мобайл)</h3>
+          <InfoButton onClick={openInfo('settings.akTable')} />
+        </div>
         <p className="text-sm text-gray-500">
           Визуальный скин игрового стола на мобиле/TWA — по референсу AK Poker. Десктоп не затрагивает.
         </p>
@@ -346,6 +363,7 @@ const AkTableSection = () => {
 // Тоггл «показывать дебаг-оверлей (FPS/PING/NET)» всем игрокам — по умолчанию выключен.
 // Своя персистентность (server/data/debugOverlay.json), сохраняется сразу по клику.
 const DebugOverlaySection = () => {
+  const { openInfo, infoSheet } = useAdminInfo();
   const { token } = useAuthStore();
   const enabled = useDebugOverlayStore((s) => s.enabled);
   const loadAdmin = useDebugOverlayStore((s) => s.loadAdmin);
@@ -357,8 +375,12 @@ const DebugOverlaySection = () => {
 
   return (
     <div className="bg-gray-800 rounded-2xl p-4 border border-white/10 space-y-3">
+      {infoSheet}
       <div>
-        <h3 className="text-white font-bold text-lg mb-1">Дебаг-оверлей (FPS/PING/NET)</h3>
+        <div className="flex items-center gap-2 mb-1">
+          <h3 className="text-white font-bold text-lg">Дебаг-оверлей (FPS/PING/NET)</h3>
+          <InfoButton onClick={openInfo('settings.debugOverlay')} />
+        </div>
         <p className="text-sm text-gray-500">
           Панель в верхнем левом углу экрана (FPS, пинг, скорость сети). По умолчанию скрыта у всех игроков.
         </p>
@@ -397,6 +419,7 @@ interface ResponsibleGamblingSectionProps {
 }
 
 const ResponsibleGamblingSection = ({ rg, onChange }: ResponsibleGamblingSectionProps) => {
+  const { openInfo, infoSheet } = useAdminInfo();
   const update = <K extends keyof ResponsibleGamblingSettings>(key: K, value: ResponsibleGamblingSettings[K]) =>
     onChange({ ...rg, [key]: value });
 
@@ -414,8 +437,12 @@ const ResponsibleGamblingSection = ({ rg, onChange }: ResponsibleGamblingSection
 
   return (
     <div className="bg-gray-800 rounded-2xl p-4 border border-white/10 space-y-4">
+      {infoSheet}
       <div>
-        <h3 className="text-white font-bold text-lg mb-1">Responsible Gambling</h3>
+        <div className="flex items-center gap-2 mb-1">
+          <h3 className="text-white font-bold text-lg">Responsible Gambling</h3>
+          <InfoButton onClick={openInfo('settings.responsibleGambling')} />
+        </div>
         <p className="text-sm text-gray-500">
           Какие пункты доступны игроку в настройках аккаунта (/responsible-gambling). Выключение
           тоггла прячет блок целиком — не просто блокирует значения.
@@ -436,6 +463,7 @@ interface BroadcastSectionProps {
 }
 
 const BroadcastSection = ({ api }: BroadcastSectionProps) => {
+  const { openInfo, infoSheet } = useAdminInfo();
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
 
@@ -455,8 +483,12 @@ const BroadcastSection = ({ api }: BroadcastSectionProps) => {
 
   return (
     <div className="bg-gray-800 rounded-2xl p-4 border border-white/10 space-y-3">
+      {infoSheet}
       <div>
-        <h3 className="text-white font-bold text-lg mb-1">Рассылка уведомлений</h3>
+        <div className="flex items-center gap-2 mb-1">
+          <h3 className="text-white font-bold text-lg">Рассылка уведомлений</h3>
+          <InfoButton onClick={openInfo('settings.broadcast')} />
+        </div>
         <p className="text-sm text-gray-500">Сообщение придёт во «Входящие» всем зарегистрированным игрокам.</p>
       </div>
       <textarea
@@ -492,10 +524,16 @@ interface RakeSectionProps {
   onApplyAll: () => void;
 }
 
-const RakeSection = ({ rake, onChange, onApplyAll }: RakeSectionProps) => (
+const RakeSection = ({ rake, onChange, onApplyAll }: RakeSectionProps) => {
+  const { openInfo, infoSheet } = useAdminInfo();
+
+  return (
   <div className="bg-gray-800 rounded-2xl p-4 border border-white/10 space-y-4">
     <div>
-      <label className="block text-white font-bold mb-1">Рейк рума</label>
+      <div className="flex items-center gap-2 mb-1">
+            <label className="block text-white font-bold">Рейк рума</label>
+            <InfoButton onClick={openInfo('settings.rakePercent')} />
+          </div>
       <p className="text-sm text-gray-500">
         Комиссия с банка раздачи: процент от банка, но не больше потолка в больших блайндах.
         Префлоп-раздачи не облагаются («no flop, no drop»). 0% — рейк выключен.
@@ -504,7 +542,10 @@ const RakeSection = ({ rake, onChange, onApplyAll }: RakeSectionProps) => (
 
     <div className="flex flex-wrap gap-4">
       <div>
-        <label className="block text-white text-sm font-bold mb-1">Процент с банка</label>
+        <div className="flex items-center gap-2 mb-1">
+            <label className="block text-white text-sm font-bold">Процент с банка</label>
+            <InfoButton onClick={openInfo('settings.rakePercent')} />
+          </div>
         <div className="flex items-center gap-2">
           <input
             type="number"
@@ -524,7 +565,10 @@ const RakeSection = ({ rake, onChange, onApplyAll }: RakeSectionProps) => (
       </div>
 
       <div>
-        <label className="block text-white text-sm font-bold mb-1">Потолок (cap)</label>
+        <div className="flex items-center gap-2 mb-1">
+            <label className="block text-white text-sm font-bold">Потолок (cap)</label>
+            <InfoButton onClick={openInfo('settings.rakeCap')} />
+          </div>
         <div className="flex items-center gap-2">
           <input
             type="number"
@@ -557,12 +601,15 @@ const RakeSection = ({ rake, onChange, onApplyAll }: RakeSectionProps) => (
     >
       Применить к существующим столам
     </button>
+    <InfoButton onClick={openInfo('settings.rakeApply')} />
     <p className="text-xs text-gray-500">
       Сохранение настроек влияет только на новые столы. Кнопка выше переносит текущие значения
       на все уже созданные кэш-столы (турнирные столы не трогаются).
     </p>
+    {infoSheet}
   </div>
-);
+  );
+};
 
 // Секция настроек таймбанка (см. roadmap 10.6).
 // Toggle «разрешить настройку при создании стола» открывает игроку выбор в CreateRoomModal.
@@ -573,6 +620,7 @@ interface TimebankSectionProps {
 }
 
 const TimebankSection = ({ tb, onChange }: TimebankSectionProps) => {
+  const { openInfo, infoSheet } = useAdminInfo();
   const update = <K extends keyof TimebankSettings>(key: K, value: TimebankSettings[K]) =>
     onChange({ ...tb, [key]: value });
 
@@ -602,8 +650,12 @@ const TimebankSection = ({ tb, onChange }: TimebankSectionProps) => {
 
   return (
     <div className="bg-gray-800 rounded-2xl p-4 border border-white/10 space-y-4">
+      {infoSheet}
       <div>
-        <h3 className="text-white font-bold text-lg mb-1">Таймбанк</h3>
+        <div className="flex items-center gap-2 mb-1">
+          <h3 className="text-white font-bold text-lg">Таймбанк</h3>
+          <InfoButton onClick={openInfo('settings.timebank')} />
+        </div>
         <p className="text-sm text-gray-500">
           Дополнительные секунды, которые срабатывают автоматически после истечения обычного времени хода.
         </p>
@@ -627,7 +679,7 @@ const TimebankSection = ({ tb, onChange }: TimebankSectionProps) => {
           className="accent-emerald-500 w-4 h-4 mt-0.5"
         />
         <div>
-          <span className="text-white font-bold block">Разрешить настройку при создании стола</span>
+          <span className="text-white font-bold inline-flex items-center gap-2">Разрешить настройку при создании стола<InfoButton onClick={openInfo('settings.timebankPerTable')} /></span>
           <span className="text-xs text-gray-500">
             Если включено — в форме создания стола появится отдельный блок таймбанка. Если выключено —
             все новые столы используют эти глобальные значения.
@@ -653,13 +705,18 @@ interface BotModeSectionProps {
 }
 
 const BotModeSection = ({ bm, onChange }: BotModeSectionProps) => {
+  const { openInfo, infoSheet } = useAdminInfo();
   const update = <K extends keyof BotModeSettings>(key: K, value: BotModeSettings[K]) =>
     onChange({ ...bm, [key]: value });
 
   return (
     <div className="bg-gray-800 rounded-2xl p-4 border border-white/10 space-y-4">
+      {infoSheet}
       <div>
-        <h3 className="text-white font-bold text-lg mb-1">Бот-режим</h3>
+        <div className="flex items-center gap-2 mb-1">
+          <h3 className="text-white font-bold text-lg">Бот-режим</h3>
+          <InfoButton onClick={openInfo('settings.botMode')} />
+        </div>
         <p className="text-sm text-gray-500">
           Автоматическое создание игровых столов с ботами для имитации онлайна. Боты ходят и
           играют сами по своей логике (см. вкладку «Боты» для настройки целей PnL).
@@ -677,7 +734,10 @@ const BotModeSection = ({ bm, onChange }: BotModeSectionProps) => {
       </label>
 
       <div>
-        <label className="block text-white text-sm font-bold mb-1">Режим peek (видения карт)</label>
+        <div className="flex items-center gap-2 mb-1">
+            <label className="block text-white text-sm font-bold">Режим peek (видения карт)</label>
+            <InfoButton onClick={openInfo('settings.peekMode')} />
+          </div>
         <p className="text-xs text-gray-500 mb-2">
           Когда бот «видит» карты соперников и будущий борд. River — только на ривере (рекомендуется).
           Full — со старта раздачи (требует точной настройки антифрода).
@@ -696,7 +756,10 @@ const BotModeSection = ({ bm, onChange }: BotModeSectionProps) => {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label className="block text-white text-sm font-bold mb-1">Макс. ботов за стол</label>
+          <div className="flex items-center gap-2 mb-1">
+            <label className="block text-white text-sm font-bold">Макс. ботов за стол</label>
+            <InfoButton onClick={openInfo('settings.botsPerTable')} />
+          </div>
           <p className="text-xs text-gray-500 mb-2">2–8. Реальное число варьируется (от 2 до этого) и «дышит». По умолчанию 6.</p>
           <input
             type="number"
@@ -709,7 +772,10 @@ const BotModeSection = ({ bm, onChange }: BotModeSectionProps) => {
           />
         </div>
         <div>
-          <label className="block text-white text-sm font-bold mb-1">Buy-in (BB)</label>
+          <div className="flex items-center gap-2 mb-1">
+            <label className="block text-white text-sm font-bold">Buy-in (BB)</label>
+            <InfoButton onClick={openInfo('settings.botBuyIn')} />
+          </div>
           <p className="text-xs text-gray-500 mb-2">Размер бай-ина бота в больших блайндах.</p>
           <input
             type="number"
@@ -722,7 +788,10 @@ const BotModeSection = ({ bm, onChange }: BotModeSectionProps) => {
           />
         </div>
         <div>
-          <label className="block text-white text-sm font-bold mb-1">Refill (мс)</label>
+          <div className="flex items-center gap-2 mb-1">
+            <label className="block text-white text-sm font-bold">Refill (мс)</label>
+            <InfoButton onClick={openInfo('settings.botRefill')} />
+          </div>
           <p className="text-xs text-gray-500 mb-2">Как часто проверять, что бот-столы укомплектованы. 30000–600000.</p>
           <input
             type="number"

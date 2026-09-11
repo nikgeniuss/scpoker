@@ -1,4 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
+import { InfoButton } from '../../components/lobby/createControls';
+import { useAdminInfo } from '../../components/admin/useAdminInfo';
 import { useAuthStore } from '../../store/authStore';
 import { useAdminApi } from '../../hooks/useAdminApi';
 import { TournamentLedgerSection } from '../../components/admin/TournamentLedgerSection';
@@ -54,6 +56,7 @@ const addDays = (s: string, n: number) => {
 };
 
 export const DataTab = () => {
+  const { openInfo, infoSheet } = useAdminInfo();
   const { token } = useAuthStore();
   const api = useAdminApi(token);
 
@@ -108,8 +111,13 @@ export const DataTab = () => {
 
   return (
     <div className="max-w-3xl mx-auto">
+      {infoSheet}
       <h2 className="text-2xl font-bold text-white mb-1">Данные</h2>
-      <p className="text-sm text-gray-500 mb-5">Отчёты по играм за выбранный период</p>
+      <div className="flex items-center gap-2 mb-5">
+          <p className="text-sm text-gray-500">Отчёты по играм за выбранный период</p>
+          <InfoButton onClick={openInfo('data.period')} />
+          <InfoButton onClick={openInfo('data.metrics')} />
+        </div>
 
       {/* Диапазон дат + сдвиг */}
       <div className="flex items-center gap-2 mb-3">
@@ -137,6 +145,7 @@ export const DataTab = () => {
       </div>
       <div className="flex items-center justify-center gap-2 text-xs text-gray-500 mb-4">
         <span>Часовой пояс</span>
+            <InfoButton onClick={openInfo('data.timezone')} />
         <span className="px-2 py-0.5 rounded-full bg-gray-800 text-gray-300 font-semibold">{tzLabel}</span>
       </div>
 

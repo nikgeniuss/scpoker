@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import { InfoButton } from '../../components/lobby/createControls';
+import { useAdminInfo } from '../../components/admin/useAdminInfo';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '../../store/authStore';
 import { useAdminApi } from '../../hooks/useAdminApi';
@@ -9,6 +11,7 @@ import type { DesignConfig, DesignPreset } from '../../config/design';
 // (карусель колоды classic/colored); секции «Страница регистрации» и «Фишки» убраны как
 // неиспользуемые. Состояние дизайна локально (как у других вкладок).
 export const DesignTab = () => {
+  const { openInfo, infoSheet } = useAdminInfo();
   const { token } = useAuthStore();
   const api = useAdminApi(token);
   const [design, setDesign] = useState<DesignConfig>(DEFAULT_DESIGN);
@@ -37,6 +40,8 @@ export const DesignTab = () => {
 
   return (
     <div className="space-y-10 pb-20">
+      {infoSheet}
+      <InfoButton onClick={openInfo('design.cardBack')} />
       <DesignSection
         title="Рубашка карт"
         description="Дизайн обратной стороны карты"
